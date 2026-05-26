@@ -1,0 +1,57 @@
+{% macro num(v, d=2) %}{% if v is none %}—{% else %}{{ ('%.' ~ d ~ 'f')|format(v) }}{% endif %}{% endmacro %}
+{% macro money(v) %}{% if v is none %}—{% else %}{{ '{:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+{% macro pctd(v) %}{% if v is none %}—{% else %}{{ '%+.2f'|format(v * 100) }}%{% endif %}{% endmacro %}
+{% macro pctu(v) %}{% if v is none %}—{% else %}{{ '%.2f'|format(v) }}%{% endif %}{% endmacro %}
+{% set s = pf.summary %}
+<div class="cards">
+  <div class="card"><div class="k">Valor mercado (ARS)</div><div class="v">{{ money(s.total_market_value_ars) }}</div></div>
+  <div class="card"><div class="k">P&L (ARS)</div><div class="v {{ 'pos' if s.pnl_ars and s.pnl_ars>0 else ('neg' if s.pnl_ars and s.pnl_ars<0 else '') }}">{{ money(s.pnl_ars) }} <small>{{ pctd(s.pnl_pct) }}</small></div></div>
+  <div class="card"><div class="k">TIR ponderada</div><div class="v">{{ pctu(s.weighted_tir) }}</div></div>
+  <div class="card"><div class="k">MD cartera</div><div class="v">{{ num(s.portfolio_md) }}</div></div>
+  <div class="card"><div class="k">Posiciones</div><div class="v">{{ s.n_positions }}</div></div>
+  {% if s.fx_usd_ars %}<div class="card"><div class="k">FX USD/ARS</div><div class="v">{{ money(s.fx_usd_ars) }}</div></div>{% endif %}
+</div>
+
+<section class="panel" style="margin:0 12px 14px">
+  <div class="panel-head">POSICIONES</div>
+  <table>
+    <thead><tr>
+      <th>Ticker</th><th>Tipo</th><th>Mon</th><th>Nominal</th><th>Precio</th><th>Costo</th>
+      <th>P&L%</th><th>TIR</th><th>MD</th><th>V.Mercado (ARS)</th><th>Peso</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for p in pf.positions %}
+      <tr>
+        <td class="tk"><a hx-get="/bond/{{ p.ticker }}/detail" hx-target="#modal" hx-swap="innerHTML">{{ p.ticker }}</a></td>
+        <td>{{ p.grupo or '—' }}</td>
+        <td>{{ p.currency }}</td>
+        <td class="num">{{ money(p.nominal) }}</td>
+        <td class="num">{{ num(p.price) }}</td>
+        <td class="num">{{ num(p.cost_price) }}</td>
+        <td class="num {{ 'pos' if p.pnl_pct and p.pnl_pct>0 else ('neg' if p.pnl_pct and p.pnl_pct<0 else '') }}">{{ pctd(p.pnl_pct) }}</td>
+        <td class="num">{{ pctu(p.tir) }}</td>
+        <td class="num">{{ num(p.md) }}</td>
+        <td class="num">{{ money(p.market_value_ars) }}</td>
+        <td class="num">{{ pctd(p.weight) if p.weight is not none else '—' }}</td>
+        <td><button class="delx" hx-delete="/cartera/holding/{{ p.ticker }}" hx-target="#cartera-body" hx-swap="innerHTML" hx-confirm="¿Borrar {{ p.ticker }}?">✕</button></td>
+      </tr>
+      {% else %}
+      <tr class="empty"><td colspan="12">Sin tenencias. Agregá una arriba.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if cashflows.months %}
+<section class="panel" style="margin:0 12px 14px">
+  <div class="panel-head">FLUJOS FUTUROS (próximos meses)</div>
+  <table>
+    <thead><tr><th>Mes</th><th>ARS</th><th>USD</th></tr></thead>
+    <tbody>
+      {% for mo in cashflows.months %}
+      <tr><td>{{ mo.month }}</td><td class="num">{{ money(mo.ars) }}</td><td class="num">{{ num(mo.usd) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

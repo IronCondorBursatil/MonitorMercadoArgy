@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from apps.web.deps import get_repo, get_state
-from apps.web.routers import bonds, panels
+from apps.web.routers import bonds, cartera, panels
 from apps.web.state import AppState
 from config.settings import settings
 from core.domain.instrument_groups import (
@@ -92,6 +92,7 @@ app = FastAPI(title="Monitor Renta Fija AR", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 app.include_router(panels.router)
 app.include_router(bonds.router)
+app.include_router(cartera.router)
 
 
 @app.get("/api/health")
