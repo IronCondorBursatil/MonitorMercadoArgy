@@ -1,20 +1,18 @@
-"""App FastAPI (Fase 4 — fundación).
+"""App FastAPI + HTMX — dashboard del monitor (reemplaza el http.server + SPA).
 
-Integra el trabajo de Fases 1-3:
-  - CatalogRepository (SQLite, Fase 2) vía Depends(get_repo).
-  - Motor financiero refactorizado (Fase 1) vía GenerateMonitorReport.
-  - Puente CPU (§6.5): `await asyncio.to_thread(use_case.execute, ...)` corre el
-    pricing pesado fuera del event loop.
-  - ResilientClient + ProviderHub (Fase 3) en app.state, listos para que los
-    providers async los usen.
-  - lifespan + asyncio.create_task reemplazan los daemon threads + _SHUTDOWN_EVENT.
+`run.py` la levanta vía uvicorn (es la app primaria). Integra:
+  - CatalogRepository (SQLite) vía Depends(get_repo).
+  - Motor financiero (pricing core Strategy/Protocol) vía GenerateMonitorReport.
+  - Puente CPU: `await asyncio.to_thread(use_case.execute, ...)` corre el pricing
+    pesado fuera del event loop; `_bei_loop` hace lo mismo con compute_bei_tables.
+  - lifespan + asyncio.create_task reemplazan los daemon threads + _SHUTDOWN_EVENT
+    del http.server (shutdown explícito al cancelar las tasks).
+  - ResilientClient + ProviderHub (async) en app.state, listos para cuando los
+    providers migren a async (hoy corren sync vía to_thread).
 
-Estado: FUNDACIÓN runnable. El refresh loop reusa los providers sync existentes
-vía to_thread (la reescritura async de los 6 providers y la migración de TODOS
-los paneles/páginas a HTMX/Jinja + retiro del SPA siguen pendientes). `run.py`
-sigue apuntando al http.server hasta alcanzar paridad; esta app se levanta con:
-
-    & "$env:LOCALAPPDATA\\Microsoft\\WindowsApps\\python3.12.exe" -m uvicorn apps.web.app:app --port 8001
+Routers en apps/web/routers/, templates Jinja+HTMX en apps/web/templates/.
+Bajo pytest (MONITOR_DISABLE_LOOPS=1) los loops no arrancan (aíslan el cache de
+módulo del avg TAMAR del test de equivalencia).
 """
 
 from __future__ import annotations
