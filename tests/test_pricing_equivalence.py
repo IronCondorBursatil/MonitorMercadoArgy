@@ -48,6 +48,26 @@ class MockFx:
         return 1100.0
 
 
+@pytest.fixture(autouse=True)
+def _clear_pricing_caches():
+    """El avg TAMAR se cachea por (start,end,forecast) SIN identidad del provider.
+    Otros tests (bond_detail, cartera) computan con índices reales y dejan el cache
+    sucio → acá forzamos recomputo con MockIndices. Limpia motor nuevo + legacy."""
+    from core.domain import conventions
+    from core.domain.pricing import tamar
+    tamar._AVG_TAMAR_CACHE.clear()
+    tamar._AVG_TAMAR_DAY = None
+    conventions._SETTLE_CACHE.clear()
+    conventions._SETTLE_CACHE_DAY = None
+    if Old is not None:
+        import tests._legacy_engine as L
+        L._AVG_TAMAR_CACHE.clear()
+        L._AVG_TAMAR_DAY = None
+        L._SETTLE_CACHE.clear()
+        L._SETTLE_CACHE_DAY = None
+    yield
+
+
 def _close(a, b, tol=1e-7):
     if a is None and b is None:
         return True

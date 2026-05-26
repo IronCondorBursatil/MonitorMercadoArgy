@@ -112,6 +112,36 @@ _FUTUROS_COLS = [
     {"key": "open_interest", "label": "OP.INT", "kind": "volume"},
     {"key": "volume", "label": "Vol", "kind": "volume"},
 ]
+_BEI_TENOR_COLS = [
+    {"key": "plazo", "label": "Plazo", "kind": "text"},
+    {"key": "dias", "label": "Días", "kind": "number", "decimals": 0},
+    {"key": "tea_nominal", "label": "TEA Nom", "kind": "percent", "decimals": 2},
+    {"key": "tea_real", "label": "TEA Real", "kind": "percent", "decimals": 2},
+    {"key": "tamar_fwd", "label": "TAMAR fwd", "kind": "percent", "decimals": 2},
+    {"key": "bei_spot", "label": "BEI spot", "kind": "percent", "decimals": 2},
+    {"key": "bei_fwd", "label": "BEI fwd", "kind": "percent", "decimals": 2},
+    {"key": "bei_g_adj", "label": "BEI γ-adj", "kind": "percent", "decimals": 2},
+    {"key": "bei_tamar", "label": "BEI TAMAR", "kind": "percent", "decimals": 2},
+    {"key": "dev_implicita", "label": "Deval DLR", "kind": "percent", "decimals": 2},
+    {"key": "tc_real", "label": "TC real", "kind": "percent_signed", "decimals": 2},
+]
+_BEI_SENDERO_COLS = [
+    {"key": "mes", "label": "Mes", "kind": "text"},
+    {"key": "dias_mes", "label": "Días", "kind": "number", "decimals": 0},
+    {"key": "bei_mensual", "label": "BEI mensual", "kind": "percent", "decimals": 2},
+    {"key": "rem_mensual", "label": "REM mensual", "kind": "percent", "decimals": 2},
+    {"key": "diff", "label": "BEI − REM", "kind": "percent_signed", "decimals": 2},
+]
+_BEI_PARES_COLS = [
+    {"key": "lecap", "label": "LECAP", "kind": "text"},
+    {"key": "boncer", "label": "BONCER", "kind": "text"},
+    {"key": "vto_lecap", "label": "Vto LECAP", "kind": "date"},
+    {"key": "vto_cer", "label": "Vto CER", "kind": "date"},
+    {"key": "dias", "label": "Días", "kind": "number", "decimals": 0},
+    {"key": "delta_m1", "label": "δ − 1", "kind": "percent", "decimals": 2},
+    {"key": "infl_mensual_impl", "label": "Infl mes impl.", "kind": "percent", "decimals": 2},
+]
+_BEI_TABLE_KEY = {"bei_tenor": "tenor", "bei_sendero": "sendero", "bei_pares": "pares"}
 
 # id -> (título, {instrument_types}, columnas)
 PANELS = {
@@ -124,9 +154,13 @@ PANELS = {
     "valor_relativo": ("VALOR RELATIVO · rich / cheap (curvas peso)", set(), _VR_COLS),
     "panel_lider": ("PANEL LÍDER · acciones", set(), _PANEL_LIDER_COLS),
     "futuros": ("FUTUROS DLR (Matba/Rofex)", set(), _FUTUROS_COLS),
+    "bei_tenor": ("BEI POR TENOR (NSS + Fisher)", set(), _BEI_TENOR_COLS),
+    "bei_sendero": ("SENDERO MENSUAL · BEI vs REM-BCRA", set(), _BEI_SENDERO_COLS),
+    "bei_pares": ("MÉTODO DE PARES (cross-check NT8 §A)", set(), _BEI_PARES_COLS),
 }
 PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreales",
-               "valor_relativo", "panel_lider", "futuros"]
+               "valor_relativo", "panel_lider", "futuros",
+               "bei_tenor", "bei_sendero", "bei_pares"]
 
 # Grupos para el ajuste de curva log (TIR = a + b·ln(MD)) — un fit por grupo.
 # Sólo curvas peso de flavor único (Tasa Fija nominal, CER real): los soberanos
@@ -353,11 +387,33 @@ def _build_futuros_rows(rofex, fx, bcra) -> List[dict]:
     return rows
 
 
+def _build_bei_rows(panel_id: str, state) -> List[dict]:
+    """Filas de los paneles BEI desde las tablas de compute_bei_tables (AppState).
+    Los valores vienen en decimales → las columnas percent se escalan ×100."""
+    tables = state.bei_tables()
+    if not tables:
+        return []
+    cols = PANELS[panel_id][2]
+    rows = []
+    for r in tables.get(_BEI_TABLE_KEY[panel_id], []):
+        cells = []
+        for c in cols:
+            raw = r.get(c["key"])
+            if c["kind"] in ("percent", "percent_signed") and raw is not None:
+                raw = raw * 100
+            cells.append({"text": _fmt(raw, c["kind"], c.get("decimals", 2)),
+                          "cls": _cell_class(raw, c["kind"])})
+        rows.append({"ticker": r.get(cols[0]["key"]), "cells": cells, "clickable": False})
+    return rows
+
+
 def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
     if panel_id == "valor_relativo":
         return _build_rv_rows(state)
     if panel_id == "panel_lider":
         return _build_panel_lider_rows(provider)
+    if panel_id in _BEI_TABLE_KEY:
+        return _build_bei_rows(panel_id, state)
     if panel_id not in PANELS:
         return []
     _title, types, cols = PANELS[panel_id]

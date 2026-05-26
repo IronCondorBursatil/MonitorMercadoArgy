@@ -103,6 +103,27 @@ def test_futuros_rows_resilient():
     assert panels._build_futuros_rows(_Boom(), None, None) == []
 
 
+def test_bei_rows_scaling_and_empty():
+    class _S:
+        def bei_tables(self):
+            return {"tenor": [{
+                "plazo": "3M", "dias": 91, "tea_nominal": 0.25, "tea_real": -0.05,
+                "tamar_fwd": 0.23, "bei_spot": 0.31, "bei_fwd": 0.30, "bei_g_adj": 0.29,
+                "bei_tamar": 0.30, "dev_implicita": 0.40, "tc_real": -0.02,
+            }]}
+
+    rows = panels._build_bei_rows("bei_tenor", _S())
+    assert len(rows) == 1
+    assert any(c["text"] == "25.00%" for c in rows[0]["cells"])   # 0.25 decimal → 25.00%
+    assert rows[0]["clickable"] is False
+
+    class _E:
+        def bei_tables(self):
+            return None
+
+    assert panels._build_bei_rows("bei_tenor", _E()) == []
+
+
 def test_index_and_fragment_routes():
     with TestClient(app) as c:
         r = c.get("/")

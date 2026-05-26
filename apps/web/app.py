@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -62,6 +63,31 @@ async def _refresh_loop(app: FastAPI) -> None:
             logger.exception("refresh loop iteration failed")
 
 
+async def _bei_loop(app: FastAPI) -> None:
+    """Loop dedicado de BEI (pesado: bootstrap + NSS fits). Corre 1× al arranque
+    y luego cada bei_refresh_sec. Reemplaza el daemon _bei_refresh_loop."""
+    from apps.cli.monitors.bei import compute_bei_tables
+    from core.infrastructure.repositories import Data912MarketDataProvider
+    from core.use_cases.generate_report import GenerateMonitorReport
+
+    repo = get_repo()
+    bcra = app.state.indices
+    first = True
+    while True:
+        if not first:
+            await asyncio.sleep(settings.bei_refresh_sec)
+        first = False
+        try:
+            use_case = GenerateMonitorReport(repo, Data912MarketDataProvider())
+            tables = await asyncio.to_thread(
+                compute_bei_tables, use_case=use_case, indices_provider=bcra)
+            app.state.app_state.set_bei(tables)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("BEI loop iteration failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from core.infrastructure.fx_provider import DolarAPIProvider
@@ -78,15 +104,21 @@ async def lifespan(app: FastAPI):
     app.state.indices = BCRAIndicesProvider(excel_repo=repo)
     app.state.fx = DolarAPIProvider()
     app.state.rofex = RofexProvider()  # WS Matba lazy (warmup en el 1er get_quotes)
-    refresh = asyncio.create_task(_refresh_loop(app))
+    # En tests (MONITOR_DISABLE_LOOPS=1) NO arrancamos los loops: corren pricing
+    # con indices reales en background y contaminan los caches de módulo
+    # (p.ej. el avg TAMAR), rompiendo la aislación del test de equivalencia.
+    tasks = []
+    if not os.environ.get("MONITOR_DISABLE_LOOPS"):
+        tasks = [asyncio.create_task(_refresh_loop(app)), asyncio.create_task(_bei_loop(app))]
     try:
         yield
     finally:
-        refresh.cancel()
-        try:
-            await refresh
-        except asyncio.CancelledError:
-            pass
+        for task in tasks:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await app.state.client.aclose()
 
 

@@ -16,6 +16,7 @@ class AppState:
         self._metrics: List[InstrumentMetrics] = []
         self._by_ticker: Dict[str, InstrumentMetrics] = {}
         self._last_refresh: Optional[datetime] = None
+        self._bei: Optional[dict] = None  # tablas crudas de compute_bei_tables
         self._lock = asyncio.Lock()
 
     async def update(self, metrics: List[InstrumentMetrics]) -> None:
@@ -42,3 +43,9 @@ class AppState:
     @property
     def last_refresh(self) -> Optional[datetime]:
         return self._last_refresh
+
+    def set_bei(self, tables: Optional[dict]) -> None:
+        self._bei = tables  # un solo escritor (el BEI loop); asignación atómica
+
+    def bei_tables(self) -> Optional[dict]:
+        return self._bei
