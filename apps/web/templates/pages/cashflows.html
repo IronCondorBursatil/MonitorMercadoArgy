@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% macro num(v, d=2) %}{% if v is none %}—{% else %}{{ ('%.' ~ d ~ 'f')|format(v) }}{% endif %}{% endmacro %}
+{% block content %}
+<main style="display:block">
+  <section class="panel" style="margin:14px">
+    <div class="panel-head">CASHFLOWS · próximos {{ days }} días ({{ events|length }} eventos)</div>
+    <table>
+      <thead><tr>
+        <th>Fecha</th><th>Ticker</th><th>Concepto</th><th>Mon</th>
+        <th>Amort.</th><th>Renta</th><th>Total</th>
+      </tr></thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td>{{ e.date.strftime("%d/%m/%y") }}</td>
+          <td class="tk"><a hx-get="/bond/{{ e.ticker }}/detail" hx-target="#modal" hx-swap="innerHTML">{{ e.ticker }}</a></td>
+          <td>{{ e.concepto }}</td>
+          <td>{{ e.ccy }}</td>
+          <td class="num">{{ num(e.amort) }}</td>
+          <td class="num">{{ num(e.interest) }}</td>
+          <td class="num">{{ num(e.total) }}</td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="7">Sin flujos en el horizonte</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+{% endblock %}

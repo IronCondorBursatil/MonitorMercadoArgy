@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% macro num(v, d=2) %}{% if v is none %}—{% else %}{{ ('%.' ~ d ~ 'f')|format(v) }}{% endif %}{% endmacro %}
+{% macro money(v) %}{% if v is none %}—{% else %}{{ '{:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+{% block content %}
+<main style="display:block">
+  <div class="cards">
+    <div class="card"><div class="k">Reservas brutas (USD mm)</div>
+      <div class="v">{{ money(reservas) }}
+        {% if reservas_delta is not none %}<small class="{{ 'pos' if reservas_delta>0 else ('neg' if reservas_delta<0 else '') }}">{{ '%+.0f'|format(reservas_delta) }}</small>{% endif %}
+      </div></div>
+    <div class="card"><div class="k">A3500 (mayorista)</div><div class="v">{{ num(a3500) }}</div></div>
+    <div class="card"><div class="k">TAMAR (TNA %)</div><div class="v">{{ num(tamar) }}%</div></div>
+    <div class="card"><div class="k">CER (último)</div><div class="v">{{ num(cer, 4) }}</div></div>
+  </div>
+
+  <div class="bcra-grid">
+    {% for title, rows, dec in [("RESERVAS (30d)", reservas_hist, 0), ("TAMAR TNA% (30d)", tamar_hist, 2), ("A3500 (30d)", a3500_hist, 2)] %}
+    <section class="panel">
+      <div class="panel-head">{{ title }}</div>
+      <table>
+        <thead><tr><th>Fecha</th><th>Valor</th></tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr><td>{{ r.fecha }}</td><td class="num">{{ ('%.' ~ dec ~ 'f')|format(r.valor) }}</td></tr>
+          {% else %}
+          <tr class="empty"><td colspan="2">Sin datos</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endfor %}
+  </div>
+</main>
+<style>
+  .cards { display:flex; gap:12px; flex-wrap:wrap; padding:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 14px; min-width:170px; }
+  .card .k { color:var(--mut); font-size:11px; } .card .v { font-size:20px; font-variant-numeric:tabular-nums; margin-top:2px; }
+  .bcra-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:14px; padding:0 14px 14px; }
+</style>
+{% endblock %}

@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from apps.web.deps import get_repo, get_state
-from apps.web.routers import bonds, cartera, panels
+from apps.web.routers import bcra, bonds, cartera, cashflows, panels
 from apps.web.state import AppState
 from config.settings import settings
 from core.domain.instrument_groups import (
@@ -93,6 +93,8 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent /
 app.include_router(panels.router)
 app.include_router(bonds.router)
 app.include_router(cartera.router)
+app.include_router(bcra.router)
+app.include_router(cashflows.router)
 
 
 @app.get("/api/health")
