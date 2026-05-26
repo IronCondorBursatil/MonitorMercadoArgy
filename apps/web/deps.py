@@ -41,3 +41,7 @@ def get_fx(request: Request):
 
 def get_rofex(request: Request):
     return request.app.state.rofex
+
+
+def get_cafci(request: Request):
+    return request.app.state.cafci

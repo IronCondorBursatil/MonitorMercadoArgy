@@ -28,7 +28,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from apps.web.deps import get_repo, get_state
-from apps.web.routers import abm, bcra, bonds, cartera, cashflows, curva, escenarios, panels
+from apps.web.routers import (
+    abm, bcra, bonds, cartera, cashflows, curva, escenarios, fci, panels,
+)
 from apps.web.state import AppState
 from config.settings import settings
 from core.domain.instrument_groups import (
@@ -88,6 +90,7 @@ async def _bei_loop(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from core.infrastructure.cafci_provider import CAFCIProvider
     from core.infrastructure.fx_provider import DolarAPIProvider
     from core.infrastructure.futures_provider import RofexProvider
     from core.infrastructure.indices_provider import BCRAIndicesProvider
@@ -102,6 +105,7 @@ async def lifespan(app: FastAPI):
     app.state.indices = BCRAIndicesProvider(excel_repo=repo)
     app.state.fx = DolarAPIProvider()
     app.state.rofex = RofexProvider()  # WS Matba lazy (warmup en el 1er get_quotes)
+    app.state.cafci = CAFCIProvider()  # FCI: hidrata de disco / fetch 1×/día
     # En tests (MONITOR_DISABLE_LOOPS=1) NO arrancamos los loops: corren pricing
     # con indices reales en background y contaminan los caches de módulo
     # (p.ej. el avg TAMAR), rompiendo la aislación del test de equivalencia.
@@ -129,6 +133,7 @@ app.include_router(bcra.router)
 app.include_router(cashflows.router)
 app.include_router(escenarios.router)
 app.include_router(curva.router)
+app.include_router(fci.router)
 app.include_router(abm.router)
 
 
