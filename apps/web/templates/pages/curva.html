@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+{% block content %}
+<main style="display:block">
+  <section class="panel" style="margin:14px">
+    <div class="panel-head">
+      <span>CURVA · TIR vs MD</span>
+      <select id="curva-grupo" style="margin-left:auto">
+        {% for g in groups %}<option value="{{ g.key }}">{{ g.label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div style="padding:16px; height:560px; background:var(--panel-bg)">
+      <canvas id="curva-canvas"></canvas>
+    </div>
+  </section>
+</main>
+<script>
+  let chart = null;
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  async function loadCurva() {
+    const g = document.getElementById("curva-grupo").value;
+    let d;
+    try { d = await (await fetch("/curva/data?grupo=" + g, { cache: "no-store" })).json(); }
+    catch (e) { return; }
+    const accent = cssVar("--accent") || "#3a5fcf";
+    const txt = cssVar("--text-dim") || "#4a5780";
+    const grid = cssVar("--panel-border") || "#d2d8e6";
+    const data = {
+      datasets: [
+        { label: "ajuste log", type: "line", data: d.fit, showLine: true, pointRadius: 0,
+          borderColor: accent, borderWidth: 1.5, borderDash: [5, 4], tension: 0.3 },
+        { label: d.label, data: d.points, backgroundColor: accent, pointRadius: 5, pointHoverRadius: 7 },
+      ],
+    };
+    const opts = {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { title: { display: true, text: "Modified Duration (años)", color: txt },
+             ticks: { color: txt }, grid: { color: grid } },
+        y: { title: { display: true, text: "TIR (%)", color: txt },
+             ticks: { color: txt }, grid: { color: grid } },
+      },
+      plugins: {
+        legend: { labels: { color: txt } },
+        tooltip: { callbacks: { label: (c) => (c.raw.ticker ? c.raw.ticker + ": " : "") +
+                   "MD " + c.raw.x + " · TIR " + c.raw.y + "%" } },
+      },
+    };
+    if (chart) { chart.data = data; chart.options = opts; chart.update(); }
+    else { chart = new Chart(document.getElementById("curva-canvas"), { type: "scatter", data, options: opts }); }
+  }
+  document.getElementById("curva-grupo").addEventListener("change", loadCurva);
+  loadCurva();
+  setInterval(loadCurva, 30000);
+</script>
+{% endblock %}
