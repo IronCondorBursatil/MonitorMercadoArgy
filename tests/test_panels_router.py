@@ -53,6 +53,28 @@ def test_build_rows_for_cer_panel():
     assert tir_cell is not None
 
 
+def test_valor_relativo_rich_cheap():
+    # Curva CER (peso real, flavor único): 3 en curva + 1 claramente barato.
+    state = _StubState([
+        _metric("A1", "BONCER", 100, 0.10, 1.0, 100, 1.0),
+        _metric("A2", "BONCER", 100, 0.12, 2.0, 100, 1.0),
+        _metric("A3", "BONCER", 100, 0.13, 3.0, 100, 1.0),
+        _metric("A4", "BONCER", 100, 0.30, 2.0, 100, 1.0),  # cheap: spread > 0
+    ])
+    rv = panels._rv_map(state)
+    assert rv["A4"]["spread"] is not None and rv["A4"]["spread"] > 0
+    rows = panels._build_rv_rows(state)
+    assert rows and rows[0]["ticker"] == "A4"  # el más barato va primero
+    # Los soberanos hard-dollar NO entran al rich/cheap (curvas peso únicamente).
+    sob = _StubState([_metric("AL30", "BONAR", 100, 0.10, 1.0, 100, 1.0)])
+    assert panels._build_rv_rows(sob) == []
+
+
+def test_valor_relativo_too_few_points_no_spread():
+    state = _StubState([_metric("X1", "BONCER", 100, 0.10, 1.0, 100, 1.0)])
+    assert panels._build_rv_rows(state) == []  # <3 puntos → sin fit
+
+
 def test_index_and_fragment_routes():
     with TestClient(app) as c:
         r = c.get("/")

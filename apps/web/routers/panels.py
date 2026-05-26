@@ -10,15 +10,18 @@ fragmentos server-side. Reusa los InstrumentMetrics ya calculados en AppState
 
 from __future__ import annotations
 
+import math
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
+import numpy as np
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_state
+from core.domain.portfolio import position_currency
 from core.domain.services import FinancialEngine
 
 router = APIRouter()
@@ -74,6 +77,15 @@ _TAMAR_COLS = [
     {"key": "volume", "label": "Vol $", "kind": "volume"},
 ]
 
+_VR_COLS = [
+    {"key": "ticker", "label": "Ticker", "kind": "text"},
+    {"key": "grupo", "label": "Tipo", "kind": "text"},
+    {"key": "duration", "label": "MD", "kind": "number", "decimals": 2},
+    {"key": "tir", "label": "TIR", "kind": "percent", "decimals": 2},
+    {"key": "spread_curva", "label": "vs curva", "kind": "percent_signed", "decimals": 2},
+    {"key": "carry_roll", "label": "C+R 30d", "kind": "percent_signed", "decimals": 2},
+]
+
 # id -> (título, {instrument_types}, columnas)
 PANELS = {
     "bonares": ("BONARES Y GLOBALES", {"BONAR", "GLOBAL"}, _BONARES_COLS),
@@ -82,8 +94,85 @@ PANELS = {
     "tasa_fija": ("TASA FIJA", {"LECAP", "BONCAP", "BONOFIJA"}, _TASA_FIJA_COLS),
     "dolar_linked": ("DOLAR LINKED", {"DOLAR_LINKED"}, _BONARES_COLS),
     "tamar": ("TAMAR / DUAL", {"PURO", "DUAL", "DUAL_CER_TAMAR"}, _TAMAR_COLS),
+    "valor_relativo": ("VALOR RELATIVO · rich / cheap (curvas peso)", set(), _VR_COLS),
 }
-PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreales"]
+PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreales", "valor_relativo"]
+
+# Grupos para el ajuste de curva log (TIR = a + b·ln(MD)) — un fit por grupo.
+# Sólo curvas peso de flavor único (Tasa Fija nominal, CER real): los soberanos
+# hard-dollar conviven en 3 flavors (peso/MEP/cable) con escalas de precio/TIR
+# distintas, y mezclarlos da rich/cheap sin sentido. El rich/cheap de soberanos
+# requiere la metodología exacta del server (universo curado) — pendiente.
+_RV_GROUPS = {
+    "Tasa Fija": {"LECAP", "BONCAP", "BONOFIJA"},
+    "CER": {"CER", "LECER", "BONCER", "BONCER ZC", "CON CUPON", "STEP-UP"},
+}
+_ONE_MONTH_YEARS = 1.0 / 12.0
+
+
+def _fit_log_curve(metrics) -> Optional[tuple]:
+    """TIR = a + b·ln(MD) sobre los (MD, TIR) del grupo. None si <3 puntos."""
+    pairs = [(m.duration, m.tir) for m in metrics
+             if m.duration and m.duration > 0 and m.tir is not None]
+    if len(pairs) < 3:
+        return None
+    try:
+        ln_dm = np.array([math.log(d) for d, _ in pairs])
+        tirs = np.array([t for _, t in pairs])
+        b, a = np.polyfit(ln_dm, tirs, 1)
+        return float(a), float(b)
+    except Exception:
+        return None
+
+
+def _spread_carry(m, fit) -> tuple:
+    """(spread_curva, carry_roll) en decimales. spread = TIR − TIR_curva."""
+    if fit is None or not m.duration or m.duration <= 0 or m.tir is None:
+        return None, None
+    a, b = fit
+    try:
+        tir_fitted = a + b * math.log(m.duration)
+        spread = m.tir - tir_fitted
+        carry = None
+        tem = FinancialEngine.tea_to_tem(m.tir)
+        dm_rolled = m.duration - _ONE_MONTH_YEARS
+        if tem is not None and dm_rolled > 0.001:
+            tir_rolled = a + b * math.log(dm_rolled)
+            roll_down = -m.duration * (tir_rolled - m.tir)
+            carry = tem + roll_down
+        return spread, carry
+    except Exception:
+        return None, None
+
+
+def _rv_map(state) -> dict:
+    """{ticker: {"grupo", "spread"(%u), "carry"(%u)}} vía fit log por (grupo, moneda).
+
+    Bucketea por moneda: mezclar globals USD (~9%) con soberanos ARS (~60%) en
+    una sola curva da spreads sin sentido. Cada curva se ajusta sobre un universo
+    de rendimiento homogéneo.
+    """
+    by_bucket: dict = {}
+    for m in state.metrics():
+        inst = m.snapshot.instrument if m.snapshot else None
+        if not inst:
+            continue
+        for label, types in _RV_GROUPS.items():
+            if inst.instrument_type in types:
+                ccy = position_currency(inst.instrument_type, inst.ticker)
+                by_bucket.setdefault((label, ccy), []).append(m)
+                break
+    out: dict = {}
+    for (label, _ccy), ms in by_bucket.items():
+        fit = _fit_log_curve(ms)
+        for m in ms:
+            sp, ca = _spread_carry(m, fit)
+            out[m.snapshot.instrument.ticker] = {
+                "grupo": label,
+                "spread": sp * 100 if sp is not None else None,
+                "carry": ca * 100 if ca is not None else None,
+            }
+    return out
 
 
 def _next_coupon_date(inst, today: date) -> Optional[date]:
@@ -157,7 +246,33 @@ def _cell_class(value, kind: str) -> str:
     return ""
 
 
+def _build_rv_rows(state) -> List[dict]:
+    """Filas del panel valor_relativo: todos los bonos con su spread vs curva
+    (por grupo), ordenados del más barato (spread > 0) al más caro."""
+    rv = _rv_map(state)
+    by_ticker = {m.snapshot.instrument.ticker: m for m in state.metrics()
+                 if m.snapshot and m.snapshot.instrument}
+    rows = []
+    for tk, info in rv.items():
+        if info["spread"] is None:
+            continue
+        m = by_ticker.get(tk)
+        if m is None:
+            continue
+        raw = {
+            "ticker": tk, "grupo": info["grupo"], "duration": m.duration,
+            "tir": _pct(m.tir), "spread_curva": info["spread"], "carry_roll": info["carry"],
+        }
+        cells = [{"text": _fmt(raw[c["key"]], c["kind"], c.get("decimals", 2)),
+                  "cls": _cell_class(raw[c["key"]], c["kind"])} for c in _VR_COLS]
+        rows.append({"ticker": tk, "cells": cells, "_spread": info["spread"]})
+    rows.sort(key=lambda r: r["_spread"], reverse=True)
+    return rows
+
+
 def _build_rows(panel_id: str, state) -> List[dict]:
+    if panel_id == "valor_relativo":
+        return _build_rv_rows(state)
     if panel_id not in PANELS:
         return []
     _title, types, cols = PANELS[panel_id]
