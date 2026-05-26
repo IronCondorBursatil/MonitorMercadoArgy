@@ -75,6 +75,23 @@ def test_valor_relativo_too_few_points_no_spread():
     assert panels._build_rv_rows(state) == []  # <3 puntos → sin fit
 
 
+def test_panel_lider_rows_from_stub_provider():
+    from core.domain.instrument_groups import PANEL_LIDER
+    from core.domain.models import MarketSnapshot
+
+    class _StubProv:
+        def fetch_snapshots(self, tickers):
+            return {tickers[0]: MarketSnapshot(price=100.0, bid=99.0, ask=101.0,
+                                               volume=1_000_000.0, operations=50, change_pct=1.2)}
+
+    rows = panels._build_panel_lider_rows(_StubProv())
+    assert len(rows) == 1
+    assert rows[0]["ticker"] == PANEL_LIDER[0]
+    assert rows[0]["clickable"] is False                     # acciones no abren popup
+    assert any(c["text"] == "100.00" for c in rows[0]["cells"])  # mid = (99+101)/2
+    assert panels._build_panel_lider_rows(None) == []        # sin provider → vacío
+
+
 def test_index_and_fragment_routes():
     with TestClient(app) as c:
         r = c.get("/")

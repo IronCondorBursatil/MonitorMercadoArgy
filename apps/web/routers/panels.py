@@ -20,7 +20,8 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from apps.web.deps import get_state
+from apps.web.deps import get_provider, get_state
+from core.domain.instrument_groups import PANEL_LIDER
 from core.domain.portfolio import position_currency
 from core.domain.services import FinancialEngine
 
@@ -85,6 +86,15 @@ _VR_COLS = [
     {"key": "spread_curva", "label": "vs curva", "kind": "percent_signed", "decimals": 2},
     {"key": "carry_roll", "label": "C+R 30d", "kind": "percent_signed", "decimals": 2},
 ]
+_PANEL_LIDER_COLS = [
+    {"key": "ticker", "label": "Ticker", "kind": "text"},
+    {"key": "bid", "label": "Compra", "kind": "number", "decimals": 2},
+    {"key": "ask", "label": "Venta", "kind": "number", "decimals": 2},
+    {"key": "mid", "label": "Mid", "kind": "number", "decimals": 2},
+    {"key": "change_pct", "label": "Día %", "kind": "percent_signed", "decimals": 2},
+    {"key": "volume", "label": "Vol $", "kind": "volume"},
+    {"key": "operations", "label": "Ops", "kind": "number", "decimals": 0},
+]
 
 # id -> (título, {instrument_types}, columnas)
 PANELS = {
@@ -95,8 +105,10 @@ PANELS = {
     "dolar_linked": ("DOLAR LINKED", {"DOLAR_LINKED"}, _BONARES_COLS),
     "tamar": ("TAMAR / DUAL", {"PURO", "DUAL", "DUAL_CER_TAMAR"}, _TAMAR_COLS),
     "valor_relativo": ("VALOR RELATIVO · rich / cheap (curvas peso)", set(), _VR_COLS),
+    "panel_lider": ("PANEL LÍDER · acciones", set(), _PANEL_LIDER_COLS),
 }
-PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreales", "valor_relativo"]
+PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreales",
+               "valor_relativo", "panel_lider"]
 
 # Grupos para el ajuste de curva log (TIR = a + b·ln(MD)) — un fit por grupo.
 # Sólo curvas peso de flavor único (Tasa Fija nominal, CER real): los soberanos
@@ -270,9 +282,34 @@ def _build_rv_rows(state) -> List[dict]:
     return rows
 
 
-def _build_rows(panel_id: str, state) -> List[dict]:
+def _build_panel_lider_rows(provider) -> List[dict]:
+    """Acciones del Panel Líder desde el cache de Data912 (/arg_stocks vía
+    fetch_snapshots). No tocan el repo de bonos → no son clickables al popup."""
+    if provider is None:
+        return []
+    try:
+        snaps = provider.fetch_snapshots(PANEL_LIDER)
+    except Exception:
+        return []
+    rows = []
+    for tk in PANEL_LIDER:
+        s = snaps.get(tk)
+        if s is None:
+            continue
+        mid = ((s.bid + s.ask) / 2.0) if (s.bid and s.ask) else (s.price or None)
+        raw = {"ticker": tk, "bid": s.bid, "ask": s.ask, "mid": mid,
+               "change_pct": s.change_pct, "volume": s.volume, "operations": s.operations}
+        cells = [{"text": _fmt(raw[c["key"]], c["kind"], c.get("decimals", 2)),
+                  "cls": _cell_class(raw[c["key"]], c["kind"])} for c in _PANEL_LIDER_COLS]
+        rows.append({"ticker": tk, "cells": cells, "clickable": False})
+    return rows
+
+
+def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
     if panel_id == "valor_relativo":
         return _build_rv_rows(state)
+    if panel_id == "panel_lider":
+        return _build_panel_lider_rows(provider)
     if panel_id not in PANELS:
         return []
     _title, types, cols = PANELS[panel_id]
@@ -305,9 +342,10 @@ def index(request: Request, state=Depends(get_state)):
 
 
 @router.get("/panels/{panel_id}/rows", response_class=HTMLResponse)
-def panel_rows(panel_id: str, request: Request, state=Depends(get_state)):
+def panel_rows(panel_id: str, request: Request, state=Depends(get_state),
+               provider=Depends(get_provider)):
     cols = PANELS.get(panel_id, (None, None, []))[2]
     return _TEMPLATES.TemplateResponse(
         request, "fragments/panel_rows.html",
-        {"rows": _build_rows(panel_id, state), "ncols": len(cols)},
+        {"rows": _build_rows(panel_id, state, provider), "ncols": len(cols)},
     )
