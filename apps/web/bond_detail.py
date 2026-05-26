@@ -116,7 +116,7 @@ def _resolve_instrument_and_leg(ticker: str, repo, indices):
         return None
     instrument, indices_override = _apply_leg(instrument, leg)
     indices_eff = indices_override if indices_override is not None else indices
-    return base_ticker, instrument, indices_eff
+    return base_ticker, instrument, indices_eff, leg, ticker_u
 
 
 def _cupon_label(instrument: Instrument) -> str:
@@ -456,7 +456,7 @@ def get_bond_detail(
     resolved = _resolve_instrument_and_leg(ticker, repo, indices)
     if resolved is None:
         return None
-    base_ticker, instrument, indices_eff = resolved
+    base_ticker, instrument, indices_eff, leg, ticker_u = resolved
 
     ref_date = _resolve_ref(settlement_lag)
     snapshots = provider.fetch_snapshots([base_ticker])
@@ -526,7 +526,7 @@ def calculate(
     resolved = _resolve_instrument_and_leg(ticker, repo, indices)
     if resolved is None:
         return None
-    base_ticker, instrument, indices_eff = resolved
+    base_ticker, instrument, indices_eff, leg, ticker_u = resolved
 
     ref_date = _resolve_ref(settlement_lag)
 
@@ -675,7 +675,7 @@ def cer_return_scenarios(
     resolved = _resolve_instrument_and_leg(ticker, repo, indices)
     if resolved is None:
         return None
-    base_ticker, instrument, indices_eff = resolved
+    base_ticker, instrument, indices_eff, leg, ticker_u = resolved
 
     empty = {"rows": []}
     if not _is_cer_type(instrument.instrument_type) or not instrument.cer_base:

@@ -123,7 +123,7 @@ class MarketSnapshot(BaseModel):
     model_config = ConfigDict(frozen=False)  # `instrument` se setea post-fetch
 
     instrument: Optional[Instrument] = None
-    price: float = 0.0
+    price: Optional[float] = None  # None cuando no hay snapshot live (bond_detail popup)
     last_update: Optional[_date] = None
     bid: Optional[float] = None
     ask: Optional[float] = None
