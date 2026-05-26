@@ -1,24 +1,32 @@
 # Monitor de Bonos · Balanz — dependencias de runtime.
-# Versiones pinneadas a las del entorno de desarrollo (mayo 2026).
+# Python 3.12 del sistema, SIN venv (límite OneDrive). En esta máquina el
+# runtime es el "Microsoft Store" Python 3.12, no el de Programs — instalar con:
+#   & "$env:LOCALAPPDATA\Microsoft\WindowsApps\python3.12.exe" -m pip install -r requirements.txt
 
-# Datos numéricos / financieros
-numpy==2.4.6
-pandas==3.0.3
-scipy==1.17.1
+# --- núcleo financiero (sin cambios) ---
+numpy
+scipy
+pandas
+python-dateutil
+holidays
+pandas-market-calendars
+openpyxl                 # solo seeding (scripts/ingest_master.py)
+websockets               # futures_provider
 
-# Excel (instruments_master.xlsx, export de feriados)
-openpyxl==3.1.5
+# --- nuevas (reingeniería) ---
+fastapi
+uvicorn[standard]
+httpx
+jinja2
+python-multipart
+sse-starlette
+duckdb
+SQLAlchemy>=2
+pydantic>=2
+pydantic-settings
 
-# Calendarios de mercado / feriados (BYMA)
-holidays==0.97
-pandas-market-calendars==5.3.2
-python-dateutil==2.9.0.post0
+# --- HTTP legacy (se elimina en Fase 3 al borrar core/infrastructure/_http.py) ---
+requests
 
-# HTTP (data912, BCRA)
-requests==2.34.2
-
-# WebSocket público Matba/Primary (curva de futuros DLR — futures_provider.py)
-websockets==16.0
-
-# Tests
-pytest==9.0.3
+# --- dev ---
+pytest
