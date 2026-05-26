@@ -1,0 +1,89 @@
+{% macro pct(v) %}{% if v is none %}—{% else %}{{ '%.2f'|format(v * 100) }}%{% endif %}{% endmacro %}
+{% macro num(v, d=2) %}{% if v is none %}—{% else %}{{ ('%.' ~ d ~ 'f')|format(v) }}{% endif %}{% endmacro %}
+{% set m = d.metrics %}
+{% set meta = d.meta %}
+<div class="modal-overlay" onclick="if(event.target===this)document.getElementById('modal').innerHTML=''">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div><b>{{ d.ticker }}</b> <span class="mut">{{ meta.short_name }}</span></div>
+      <div class="toggle">
+        <button hx-get="/bond/{{ d.ticker }}/detail?lag=0" hx-target="#modal" hx-swap="innerHTML"
+                class="{{ 'on' if lag == 0 else '' }}">T+0</button>
+        <button hx-get="/bond/{{ d.ticker }}/detail?lag=1" hx-target="#modal" hx-swap="innerHTML"
+                class="{{ 'on' if lag == 1 else '' }}">T+1</button>
+        <button class="x" onclick="document.getElementById('modal').innerHTML=''">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="md-cols">
+        <section>
+          <h4>Descripción</h4>
+          <dl>
+            <dt>Tipo</dt><dd>{{ meta.instrument_type }}{% if meta.category %} · {{ meta.category }}{% endif %}</dd>
+            <dt>Moneda</dt><dd>{{ meta.currency }}</dd>
+            <dt>Emisión</dt><dd>{{ meta.fecha_emision or '—' }}</dd>
+            <dt>Vencimiento</dt><dd>{{ meta.fecha_vencimiento or '—' }}</dd>
+            <dt>Frecuencia</dt><dd>{{ meta.payment_frequency }}/año</dd>
+            <dt>Cupón</dt><dd>{{ meta.cupon }}</dd>
+            {% if meta.cer_base is defined %}<dt>CER base</dt><dd>{{ num(meta.cer_base, 4) }} (lag {{ meta.cer_lag }})</dd>{% endif %}
+            {% if meta.spread_rate is defined %}<dt>Spread TAMAR</dt><dd>{{ pct(meta.spread_rate) }}</dd>{% endif %}
+            {% if meta.cer_spread is defined %}<dt>Spread CER</dt><dd>{{ pct(meta.cer_spread) }}</dd>{% endif %}
+            {% if meta.floor_rate_monthly is defined %}<dt>Floor mensual</dt><dd>{{ pct(meta.floor_rate_monthly) }}</dd>{% endif %}
+          </dl>
+        </section>
+        <section>
+          <h4>Métricas (settle {{ d.settle_date }})</h4>
+          <dl class="metrics">
+            <dt>Precio</dt><dd>{{ num(d.market.price) }}</dd>
+            <dt>TIR (TEA)</dt><dd>{{ pct(m.tir) }}</dd>
+            <dt>TNA 365</dt><dd>{{ pct(m.tna) }}</dd>
+            <dt>TEM 365</dt><dd>{{ pct(m.tem) }}</dd>
+            <dt>TNA m=12</dt><dd>{{ pct(m.tna_mensual) }}</dd>
+            <dt>TEM m=12</dt><dd>{{ pct(m.tem_360) }}</dd>
+            <dt>MD</dt><dd>{{ num(m.duration) }}</dd>
+            <dt>V.Téc</dt><dd>{{ num(m.technical_value) }}</dd>
+            <dt>Paridad</dt><dd>{{ pct(m.parity) }}</dd>
+            <dt>Int. corridos</dt><dd>{{ num(m.accrued_interest) }}</dd>
+            <dt>V. Residual</dt><dd>{{ num(m.residual_nominal) }}</dd>
+            <dt>DV01</dt><dd>{{ num(m.dv01, 4) }}</dd>
+            <dt>Convexidad</dt><dd>{{ num(m.convexity) }}</dd>
+            {% if m.spread_mercado is not none %}<dt>Spread mdo</dt><dd>{{ pct(m.spread_mercado) }}</dd>{% endif %}
+          </dl>
+        </section>
+      </div>
+
+      <section class="calc">
+        <h4>Calculadora</h4>
+        <form hx-post="/bond/{{ d.ticker }}/metrics" hx-target="#calc-result" hx-swap="innerHTML">
+          <input type="hidden" name="settlement_lag" value="{{ d.settlement_lag }}">
+          <label>Precio <input name="price" type="number" step="0.01" value="{{ d.market.price or '' }}"></label>
+          <button type="submit">→ TIR/métricas</button>
+        </form>
+        <form hx-post="/bond/{{ d.ticker }}/metrics" hx-target="#calc-result" hx-swap="innerHTML">
+          <input type="hidden" name="settlement_lag" value="{{ d.settlement_lag }}">
+          <label>TIR % <input name="tir_pct" type="number" step="0.01"></label>
+          <button type="submit">→ Precio/métricas</button>
+        </form>
+        <div id="calc-result"></div>
+      </section>
+
+      <section>
+        <h4>Cashflows</h4>
+        <table class="cf">
+          <thead><tr><th>Fecha</th><th>Concepto</th><th>Amort.</th><th>Renta</th><th>Total</th><th>V.R.</th></tr></thead>
+          <tbody>
+            {% for cf in d.cashflows %}
+            <tr class="{{ 'past' if cf.is_past else '' }} {{ 'next' if cf.is_next else '' }}">
+              <td>{{ cf.date }}</td><td>{{ cf.label }}</td>
+              <td class="num">{{ num(cf.amortization) }}</td>
+              <td class="num">{{ num(cf.interest) }}</td>
+              <td class="num">{{ num(cf.total) }}</td>
+              <td class="num">{{ num(cf.vr_cartera) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+</div>

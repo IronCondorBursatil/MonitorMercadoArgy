@@ -1,0 +1,16 @@
+{% macro pct(v) %}{% if v is none %}—{% else %}{{ '%.2f'|format(v * 100) }}%{% endif %}{% endmacro %}
+{% macro num(v, d=2) %}{% if v is none %}—{% else %}{{ ('%.' ~ d ~ 'f')|format(v) }}{% endif %}{% endmacro %}
+{% if res %}
+<dl class="metrics calc-out">
+  <dt>Precio dirty</dt><dd>{{ num(res.price_dirty) }}</dd>
+  <dt>Precio clean</dt><dd>{{ num(res.price_clean) }}</dd>
+  <dt>TIR</dt><dd>{{ pct(res.tir) }}</dd>
+  <dt>TNA 365</dt><dd>{{ pct(res.tna) }}</dd>
+  <dt>TEM 365</dt><dd>{{ pct(res.tem) }}</dd>
+  <dt>MD</dt><dd>{{ num(res.duration) }}</dd>
+  <dt>V.Téc</dt><dd>{{ num(res.technical_value) }}</dd>
+  <dt>Paridad</dt><dd>{{ pct(res.parity) }}</dd>
+</dl>
+{% else %}
+<div class="err">No calculable para este instrumento / input.</div>
+{% endif %}

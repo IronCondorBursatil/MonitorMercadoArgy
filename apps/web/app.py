@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from apps.web.deps import get_repo, get_state
-from apps.web.routers import panels
+from apps.web.routers import bonds, panels
 from apps.web.state import AppState
 from config.settings import settings
 from core.domain.instrument_groups import (
@@ -64,10 +64,18 @@ async def _refresh_loop(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from core.infrastructure.fx_provider import DolarAPIProvider
+    from core.infrastructure.indices_provider import BCRAIndicesProvider
+    from core.infrastructure.repositories import Data912MarketDataProvider
+
     app.state.client = ResilientClient()
     app.state.hub = ProviderHub(app.state.client)
     app.state.app_state = AppState()
-    get_repo()  # warm: carga SQLite / siembra desde Excel
+    repo = get_repo()  # warm: carga SQLite / siembra desde Excel
+    # Providers para el popup de detalle (comparten caches class-level con el refresh).
+    app.state.provider = Data912MarketDataProvider()
+    app.state.indices = BCRAIndicesProvider(excel_repo=repo)
+    app.state.fx = DolarAPIProvider()
     refresh = asyncio.create_task(_refresh_loop(app))
     try:
         yield
@@ -83,6 +91,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Monitor Renta Fija AR", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 app.include_router(panels.router)
+app.include_router(bonds.router)
 
 
 @app.get("/api/health")

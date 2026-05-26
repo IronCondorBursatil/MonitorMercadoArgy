@@ -1,7 +1,8 @@
 {% if rows %}
   {% for r in rows %}
   <tr data-ticker="{{ r.ticker }}">
-    {% for c in r.cells %}<td class="{{ c.cls }}">{{ c.text }}</td>{% endfor %}
+    <td class="tk"><a hx-get="/bond/{{ r.ticker }}/detail" hx-target="#modal" hx-swap="innerHTML">{{ r.cells[0].text }}</a></td>
+    {% for c in r.cells[1:] %}<td class="{{ c.cls }}">{{ c.text }}</td>{% endfor %}
   </tr>
   {% endfor %}
 {% else %}

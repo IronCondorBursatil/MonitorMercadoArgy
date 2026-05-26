@@ -25,3 +25,15 @@ def get_state(request: Request):
 
 def get_hub(request: Request):
     return request.app.state.hub
+
+
+def get_provider(request: Request):
+    return request.app.state.provider
+
+
+def get_indices(request: Request):
+    return request.app.state.indices
+
+
+def get_fx(request: Request):
+    return request.app.state.fx
