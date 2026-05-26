@@ -2,6 +2,20 @@
 
 **Monitor de instrumentos de renta fija argentinos + Panel Líder + BEI extendido. Documento maestro de arquitectura.**
 
+> ⚠️ **REINGENIERÍA (`mejora.md`) IMPLEMENTADA** — branch `refactor/mejora-reingenieria`.
+> La arquitectura **actual** está en **`CLAUDE.md`** (leer primero). Cambios clave:
+> - **Pricing core**: la escalera `if _is_*_type()` de `services.py` se reemplazó por
+>   Strategy + Protocol + registry (`core/domain/pricing/`); `FinancialEngine` es ahora
+>   una fachada. Modelos → Pydantic v2. Equivalencia numérica verificada vs el motor viejo.
+> - **Persistencia**: `CatalogRepository` (SQLite, `core/infrastructure/db/`) como drop-in
+>   del Excel repo; Excel = semilla (`scripts/ingest_master.py`). DuckDB analytics.
+> - **Web**: el `http.server` + SPA (`server.py`, `app.js`, `style.css`, los HTML) fue
+>   **retirado** y reemplazado por **FastAPI + HTMX SSR** (`apps/web/app.py` + `routers/` +
+>   `templates/`). `run.py` ahora arranca uvicorn. HTTP: `requests`→`httpx`.
+> - **Las secciones de abajo sobre la capa web (server.py / app.js / Gridstack / endpoints
+>   `/api/*`) son HISTÓRICAS.** Las **convenciones financieras** (CER, TAMAR, BEI, day-counts,
+>   MD, accrued, settle T+0/T+1) SIGUEN VIGENTES — el motor preserva la matemática.
+
 ---
 
 ## VISIÓN GENERAL
@@ -469,7 +483,7 @@ REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limi
 ---
 
 **Última actualización:** 2026-05-26
-**Versión:** 6.5 — Cartera + Escenarios + Valor Relativo (ver CHANGELOG v6.5). · 6.4 — Panel FCI (CAFCI). Nueva fuente de datos: Fondos Comunes de Inversión vía el micrositio de estadísticas de CAFCI (`estadisticas.cafci.org.ar/comparador-de-fondos.json`), que bundle-a en un solo JSON diario el catálogo completo (1149 fondos / 4602 clases) + la matriz de rendimientos diaria (~3723 clases con VCP + TNA/Directo a 7d/1m/3m/6m/YTD/12m). El método histórico del repo `fedemoglia/cafci-api` (pegarle a `api.cafci.org.ar` sin auth) está muerto: ese host hoy está detrás de una CloudFront Function con allowlist de rutas (`{"error":"Route not allowed"}`). Nuevo `CAFCIProvider` (fetch 1×/día, disk-mirror, offline-friendly, prime en background), endpoints `/api/fci` + `/api/fci/<clase_id>`, panel web `fci` con filtros (tipo de renta + moneda) + buscador + toggle TNA/Directo + headers ordenables + popup de detalle. Tests en `tests/test_cafci_provider.py`.
+**Versión:** 7.0 — **Reingeniería `mejora.md`** (branch `refactor/mejora-reingenieria`): pricing core Strategy/Protocol/Pydantic (equivalencia verificada), persistencia SQLite+DuckDB (`CatalogRepository`), primitivas async (httpx/breaker/hub), y **web FastAPI + HTMX** reemplazando el http.server + SPA. **Arquitectura actual en `CLAUDE.md`.** · 6.5 — Cartera + Escenarios + Valor Relativo (ver CHANGELOG v6.5). · 6.4 — Panel FCI (CAFCI). Nueva fuente de datos: Fondos Comunes de Inversión vía el micrositio de estadísticas de CAFCI (`estadisticas.cafci.org.ar/comparador-de-fondos.json`), que bundle-a en un solo JSON diario el catálogo completo (1149 fondos / 4602 clases) + la matriz de rendimientos diaria (~3723 clases con VCP + TNA/Directo a 7d/1m/3m/6m/YTD/12m). El método histórico del repo `fedemoglia/cafci-api` (pegarle a `api.cafci.org.ar` sin auth) está muerto: ese host hoy está detrás de una CloudFront Function con allowlist de rutas (`{"error":"Route not allowed"}`). Nuevo `CAFCIProvider` (fetch 1×/día, disk-mirror, offline-friendly, prime en background), endpoints `/api/fci` + `/api/fci/<clase_id>`, panel web `fci` con filtros (tipo de renta + moneda) + buscador + toggle TNA/Directo + headers ordenables + popup de detalle. Tests en `tests/test_cafci_provider.py`.
 
 ### CHANGELOG v6.5
 
