@@ -502,8 +502,8 @@ def test_e2e_cycle() -> None:
         BOPREALES, CER, DOLAR_LINKED, DUAL_TAMAR, SOBERANOS, TAMAR, TASA_FIJA,
     )
     from core.use_cases.generate_report import GenerateMonitorReport
-    from config.settings import MASTER_XLSX
-    from apps.web.server import REFRESH_SEC
+    from config.settings import MASTER_XLSX, settings
+    REFRESH_SEC = settings.refresh_sec
 
     def go():
         # Mirror what _refresh_loop actually does in production: invalidate

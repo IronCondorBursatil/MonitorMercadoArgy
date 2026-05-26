@@ -42,6 +42,9 @@ scratch/
 # Baseline de regresión (artefacto local de Fase 0)
 baseline_tests.txt
 
+# Datos de runtime del usuario (tenencias de la cartera)
+data/cartera.json
+
 # Secrets / credentials (NEVER commit)
 .env
 .env.*

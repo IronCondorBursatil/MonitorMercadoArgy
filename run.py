@@ -1,51 +1,54 @@
-"""Entry point: arranca el dashboard web (auto-restart si crashea)."""
+"""Entry point: arranca el dashboard web FastAPI + HTMX vía uvicorn.
+
+(Cutover de la reingeniería: reemplaza el http.server + SPA por apps.web.app.
+El server viejo queda en el historial de git / branch master.)
+"""
 
 import sys
 
 # --- Guard de versión de Python -------------------------------------------- #
-# El proyecto está pinneado a Python 3.12 (ver requirements.txt). Correrlo con
-# otra versión suele romper por wheels incompatibles (numpy/scipy/pandas) o por
-# el lío "Microsoft Store Python vs Programs Python". Chequeo temprano con
-# mensaje claro ANTES de importar la stack pesada, así el error se entiende.
+# Pinneado a Python 3.12 (ver requirements.txt). En esta máquina el runtime es
+# el "Microsoft Store" Python 3.12; arrancá con run.bat o el intérprete correcto.
 if sys.version_info[:2] != (3, 12):
     raise SystemExit(
-        f"[Monitor Balanz] Requiere Python 3.12.x — estás usando "
-        f"{sys.version.split()[0]}.\n"
-        "Arrancá con run.bat (usa py -3.12 automáticamente).\n"
-        "Si no tenés Python 3.12 instalado: https://www.python.org/downloads/"
+        f"[Monitor] Requiere Python 3.12.x — estás usando {sys.version.split()[0]}.\n"
+        "Arrancá con run.bat (usa el intérprete correcto automáticamente)."
     )
 
 import logging
 import time
 
-from config.settings import setup_logging
-from apps.web.server import main as web_server_main
+from config.settings import settings, setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
 
-def run_web_supervised():
-    """Auto-restart the web server if it exits unexpectedly. Ctrl+C exits cleanly."""
+def run_web_supervised() -> None:
+    """Levanta uvicorn; reinicia si cae inesperadamente. Ctrl+C sale limpio."""
+    import uvicorn
+
     attempt = 0
     while True:
         attempt += 1
         try:
-            web_server_main()
+            # log_config=None → uvicorn no pisa nuestro setup_logging.
+            uvicorn.run("apps.web.app:app", host=settings.host, port=settings.port,
+                        log_config=None)
             logger.info("Web server stopped cleanly.")
             return
         except KeyboardInterrupt:
-            logger.info("Ctrl+C received — exiting web supervisor.")
+            logger.info("Ctrl+C received — exiting.")
             return
         except Exception:
-            logger.exception(f"Web server crashed (attempt {attempt}). Restarting in 5s...")
+            logger.exception(f"uvicorn crashed (attempt {attempt}). Restarting in 5s...")
             time.sleep(5)
 
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  MONITOR WEB — Dashboard Interactivo")
-    print("  http://localhost:8000")
+    print("  MONITOR WEB — FastAPI + HTMX")
+    print(f"  http://localhost:{settings.port}")
     print("  (Auto-restart si crashea. Ctrl+C para detener.)")
     print("=" * 60)
     run_web_supervised()
