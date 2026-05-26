@@ -92,6 +92,17 @@ def test_panel_lider_rows_from_stub_provider():
     assert panels._build_panel_lider_rows(None) == []        # sin provider → vacío
 
 
+def test_futuros_rows_resilient():
+    # Sin rofex → vacío; rofex que falla → vacío (nunca rompe el panel).
+    assert panels._build_futuros_rows(None, None, None) == []
+
+    class _Boom:
+        def get_quotes(self, syms):
+            raise RuntimeError("ws down")
+
+    assert panels._build_futuros_rows(_Boom(), None, None) == []
+
+
 def test_index_and_fragment_routes():
     with TestClient(app) as c:
         r = c.get("/")

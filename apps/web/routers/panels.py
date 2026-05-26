@@ -20,10 +20,16 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from apps.web.deps import get_provider, get_state
+from apps.web.deps import get_fx, get_indices, get_provider, get_rofex, get_state
 from core.domain.instrument_groups import PANEL_LIDER
 from core.domain.portfolio import position_currency
 from core.domain.services import FinancialEngine
+from core.infrastructure.futures_provider import (
+    DEFAULT_SYMBOLS as ROFEX_SYMBOLS,
+    implied_tna,
+    parse_contract_maturity,
+    resolve_spot_for_tna,
+)
 
 router = APIRouter()
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
@@ -95,6 +101,17 @@ _PANEL_LIDER_COLS = [
     {"key": "volume", "label": "Vol $", "kind": "volume"},
     {"key": "operations", "label": "Ops", "kind": "number", "decimals": 0},
 ]
+_FUTUROS_COLS = [
+    {"key": "ticker", "label": "Contrato", "kind": "text"},
+    {"key": "vto", "label": "Vto", "kind": "date"},
+    {"key": "bid", "label": "Compra", "kind": "number", "decimals": 2},
+    {"key": "ask", "label": "Venta", "kind": "number", "decimals": 2},
+    {"key": "last", "label": "Último", "kind": "number", "decimals": 2},
+    {"key": "settle", "label": "Ajuste", "kind": "number", "decimals": 2},
+    {"key": "tna", "label": "TNA", "kind": "percent", "decimals": 2},
+    {"key": "open_interest", "label": "OP.INT", "kind": "volume"},
+    {"key": "volume", "label": "Vol", "kind": "volume"},
+]
 
 # id -> (título, {instrument_types}, columnas)
 PANELS = {
@@ -106,9 +123,10 @@ PANELS = {
     "tamar": ("TAMAR / DUAL", {"PURO", "DUAL", "DUAL_CER_TAMAR"}, _TAMAR_COLS),
     "valor_relativo": ("VALOR RELATIVO · rich / cheap (curvas peso)", set(), _VR_COLS),
     "panel_lider": ("PANEL LÍDER · acciones", set(), _PANEL_LIDER_COLS),
+    "futuros": ("FUTUROS DLR (Matba/Rofex)", set(), _FUTUROS_COLS),
 }
 PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreales",
-               "valor_relativo", "panel_lider"]
+               "valor_relativo", "panel_lider", "futuros"]
 
 # Grupos para el ajuste de curva log (TIR = a + b·ln(MD)) — un fit por grupo.
 # Sólo curvas peso de flavor único (Tasa Fija nominal, CER real): los soberanos
@@ -305,6 +323,36 @@ def _build_panel_lider_rows(provider) -> List[dict]:
     return rows
 
 
+def _build_futuros_rows(rofex, fx, bcra) -> List[dict]:
+    """Curva DLR Rofex/Matba: TNA implícita = (futuro_last/spot)^(365/d) − 1.
+    Reusa los helpers de futures_provider (spot híbrido fx/A3500, parse vto)."""
+    if rofex is None:
+        return []
+    try:
+        quotes = rofex.get_quotes(ROFEX_SYMBOLS)
+        spot = resolve_spot_for_tna(fx, bcra)
+    except Exception:
+        return []
+    rows = []
+    for sym in ROFEX_SYMBOLS:
+        q = quotes.get(sym)
+        if not q:
+            continue
+        mat = parse_contract_maturity(sym)
+        last = q.get("last")
+        tna = implied_tna(last, spot, mat) if (last and spot and mat) else None
+        raw = {
+            "ticker": sym, "vto": mat, "bid": q.get("bid"), "ask": q.get("ask"),
+            "last": last, "settle": q.get("settle"),
+            "tna": tna * 100 if tna is not None else None,
+            "open_interest": q.get("open_interest"), "volume": q.get("volume"),
+        }
+        cells = [{"text": _fmt(raw[c["key"]], c["kind"], c.get("decimals", 2)),
+                  "cls": _cell_class(raw[c["key"]], c["kind"])} for c in _FUTUROS_COLS]
+        rows.append({"ticker": sym, "cells": cells, "clickable": False})
+    return rows
+
+
 def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
     if panel_id == "valor_relativo":
         return _build_rv_rows(state)
@@ -343,9 +391,14 @@ def index(request: Request, state=Depends(get_state)):
 
 @router.get("/panels/{panel_id}/rows", response_class=HTMLResponse)
 def panel_rows(panel_id: str, request: Request, state=Depends(get_state),
-               provider=Depends(get_provider)):
+               provider=Depends(get_provider), rofex=Depends(get_rofex),
+               fx=Depends(get_fx), indices=Depends(get_indices)):
     cols = PANELS.get(panel_id, (None, None, []))[2]
+    if panel_id == "futuros":
+        rows = _build_futuros_rows(rofex, fx, indices)
+    else:
+        rows = _build_rows(panel_id, state, provider)
     return _TEMPLATES.TemplateResponse(
         request, "fragments/panel_rows.html",
-        {"rows": _build_rows(panel_id, state, provider), "ncols": len(cols)},
+        {"rows": rows, "ncols": len(cols)},
     )

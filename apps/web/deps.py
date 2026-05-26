@@ -37,3 +37,7 @@ def get_indices(request: Request):
 
 def get_fx(request: Request):
     return request.app.state.fx
+
+
+def get_rofex(request: Request):
+    return request.app.state.rofex

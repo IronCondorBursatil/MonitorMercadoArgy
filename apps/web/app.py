@@ -65,6 +65,7 @@ async def _refresh_loop(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from core.infrastructure.fx_provider import DolarAPIProvider
+    from core.infrastructure.futures_provider import RofexProvider
     from core.infrastructure.indices_provider import BCRAIndicesProvider
     from core.infrastructure.repositories import Data912MarketDataProvider
 
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
     app.state.provider = Data912MarketDataProvider()
     app.state.indices = BCRAIndicesProvider(excel_repo=repo)
     app.state.fx = DolarAPIProvider()
+    app.state.rofex = RofexProvider()  # WS Matba lazy (warmup en el 1er get_quotes)
     refresh = asyncio.create_task(_refresh_loop(app))
     try:
         yield
