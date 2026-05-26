@@ -91,8 +91,9 @@ def _apply_leg(instrument: Instrument, leg: Optional[str]):
     if leg is None:
         return instrument, None
     if leg == "TAM":
-        from dataclasses import replace as dc_replace
-        return dc_replace(instrument, instrument_type="PURO", floor_rate_monthly=None), None
+        return instrument.model_copy(update={
+            "instrument_type": "PURO", "floor_rate_monthly": None,
+        }), None
     if leg == "TF":
         return instrument, _ZeroTamar()
     return instrument, None
@@ -569,8 +570,7 @@ def calculate(
         return None
 
     # Override del snapshot con el precio resuelto para las métricas downstream.
-    from dataclasses import replace
-    snap_calc = replace(snapshot, price=price_dirty)
+    snap_calc = snapshot.model_copy(update={"price": price_dirty})
     out = _live_metrics(snap_calc, indices_eff, fx, ref_date, tamar_forecast=tamar_forecast)
     out["tir"] = _safe(tir_calc)
     if tir_calc is not None:
