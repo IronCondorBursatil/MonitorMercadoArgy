@@ -1,0 +1,9 @@
+{% if rows %}
+  {% for r in rows %}
+  <tr data-ticker="{{ r.ticker }}">
+    {% for c in r.cells %}<td class="{{ c.cls }}">{{ c.text }}</td>{% endfor %}
+  </tr>
+  {% endfor %}
+{% else %}
+  <tr class="empty"><td colspan="{{ ncols }}">Cargando…</td></tr>
+{% endif %}

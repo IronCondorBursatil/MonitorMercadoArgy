@@ -22,11 +22,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from apps.web.deps import get_repo, get_state
+from apps.web.routers import panels
 from apps.web.state import AppState
 from config.settings import settings
 from core.domain.instrument_groups import (
@@ -78,6 +81,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Monitor Renta Fija AR", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+app.include_router(panels.router)
 
 
 @app.get("/api/health")

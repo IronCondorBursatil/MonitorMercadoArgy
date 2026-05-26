@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<main>
+  {% for p in panels %}
+  <section class="panel" data-id="{{ p.id }}">
+    <div class="panel-head">{{ p.title }}</div>
+    <table>
+      <thead>
+        <tr>{% for c in p.columns %}<th>{{ c.label }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody id="tbody-{{ p.id }}"
+             hx-get="/panels/{{ p.id }}/rows"
+             hx-trigger="load, every 5s"
+             hx-swap="innerHTML">
+        {% with rows=p.rows, ncols=p.columns|length %}
+          {% include "fragments/panel_rows.html" %}
+        {% endwith %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
+</main>
+{% endblock %}
