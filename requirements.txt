@@ -25,8 +25,5 @@ SQLAlchemy>=2
 pydantic>=2
 pydantic-settings
 
-# --- HTTP legacy (se elimina en Fase 3 al borrar core/infrastructure/_http.py) ---
-requests
-
 # --- dev ---
 pytest

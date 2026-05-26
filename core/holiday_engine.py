@@ -44,7 +44,7 @@ from pathlib import Path
 import holidays as holidays_lib
 import pandas as pd
 import pandas_market_calendars as mcal
-import requests
+import httpx
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -312,7 +312,7 @@ def fetch_nolaborables(año: int) -> list[dict]:
     """Fuente 1: nolaborables.com.ar — Boletin Oficial AR."""
     url = f"https://nolaborables.com.ar/api/v2/feriados/{año}"
     try:
-        resp = requests.get(url, timeout=TIMEOUT_API)
+        resp = httpx.get(url, timeout=TIMEOUT_API, follow_redirects=True)
         resp.raise_for_status()
         data = resp.json()
         result = []
@@ -339,7 +339,7 @@ def fetch_argentinadatos(año: int) -> list[dict]:
     """Fuente 2: api.argentinadatos.com — datos.gob.ar."""
     url = f"https://api.argentinadatos.com/v1/feriados/{año}"
     try:
-        resp = requests.get(url, timeout=TIMEOUT_API)
+        resp = httpx.get(url, timeout=TIMEOUT_API, follow_redirects=True)
         resp.raise_for_status()
         data = resp.json()
         result = []
@@ -365,7 +365,7 @@ def fetch_nager(año: int) -> list[dict]:
     """Fuente 3: date.nager.at — internacional."""
     url = f"https://date.nager.at/api/v3/PublicHolidays/{año}/AR"
     try:
-        resp = requests.get(url, timeout=TIMEOUT_API)
+        resp = httpx.get(url, timeout=TIMEOUT_API, follow_redirects=True)
         resp.raise_for_status()
         data = resp.json()
         result = []
