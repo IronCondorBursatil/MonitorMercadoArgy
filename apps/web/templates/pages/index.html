@@ -1,23 +1,50 @@
 {% extends "base.html" %}
+{% block head %}
+<link rel="stylesheet" href="/static/vendor/gridstack/gridstack.min.css">
+<script src="/static/vendor/gridstack/gridstack-all.js"></script>
+{% endblock %}
 {% block content %}
-<main>
+{% set wide = ["valor_relativo", "panel_lider", "futuros", "bei_tenor", "bei_sendero", "bei_pares"] %}
+<div class="grid-stack">
   {% for p in panels %}
-  <section class="panel" data-id="{{ p.id }}">
-    <div class="panel-head">{{ p.title }}</div>
-    <table>
-      <thead>
-        <tr>{% for c in p.columns %}<th>{{ c.label }}</th>{% endfor %}</tr>
-      </thead>
-      <tbody id="tbody-{{ p.id }}"
-             hx-get="/panels/{{ p.id }}/rows"
-             hx-trigger="load, every 5s"
-             hx-swap="innerHTML">
-        {% with rows=p.rows, ncols=p.columns|length %}
-          {% include "fragments/panel_rows.html" %}
-        {% endwith %}
-      </tbody>
-    </table>
-  </section>
+  <div class="grid-stack-item" gs-id="{{ p.id }}"
+       gs-w="{{ 12 if p.id in wide else 6 }}" gs-h="6">
+    <div class="grid-stack-item-content panel" data-id="{{ p.id }}">
+      <div class="panel-head">{{ p.title }}</div>
+      <div class="panel-body">
+        <table>
+          <thead>
+            <tr>{% for c in p.columns %}<th>{{ c.label }}</th>{% endfor %}</tr>
+          </thead>
+          <tbody id="tbody-{{ p.id }}"
+                 hx-get="/panels/{{ p.id }}/rows"
+                 hx-trigger="load, every 5s"
+                 hx-swap="innerHTML">
+            {% with rows=p.rows, ncols=p.columns|length %}
+              {% include "fragments/panel_rows.html" %}
+            {% endwith %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
   {% endfor %}
-</main>
+</div>
+<script>
+  (function () {
+    if (typeof GridStack === "undefined") return;  // fallback: bloques apilados
+    var grid = GridStack.init({
+      column: 12, cellHeight: 62, margin: 7, float: false,
+      handle: ".panel-head", resizable: { handles: "e, se, s" },
+    });
+    var KEY = "grid-layout-v1";
+    try {
+      var saved = JSON.parse(localStorage.getItem(KEY) || "null");
+      if (saved && saved.length) grid.load(saved, false);  // false: sólo reposiciona existentes
+    } catch (e) {}
+    grid.on("change", function () {
+      try { localStorage.setItem(KEY, JSON.stringify(grid.save(false))); } catch (e) {}
+    });
+  })();
+</script>
 {% endblock %}
