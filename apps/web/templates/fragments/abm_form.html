@@ -1,0 +1,27 @@
+<form hx-post="/abm/save" hx-target="#abm-list" hx-swap="innerHTML"
+      hx-on::after-request="if(event.detail.successful){this.reset(); document.getElementById('abm-form').innerHTML='';}">
+  <h4>{{ label }}{% if ticker %} · editar {{ ticker }}{% endif %}</h4>
+  <input type="hidden" name="sheet" value="{{ sheet }}">
+  <div class="abm-fields">
+    {% for f in fields %}
+    <label class="fld">
+      <span>{{ f.label }}{% if f.required %} *{% endif %}</span>
+      {% if f.type == "select" %}
+        <select name="{{ f.key }}">
+          {% for o in f.options %}
+          <option value="{{ o }}" {{ 'selected' if values.get(f.key)|string == o|string else '' }}>{{ o or '—' }}</option>
+          {% endfor %}
+        </select>
+      {% else %}
+        <input type="{{ 'date' if f.type == 'date' else ('number' if f.type == 'number' else 'text') }}"
+               name="{{ f.key }}"
+               value="{{ values.get(f.key) if values.get(f.key) is not none else '' }}"
+               {% if f.step %}step="{{ f.step }}"{% endif %}
+               {% if f.required %}required{% endif %}>
+      {% endif %}
+      {% if f.help %}<small>{{ f.help }}</small>{% endif %}
+    </label>
+    {% endfor %}
+  </div>
+  <button type="submit">Guardar</button>
+</form>

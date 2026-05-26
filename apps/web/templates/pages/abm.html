@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<main style="display:block">
+  <section class="panel" style="margin:14px">
+    <div class="panel-head">ABM · ALTA / EDICIÓN</div>
+    <div class="abm-new">
+      <label>Nueva tenencia en hoja:
+        <select hx-get="/abm/form" hx-target="#abm-form" hx-swap="innerHTML" name="sheet" hx-trigger="change">
+          <option value="">— elegí hoja —</option>
+          {% for s in sheets %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <div id="abm-form"></div>
+  </section>
+  <section class="panel" style="margin:14px">
+    <div class="panel-head">INSTRUMENTOS ({{ instruments|length }})</div>
+    <div id="abm-list">{% include "fragments/abm_list.html" %}</div>
+  </section>
+</main>
+<style>
+  .abm-new { padding:10px 12px; }
+  .abm-new select, .abm-fields select, .abm-fields input {
+    background:var(--bg); border:1px solid var(--line); color:var(--txt); padding:5px 7px; border-radius:4px; }
+  .abm-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; padding:10px 12px; }
+  .abm-fields .fld { display:flex; flex-direction:column; gap:3px; }
+  .abm-fields .fld span { font-size:11px; color:var(--mut); }
+  .abm-fields .fld small { font-size:10px; color:#6b7280; }
+  #abm-form form > button, .abm-new + #abm-form button { background:var(--accent); color:#07223f; border:none; border-radius:5px; padding:7px 16px; margin:8px 12px; cursor:pointer; font-weight:600; }
+  #abm-form h4 { margin:10px 12px 0; color:var(--accent); }
+  #abm-list table td button { background:var(--head); border:1px solid var(--line); color:var(--txt); border-radius:4px; padding:3px 8px; cursor:pointer; margin-right:4px; }
+  #abm-list table td button.delx { color:var(--neg); border:none; background:none; }
+</style>
+{% endblock %}
