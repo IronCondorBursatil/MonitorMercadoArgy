@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<main style="display:block">
+  <section class="panel" style="margin:14px">
+    <div class="panel-head">ESCENARIOS · STRESS DE TASA / FX</div>
+    <form class="scenario-form" hx-post="/escenarios/run" hx-target="#scenario-result"
+          hx-swap="innerHTML" hx-trigger="change, submit">
+      <label>Δ Tasa (bps)
+        <input name="d_tir_bps" type="number" step="25" value="{{ d_tir_bps|int }}">
+      </label>
+      <label>Δ FX (%)
+        <input name="d_fx_pct" type="number" step="1" value="{{ d_fx_pct|int }}">
+      </label>
+      <button type="submit">Aplicar</button>
+    </form>
+  </section>
+  <div id="scenario-result">{% include "fragments/escenario_result.html" %}</div>
+</main>
+<style>
+  .scenario-form { display:flex; gap:16px; padding:11px 13px; align-items:flex-end; flex-wrap:wrap; }
+  .scenario-form label { display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--text-dim); }
+</style>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% macro pcts(v) %}{% if v is none %}—{% else %}{{ '%+.2f'|format(v * 100) }}%{% endif %}{% endmacro %}
+{% macro money(v) %}{% if v is none %}—{% else %}{{ '{:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+{% set sgn = 'pos' if (pnl.pnl_ars and pnl.pnl_ars > 0) else ('neg' if (pnl.pnl_ars and pnl.pnl_ars < 0) else '') %}
+<div class="cards">
+  <div class="card"><div class="k">Escenario</div><div class="v">Δtasa {{ d_tir_bps|int }}bps · ΔFX {{ d_fx_pct|int }}%</div></div>
+  <div class="card"><div class="k">P&L cartera (ARS)</div>
+    <div class="v {{ sgn }}">{{ money(pnl.pnl_ars) }} <small>{{ pcts(pnl.pnl_pct) }}</small></div></div>
+  <div class="card"><div class="k">Base cartera (ARS)</div><div class="v">{{ money(pnl.base_value_ars) }}</div></div>
+</div>
+<section class="panel" style="margin:0 14px 14px">
+  <div class="panel-head">ΔP POR BONO (mercado, +sensibles arriba) · {{ rows|length }}</div>
+  <table>
+    <thead><tr><th>Ticker</th><th>Tipo</th><th>MD</th><th>ΔP % (cotiz.)</th><th>ΔP % (ARS)</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="tk"><a hx-get="/bond/{{ r.ticker }}/detail" hx-target="#modal" hx-swap="innerHTML">{{ r.ticker }}</a></td>
+        <td>{{ r.grupo }}</td>
+        <td class="num">{{ '%.2f'|format(r.md) }}</td>
+        <td class="num {{ 'pos' if (r.dp_pct or 0) > 0 else ('neg' if (r.dp_pct or 0) < 0 else '') }}">{{ pcts(r.dp_pct) }}</td>
+        <td class="num {{ 'pos' if (r.dp_ars_pct or 0) > 0 else ('neg' if (r.dp_ars_pct or 0) < 0 else '') }}">{{ pcts(r.dp_ars_pct) }}</td>
+      </tr>
+      {% else %}
+      <tr class="empty"><td colspan="5">Sin datos de mercado todavía</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
