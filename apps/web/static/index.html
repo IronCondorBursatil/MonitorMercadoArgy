@@ -1,149 +1,495 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es-AR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description"
+        content="Monitor en vivo de bonos argentinos: BONARES, BOPREALES, CER, TASA FIJA, TAMAR, DUAL, futuros DLR y break-even inflation (BEI) calibrado contra el REM." />
+  <meta name="theme-color" content="#0a1d4a" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Monitor de Bonos · Balanz" />
+  <meta property="og:description" content="Monitor en vivo de bonos argentinos: BONARES, BOPREALES, CER, TASA FIJA, TAMAR, DUAL, futuros DLR y break-even inflation (BEI)." />
+  <meta property="og:locale" content="es_AR" />
   <title>Monitor de Bonos · Balanz</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <!-- Tema oscuro/claro: aplicar antes del paint para evitar flash. -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("monitor-theme");
+        if (t === "dark" || t === "light") {
+          document.documentElement.setAttribute("data-theme", t);
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute("content", t === "dark" ? "#070f24" : "#0a1d4a");
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <!-- Tipografía editorial-financiera (design system DBQ). Fallbacks en
+       style.css garantizan degradación si las fuentes no cargan. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/static/vendor/gridstack/gridstack.min.css?v=22" />
+  <link rel="stylesheet" href="/static/style.css?v=43" />
 </head>
 <body>
+  <a class="skip-link" href="#monitors">Saltar al contenido</a>
+  <h1 class="sr-only">Monitor de Bonos · Balanz — cotizaciones de bonos argentinos en vivo</h1>
   <header class="page-header">
     <!-- IZQ: Logo BALANZ + MONITOR + fecha -->
     <div class="brand-block">
       <div class="logo-balanz">BALANZ</div>
       <div class="brand-text">
-        <span class="brand-monitor">MONITOR</span>
+        <span class="brand-monitor">Monitor Mercado</span>
         <span class="brand-date" id="brand-date">—</span>
       </div>
     </div>
 
-    <!-- CENTRO: dot verde + EN VIVO + ultima actualizacion -->
-    <div class="live-block loading" id="live-block">
+    <!-- CENTRO: dot verde + EN VIVO -->
+    <div class="live-block loading" id="live-block" role="status" aria-live="polite">
       <div class="live-row">
         <span class="live-dot"></span>
         <span class="live-label">EN VIVO</span>
       </div>
-      <span class="live-time">Última actualización <span id="live-time">—</span> hs</span>
     </div>
 
     <!-- DER: botones -->
-    <div class="actions">
-      <button class="btn" id="btn-capture"  type="button">Capturar</button>
-      <button class="btn" id="btn-whatsapp" type="button">WhatsApp</button>
-    </div>
+    <nav class="actions" aria-label="Acciones del monitor">
+      <button class="btn theme-toggle" id="btn-theme" type="button"
+              aria-label="Cambiar entre tema claro y oscuro" aria-pressed="false"
+              title="Cambiar tema (claro/oscuro)">
+        <span class="theme-toggle-moon" aria-hidden="true">🌙</span>
+        <span class="theme-toggle-sun" aria-hidden="true">☀</span>
+      </button>
+      <button class="btn" id="btn-capture"  type="button"
+              aria-label="Capturar dashboard como imagen PNG">Capturar</button>
+      <button class="btn" id="btn-cartera" type="button"
+              onclick="window.open('/cartera','_blank')"
+              aria-label="Mi cartera: tenencias, P&amp;L y flujos">Cartera</button>
+      <div class="menu" id="menu-analisis">
+        <button class="btn" id="btn-analisis" type="button"
+                aria-haspopup="true" aria-expanded="false" aria-controls="analisis-menu"
+                title="Herramientas de análisis">Análisis ▾</button>
+        <div class="menu-dropdown" id="analisis-menu" role="menu" hidden>
+          <button class="menu-item" role="menuitem" type="button" data-action="scroll" data-target="valor_relativo">Valor Relativo</button>
+          <button class="menu-item" role="menuitem" type="button" data-action="scroll" data-target="escenarios">Escenarios / Stress</button>
+          <button class="menu-item" role="menuitem" type="button" data-action="open" data-href="/cashflows">Cashflows</button>
+          <button class="menu-item" role="menuitem" type="button" data-action="open" data-href="/bcra">Monitor BCRA</button>
+        </div>
+      </div>
+      <button class="btn" id="btn-abm" type="button"
+              aria-label="Alta, baja o modificación de instrumentos">ABM</button>
+      <button class="btn" id="btn-settings" type="button"
+              aria-haspopup="true" aria-expanded="false" aria-controls="settings-popover"
+              aria-label="Configurar paneles visibles, charts y layout"
+              title="Configuración de paneles y layout">⚙ Layout</button>
+    </nav>
   </header>
 
   <!-- Strip de cotizaciones USD/ARS (dolarapi.com) -->
   <div class="fx-strip" id="fx-strip"></div>
 
-  <main id="monitors">
-    <!-- Fila 1: BONARES (izq) | BOPREALES (der) -->
-    <section class="panel" data-id="bonares">
-      <div class="panel-header">
-        <h2>BONARES &amp; GLOBALES</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
-      </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+  <!--
+    Cada panel está envuelto en .grid-stack-item para que Gridstack lo maneje.
+    gs-id  = ancla estable usada para serializar / cargar el layout
+    gs-w   = ancho inicial en columnas de grilla (1..60)
+    gs-h   = alto inicial en celdas (cellHeight = 5px)
+    El usuario puede arrastrar (desde la header) y redimensionar (esquina SE).
+    El layout se persiste en localStorage; "↺ Layout" restaura el default.
+  -->
+  <main id="monitors" class="grid-stack">
 
-    <section class="panel" data-id="bopreales">
-      <div class="panel-header">
-        <h2>BOPREALES</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="bonares" gs-w="30" gs-h="80">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="bonares">
+          <div class="panel-header">
+            <h2>BONARES &amp; GLOBALES</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+    </div>
 
-    <!-- Fila 2: CURVA SOBERANA full-width -->
-    <section class="panel panel-curva" data-id="curva_soberana">
-      <div class="panel-header">
-        <h2>CURVA SOBERANA</h2>
-        <span class="panel-sub" data-role="subtitle">— · TIR vs Duration Modificada</span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="bopreales" gs-w="30" gs-h="80">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="bopreales">
+          <div class="panel-header">
+            <h2>BOPREALES</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body">
-        <div class="chart-container">
-          <canvas data-role="canvas"></canvas>
-        </div>
-      </div>
-    </section>
+    </div>
 
-    <!-- Fila 3: COMPARACION (izq) | TASA FIJA (der) -->
-    <section class="panel" data-id="comparacion_tir">
-      <div class="panel-header">
-        <h2>COMPARACIÓN DE TIRs</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="curva_soberana" gs-w="60" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel panel-curva" data-id="curva_soberana">
+          <div class="panel-header">
+            <h2>CURVA SOBERANA</h2>
+            <span class="panel-sub" data-role="subtitle">— · TIR vs Duration Modificada</span>
+          </div>
+          <div class="panel-body" data-role="body">
+            <div class="chart-container">
+              <canvas data-role="canvas"
+                      role="img"
+                      aria-label="Curva soberana: TIR vs Duration Modificada para bonos AL/AE/GD y BOPREALES"></canvas>
+            </div>
+          </div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+    </div>
 
-    <section class="panel" data-id="tasa_fija">
-      <div class="panel-header">
-        <h2>LECAPS &amp; BONCAPS (TASA FIJA)</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="tasa_fija" gs-w="30" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="tasa_fija">
+          <div class="panel-header">
+            <h2>LECAPS &amp; BONCAPS (TASA FIJA)</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+    </div>
 
-    <section class="panel" data-id="cer">
-      <div class="panel-header">
-        <h2>BONOS CER</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="cer" gs-w="30" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="cer">
+          <div class="panel-header">
+            <h2>BONOS CER</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+    </div>
 
-    <section class="panel" data-id="dolar_linked">
-      <div class="panel-header">
-        <h2>DOLAR LINKED</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="dolar_linked" gs-w="30" gs-h="80">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="dolar_linked">
+          <div class="panel-header">
+            <h2>DOLAR LINKED</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+    </div>
 
-    <section class="panel" data-id="tamar">
-      <div class="panel-header">
-        <h2>TAMAR (PURO)</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="tamar" gs-w="30" gs-h="80">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="tamar">
+          <div class="panel-header">
+            <h2>TAMAR (PURO)</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+    </div>
 
-    <section class="panel" data-id="dual_tamar">
-      <div class="panel-header">
-        <h2>DUALES TAMAR / TASA FIJA</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="fci" gs-w="30" gs-h="130">
+      <div class="grid-stack-item-content">
+        <section class="panel panel-fci" data-id="fci">
+          <div class="panel-header">
+            <h2>FCI · FONDOS COMUNES (CAFCI)</h2>
+            <span class="panel-sub" data-role="fci-sub">—</span>
+          </div>
+          <div class="fci-filters">
+            <select class="fci-filter" id="fci-tipo" aria-label="Tipo de renta"></select>
+            <select class="fci-filter" id="fci-moneda" aria-label="Moneda"></select>
+            <input class="fci-search" id="fci-search" type="search"
+                   placeholder="Buscar fondo o sociedad…" autocomplete="off"
+                   aria-label="Buscar fondo o sociedad gerente" />
+            <div class="fci-metric-toggle" role="group" aria-label="Métrica de rendimiento">
+              <button type="button" class="fci-metric-btn active" data-metric="tna">TNA</button>
+              <button type="button" class="fci-metric-btn" data-metric="directo">Directo</button>
+            </div>
+          </div>
+          <div class="panel-body fci-body" data-role="fci-body"></div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+    </div>
 
-    <section class="panel" data-id="futuros">
-      <div class="panel-header">
-        <h2>FUTUROS ROFEX (Dólar Curva)</h2>
-        <span class="panel-sub" data-role="subtitle"></span>
-        <span class="panel-ts"  data-role="ts">—</span>
+    <div class="grid-stack-item" gs-id="futuros" gs-w="30" gs-h="80">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="futuros">
+          <div class="panel-header">
+            <h2>FUTUROS ROFEX (Dólar Curva)</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
       </div>
-      <div class="panel-body" data-role="body"></div>
-    </section>
+    </div>
+
+    <div class="grid-stack-item" gs-id="panel_lider" gs-w="60" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="panel_lider">
+          <div class="panel-header">
+            <h2>PANEL LÍDER (Acciones BYMA)</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" gs-id="bei_tenor" gs-w="60" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel panel-curva" data-id="bei_tenor">
+          <div class="panel-header">
+            <h2>BEI POR TENOR · NSS + Fisher</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" gs-id="bei_sendero" gs-w="30" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="bei_sendero">
+          <div class="panel-header">
+            <h2>SENDERO MENSUAL · BEI vs REM-BCRA</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" gs-id="bei_pares" gs-w="30" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="bei_pares">
+          <div class="panel-header">
+            <h2>MÉTODO DE PARES · cross-check NT8 Apéndice</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" gs-id="bei_history" gs-w="60" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel panel-curva" data-id="bei_history">
+          <div class="panel-header">
+            <h2>EVOLUCIÓN DIARIA · BEI spot por tenor</h2>
+            <span class="panel-sub">Serie diaria persistida en data/history/bei_diario.csv</span>
+          </div>
+          <div class="panel-body">
+            <div class="chart-container">
+              <canvas id="bei-history-chart"
+                      role="img"
+                      aria-label="Evolución diaria de BEI spot por tenor (3M, 6M, 9M, 1Y, 18M, 2Y, 3Y)"></canvas>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" gs-id="valor_relativo" gs-w="30" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="valor_relativo">
+          <div class="panel-header">
+            <h2>VALOR RELATIVO · rich / cheap</h2>
+            <span class="panel-sub" data-role="subtitle">Spread vs curva ajustada · barato (+) / caro (−)</span>
+          </div>
+          <div class="panel-body" data-role="body"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" gs-id="escenarios" gs-w="30" gs-h="120">
+      <div class="grid-stack-item-content">
+        <section class="panel" data-id="escenarios">
+          <div class="panel-header">
+            <h2>ESCENARIOS / STRESS</h2>
+            <span class="panel-sub">Δ tasa + Δ FX → ΔP por bono y de cartera</span>
+          </div>
+          <div class="panel-body esc-body">
+            <div class="esc-controls">
+              <div class="esc-ctrl">
+                <span class="esc-ctrl-label">Δ Tasa <b id="esc-tir-val">+0</b> bps</span>
+                <input id="esc-tir" type="range" min="-500" max="500" step="25" value="0"
+                       aria-label="Shock de tasa en puntos básicos" />
+              </div>
+              <div class="esc-ctrl">
+                <span class="esc-ctrl-label">Δ FX <b id="esc-fx-val">+0</b> %</span>
+                <input id="esc-fx" type="range" min="-20" max="150" step="5" value="0"
+                       aria-label="Shock de tipo de cambio en porcentaje" />
+              </div>
+              <button id="esc-reset" type="button" class="esc-reset" title="Volver a 0/0">Reset</button>
+            </div>
+            <div class="esc-portfolio" id="esc-portfolio" hidden>
+              <span class="esc-pf-label">P&amp;L de mi cartera</span>
+              <span class="esc-pf-val" id="esc-pf-val">—</span>
+            </div>
+            <div class="esc-table" id="esc-table"></div>
+            <div class="esc-note">Reprice por MD+convexidad. Escenarios de inflación (sendero mensual) en el popup de bonos CER.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Curvas TIR vs Duration generadas por panel de bonos. Ocultas por
+         default; se prenden desde el ⚙ Layout. Cada una se renderiza con
+         renderBondCurve() leyendo el monitor correspondiente. -->
+    <div class="grid-stack-item curve-extra" gs-id="curva_cer" gs-w="60" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel panel-curva" data-id="curva_cer" data-source="cer">
+          <div class="panel-header">
+            <h2>CURVA · BONOS CER</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body">
+            <div class="chart-container">
+              <canvas data-role="canvas" role="img"
+                      aria-label="Curva TIR vs Duration Modificada de bonos CER"></canvas>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item curve-extra" gs-id="curva_tasa_fija" gs-w="60" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel panel-curva" data-id="curva_tasa_fija" data-source="tasa_fija">
+          <div class="panel-header">
+            <h2>CURVA · LECAPS &amp; BONCAPS</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body">
+            <div class="chart-container">
+              <canvas data-role="canvas" role="img"
+                      aria-label="Curva TIR vs Duration Modificada de LECAPs y BONCAPs"></canvas>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item curve-extra" gs-id="curva_dolar_linked" gs-w="60" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel panel-curva" data-id="curva_dolar_linked" data-source="dolar_linked">
+          <div class="panel-header">
+            <h2>CURVA · DOLAR LINKED</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body">
+            <div class="chart-container">
+              <canvas data-role="canvas" role="img"
+                      aria-label="Curva TIR vs Duration Modificada de bonos Dolar Linked"></canvas>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid-stack-item curve-extra" gs-id="curva_tamar" gs-w="60" gs-h="100">
+      <div class="grid-stack-item-content">
+        <section class="panel panel-curva" data-id="curva_tamar" data-source="tamar">
+          <div class="panel-header">
+            <h2>CURVA · TAMAR (PURO)</h2>
+            <span class="panel-sub" data-role="subtitle"></span>
+          </div>
+          <div class="panel-body" data-role="body">
+            <div class="chart-container">
+              <canvas data-role="canvas" role="img"
+                      aria-label="Curva TIR vs Duration Modificada de bonos TAMAR puro"></canvas>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+
   </main>
 
+  <!-- ABM modal overlay -->
+  <div id="abm-overlay" class="abm-overlay" hidden>
+    <div class="abm-modal" role="dialog" aria-modal="true" aria-labelledby="abm-title">
+      <header class="abm-header">
+        <h2 id="abm-title">ABM · Instrumentos</h2>
+        <button class="abm-close" id="abm-close" type="button" aria-label="Cerrar">×</button>
+      </header>
 
-  <footer class="page-footer">
-    Datos en tiempo real · Data912 Feed · refresh cada 30s
-  </footer>
+      <div class="abm-search">
+        <label for="abm-search-input">Buscar ticker existente</label>
+        <input type="text" id="abm-search-input" list="abm-ticker-list" placeholder="Ej. AL30D" autocomplete="off" />
+        <datalist id="abm-ticker-list"></datalist>
+        <button class="btn-secondary" id="abm-load" type="button">Cargar</button>
+        <button class="btn-secondary" id="abm-new" type="button">+ Nueva especie</button>
+      </div>
+
+      <div class="abm-sheet-picker" id="abm-sheet-picker" hidden>
+        <label for="abm-sheet-select">Tipo de instrumento</label>
+        <select id="abm-sheet-select">
+          <option value="">— Elegí una hoja —</option>
+        </select>
+      </div>
+
+      <form class="abm-form" id="abm-form" hidden>
+        <div class="abm-form-grid">
+          <div class="abm-fields" id="abm-fields"></div>
+          <aside class="abm-cashflows-panel" id="abm-cashflows-panel" hidden>
+            <header class="abm-cashflows-header">
+              <h4>Cashflows</h4>
+              <span class="abm-cashflows-source" id="abm-cashflows-source"></span>
+              <div class="abm-cashflows-actions">
+                <button type="button" class="btn-secondary btn-mini" id="abm-cf-regen"
+                        title="Regenerar desde parámetros del form (sobreescribe la tabla)">⟳ Regenerar</button>
+                <button type="button" class="btn-secondary btn-mini" id="abm-cf-add"
+                        title="Agregar fila al final">+ Fila</button>
+              </div>
+            </header>
+            <div class="abm-cashflows-table-wrap">
+              <table class="abm-cashflows-table" id="abm-cashflows-table">
+                <caption class="sr-only">Flujos de fondos del instrumento: fecha de cupón, valor residual, renta, amortización y total por período</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Fecha Cupón</th>
+                    <th scope="col">VR Cartera</th>
+                    <th scope="col">Renta Efect.</th>
+                    <th scope="col">Amortización %<br>c/100 VN</th>
+                    <th scope="col">Obs. Prox. Pago</th>
+                    <th scope="col">Total</th>
+                    <th scope="col" aria-label="Acciones"></th>
+                  </tr>
+                </thead>
+                <tbody id="abm-cashflows-tbody"></tbody>
+                <tfoot>
+                  <tr>
+                    <td>Total</td>
+                    <td></td>
+                    <td id="abm-cf-total-interest">0.00</td>
+                    <td id="abm-cf-total-amort">0.00</td>
+                    <td></td>
+                    <td id="abm-cf-total-pago">0.00</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </aside>
+        </div>
+        <div class="abm-form-actions">
+          <button type="submit" class="btn-primary" id="abm-save">Guardar</button>
+          <button type="button" class="btn-danger" id="abm-delete">Eliminar</button>
+          <span class="abm-status" id="abm-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- Libs externas (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/vendor/gridstack/gridstack-all.js?v=22"></script>
+  <script src="/static/app.js?v=53"></script>
 </body>
 </html>

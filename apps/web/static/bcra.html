@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor BCRA · Balanz</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("monitor-theme");
+        if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/static/style.css?v=29" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body { background: var(--page-bg); color: var(--text-white); font-family: "Inter Tight", sans-serif; margin: 0; }
+
+    .bcra-header {
+      display: flex; align-items: center; gap: 16px;
+      background: var(--navy); padding: 10px 16px;
+      border-bottom: 1px solid #1f2a5a; position: sticky; top: 0; z-index: 10;
+    }
+    .bcra-back {
+      background: var(--navy-light); border: 1px solid var(--accent-blue);
+      color: var(--text-white); border-radius: 4px; padding: 5px 12px;
+      font-size: 10px; font-weight: 800; letter-spacing: 0.8px; cursor: pointer;
+      text-decoration: none;
+    }
+    .bcra-title { font-size: 15px; font-weight: 800; letter-spacing: 1px; }
+    .bcra-sub   { font-size: 11px; color: #8899cc; }
+    .bcra-spacer { flex: 1; }
+
+    .bcra-body { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+
+    /* ---- KPIs ---- */
+    .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .kpi-card {
+      flex: 1; min-width: 160px;
+      background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 6px;
+      padding: 12px 16px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .kpi-card.gold { border-color: #f5c451; }
+    .kpi-label { font-size: 9px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.8px; }
+    .kpi-val   { font-size: 22px; font-weight: 800; font-family: "JetBrains Mono", monospace; color: var(--text); }
+    .kpi-val.gold { color: #f5c451; }
+    .kpi-val.blue { color: #60c8ff; }
+    .kpi-val.green { color: #37d67a; }
+    .kpi-val.red   { color: #ff6b6b; }
+    .kpi-sub   { font-size: 10px; color: var(--text-faint); font-family: "JetBrains Mono", monospace; }
+
+    /* ---- section title ---- */
+    .section-title {
+      font-size: 11px; font-weight: 800; letter-spacing: 1px;
+      color: var(--text-dim); text-transform: uppercase;
+      border-bottom: 1px solid var(--panel-border); padding-bottom: 6px;
+    }
+
+    /* ---- charts grid ---- */
+    .charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    @media (max-width: 1100px) { .charts-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 700px)  { .charts-grid { grid-template-columns: 1fr; } }
+    .chart-card {
+      background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 6px; padding: 14px;
+    }
+    .chart-card-title { font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+    .chart-card canvas { width: 100% !important; height: 140px !important; }
+
+    /* ---- catalog table ---- */
+    .catalog-search {
+      background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--text);
+      border-radius: 4px; padding: 6px 12px; font-family: inherit; font-size: 12px;
+      width: 260px;
+    }
+    .catalog-search:focus { outline: none; border-color: var(--accent-blue); }
+    table.catalog-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    table.catalog-table thead th {
+      text-align: left; padding: 6px 10px; font-size: 9px; font-weight: 700;
+      color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.6px;
+      border-bottom: 1px solid var(--panel-border); white-space: nowrap; cursor: pointer;
+    }
+    table.catalog-table thead th.num { text-align: right; }
+    table.catalog-table thead th:hover { color: var(--text-dim); }
+    table.catalog-table tbody tr:hover { background: var(--row-hover); }
+    table.catalog-table tbody td {
+      padding: 4px 10px; border-bottom: 1px solid var(--row-alt); vertical-align: top;
+    }
+    table.catalog-table tbody td.num { text-align: right; font-family: "JetBrains Mono", monospace; }
+    table.catalog-table tbody td.id-col { color: var(--text-faint); font-family: "JetBrains Mono", monospace; font-size: 10px; }
+    table.catalog-table tbody td.desc  { font-size: 11px; color: var(--text); }
+    table.catalog-table tbody td.cat   { font-size: 10px; color: var(--text-dim); }
+    .loading-msg { padding: 30px; color: var(--text-faint); font-size: 13px; text-align: center; }
+  </style>
+</head>
+<body>
+
+<header class="bcra-header">
+  <a class="bcra-back" href="/" title="Volver al monitor principal">← Monitor</a>
+  <div>
+    <div class="bcra-title">Monitor BCRA</div>
+    <div class="bcra-sub" id="bcra-asof">Cargando…</div>
+  </div>
+  <div class="bcra-spacer"></div>
+  <button class="bcra-back" onclick="loadData()" title="Refrescar datos">↺ Refrescar</button>
+</header>
+
+<div class="bcra-body">
+  <div id="bcra-loading" class="loading-msg">Cargando datos del BCRA…</div>
+
+  <!-- KPIs -->
+  <div id="kpi-section" style="display:none">
+    <div class="kpi-row">
+      <div class="kpi-card gold">
+        <div class="kpi-label">Reservas Internacionales</div>
+        <div class="kpi-val gold" id="kpi-reservas">—</div>
+        <div class="kpi-sub" id="kpi-reservas-delta">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">TC Oficial (A3500)</div>
+        <div class="kpi-val blue" id="kpi-a3500">—</div>
+        <div class="kpi-sub">$/USD · BCRA Mayorista</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">TAMAR TNA</div>
+        <div class="kpi-val" id="kpi-tamar">—</div>
+        <div class="kpi-sub">Tasa activa mercado interbancario</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts históricos -->
+  <div id="charts-section" style="display:none">
+    <div class="section-title">Evolución histórica (últimos 90 días)</div>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-card-title">Reservas (USD mm)</div>
+        <canvas id="chart-reservas"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-title">TC Oficial A3500 ($/USD)</div>
+        <canvas id="chart-a3500"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-title">TAMAR TNA (%)</div>
+        <canvas id="chart-tamar"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Catálogo de variables -->
+  <div id="catalog-section" style="display:none">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      <div class="section-title" style="flex:1;border:none;padding:0">Variables BCRA · Catálogo completo</div>
+      <input class="catalog-search" id="catalog-search" type="text" placeholder="Buscar variable…" />
+    </div>
+    <table class="catalog-table" id="catalog-table">
+      <thead>
+        <tr>
+          <th class="num" data-col="idVariable">ID</th>
+          <th data-col="descripcion">Descripción</th>
+          <th data-col="categoria">Categoría</th>
+          <th data-col="periodicidad">Freq.</th>
+          <th data-col="unidadExpresion">Unidad</th>
+          <th class="num" data-col="ultValorInformado">Último valor</th>
+          <th data-col="ultFechaInformada">Fecha</th>
+        </tr>
+      </thead>
+      <tbody id="catalog-tbody"></tbody>
+    </table>
+    <div id="catalog-count" style="font-size:10px;color:#8899cc;margin-top:6px;text-align:right"></div>
+  </div>
+</div>
+
+<script>
+let _bcraData   = null;
+let _sortCol    = "idVariable";
+let _sortAsc    = true;
+let _catalogFilter = "";
+let _charts = {};
+
+const CHART_OPTS = (label, color) => ({
+  type: "line",
+  data: { labels: [], datasets: [{ label, data: [], borderColor: color, backgroundColor: color + "22",
+    borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true }] },
+  options: {
+    animation: false,
+    plugins: { legend: { display: false }, tooltip: {
+      callbacks: { label: ctx => ` ${ctx.parsed.y.toLocaleString("es-AR", {minimumFractionDigits:2,maximumFractionDigits:2})}` }
+    }},
+    scales: {
+      x: { ticks: { color: "#7080b0", font: { size: 9 }, maxTicksLimit: 8 }, grid: { color: "#131c45" } },
+      y: { ticks: { color: "#7080b0", font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: "#1a2460" } },
+    },
+  },
+});
+
+function fmtNum(v, dec = 2) {
+  if (v == null) return "—";
+  return Number(v).toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function fmtDate(s) {
+  if (!s) return "—";
+  const [y, m, d] = s.split("-");
+  return `${d}/${m}/${y.slice(2)}`;
+}
+
+async function loadData() {
+  document.getElementById("bcra-loading").style.display = "";
+  document.getElementById("kpi-section").style.display = "none";
+  document.getElementById("charts-section").style.display = "none";
+  document.getElementById("catalog-section").style.display = "none";
+  try {
+    const r = await fetch("/api/bcra_data");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    _bcraData = await r.json();
+    document.getElementById("bcra-loading").style.display = "none";
+    document.getElementById("bcra-asof").textContent = `Datos al ${fmtDate(_bcraData.as_of)}`;
+    renderKPIs();
+    renderCharts();
+    renderCatalog();
+  } catch (e) {
+    document.getElementById("bcra-loading").textContent = `Error: ${e.message}`;
+  }
+}
+
+function renderKPIs() {
+  const k = _bcraData.kpis;
+  const reservas = k.reservas;
+  const delta    = k.reservas_delta;
+
+  document.getElementById("kpi-reservas").textContent =
+    reservas != null ? `USD ${fmtNum(reservas / 1000, 1)}bn` : "—";
+
+  if (delta != null) {
+    const sign = delta >= 0 ? "+" : "";
+    const el = document.getElementById("kpi-reservas-delta");
+    el.textContent = `∆ ${sign}${Math.round(delta)}mm vs día anterior`;
+    el.style.color = delta >= 0 ? "#37d67a" : "#ff6b6b";
+  }
+
+  document.getElementById("kpi-a3500").textContent =
+    k.a3500 != null ? `$${fmtNum(k.a3500, 2)}` : "—";
+
+  const tamarEl = document.getElementById("kpi-tamar");
+  if (k.tamar_tna != null) {
+    tamarEl.textContent = `${fmtNum(k.tamar_tna, 2)}%`;
+    tamarEl.className = "kpi-val";
+  } else {
+    tamarEl.textContent = "—";
+  }
+
+  document.getElementById("kpi-section").style.display = "";
+}
+
+function renderCharts() {
+  const h = _bcraData.history;
+
+  function buildChart(canvasId, seriesKey, label, color) {
+    const pts = h[seriesKey] || [];
+    const labels = pts.map(p => {
+      const d = p.fecha; const [, m, day] = d.split("-"); return `${day}/${m}`;
+    });
+    const data = pts.map(p => p.valor);
+    const canvas = document.getElementById(canvasId);
+    if (_charts[canvasId]) { _charts[canvasId].destroy(); }
+    const opts = CHART_OPTS(label, color);
+    opts.data.labels = labels;
+    opts.data.datasets[0].data = data;
+    _charts[canvasId] = new Chart(canvas, opts);
+  }
+
+  buildChart("chart-reservas", "reservas", "Reservas USD mm", "#f5c451");
+  buildChart("chart-a3500",    "a3500",    "A3500 $/USD",     "#60c8ff");
+  buildChart("chart-tamar",    "tamar",    "TAMAR TNA %",     "#a78bfa");
+
+  document.getElementById("charts-section").style.display = "";
+}
+
+function renderCatalog() {
+  const cat = _bcraData.catalog || [];
+  if (cat.length === 0) {
+    document.getElementById("catalog-section").style.display = "none";
+    return;
+  }
+  document.getElementById("catalog-section").style.display = "";
+  _renderCatalogTable(cat);
+}
+
+function _renderCatalogTable(rawCat) {
+  const q = _catalogFilter.toLowerCase();
+  const filtered = q
+    ? rawCat.filter(r =>
+        String(r.descripcion || "").toLowerCase().includes(q) ||
+        String(r.categoria   || "").toLowerCase().includes(q) ||
+        String(r.idVariable  || "").includes(q))
+    : rawCat;
+
+  const sorted = [...filtered].sort((a, b) => {
+    const va = a[_sortCol] ?? "";
+    const vb = b[_sortCol] ?? "";
+    if (typeof va === "number") return _sortAsc ? va - vb : vb - va;
+    return _sortAsc
+      ? String(va).localeCompare(String(vb))
+      : String(vb).localeCompare(String(va));
+  });
+
+  const tbody = document.getElementById("catalog-tbody");
+  tbody.innerHTML = "";
+  for (const r of sorted) {
+    const tr = document.createElement("tr");
+    const val = r.ultValorInformado;
+    tr.innerHTML = `
+      <td class="num id-col">${r.idVariable ?? "—"}</td>
+      <td class="desc">${r.descripcion ?? "—"}</td>
+      <td class="cat">${r.categoria ?? "—"}</td>
+      <td style="font-size:10px;color:#7080b0">${r.periodicidad ?? "—"}</td>
+      <td style="font-size:10px;color:#8899cc">${r.unidadExpresion ?? "—"}</td>
+      <td class="num" style="color:#e0e8ff">${val != null ? fmtNum(val, 2) : "—"}</td>
+      <td style="font-size:10px;color:#8899cc">${fmtDate(r.ultFechaInformada)}</td>`;
+    tbody.appendChild(tr);
+  }
+  document.getElementById("catalog-count").textContent =
+    `${filtered.length} de ${rawCat.length} variables`;
+}
+
+// Sorting
+document.getElementById("catalog-table").querySelector("thead").addEventListener("click", e => {
+  const th = e.target.closest("th[data-col]");
+  if (!th) return;
+  const col = th.dataset.col;
+  if (_sortCol === col) _sortAsc = !_sortAsc;
+  else { _sortCol = col; _sortAsc = true; }
+  _renderCatalogTable(_bcraData.catalog || []);
+});
+
+// Search
+document.getElementById("catalog-search").addEventListener("input", e => {
+  _catalogFilter = e.target.value;
+  if (_bcraData) _renderCatalogTable(_bcraData.catalog || []);
+});
+
+// Init
+loadData();
+</script>
+</body>
+</html>

@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 from datetime import date
-from core.domain.models import Instrument, MarketSnapshot, InstrumentMetrics
+from core.domain.models import Instrument, MarketSnapshot
+
 
 class IInstrumentsRepository(ABC):
     @abstractmethod
@@ -16,6 +17,7 @@ class IInstrumentsRepository(ABC):
     def get_instrument_by_ticker(self, ticker: str) -> Optional[Instrument]:
         pass
 
+
 class IMarketDataProvider(ABC):
     @abstractmethod
     def fetch_snapshots(self, tickers: List[str]) -> Dict[str, MarketSnapshot]:
@@ -23,13 +25,4 @@ class IMarketDataProvider(ABC):
 
     @abstractmethod
     def fetch_historical_prices(self, ticker: str, days: int) -> Dict[date, float]:
-        pass
-
-class IMetricsCalculator(ABC):
-    @abstractmethod
-    def calculate_tir(self, snapshot: MarketSnapshot) -> Optional[float]:
-        pass
-
-    @abstractmethod
-    def calculate_duration(self, snapshot: MarketSnapshot) -> Optional[float]:
         pass

@@ -6,37 +6,55 @@ Used for:
   - Dolar mayorista (venta) -> deflator for DOLAR_LINKED bond TIRs
   - All quotes -> header strip in the web dashboard
 
-Thread-safe in-process cache; refreshes once per minute.
+Class-level cache shared across instances (DolarAPIProvider() is created
+~8× per refresh cycle inside use_case.execute). TTL coalesces all those
+calls into a single network round-trip while keeping data fresh between
+server cycles — must stay strictly below REFRESH_SEC.
 """
 
-import json
 import logging
-import ssl
 import threading
 import time
-import urllib.request
+from datetime import datetime, timedelta
 from typing import Dict, Optional
+
+from core.infrastructure._http import http_get_json
 
 logger = logging.getLogger(__name__)
 
 
 class DolarAPIProvider:
     URL = "https://dolarapi.com/v1/dolares"
+    # Backstop TTL for callers that never invalidate (CLI scripts). The web
+    # refresh loop invalidates explicitly via `invalidate_cache()` once per
+    # cycle so every panel inside the cycle shares one network round-trip
+    # even when the cycle exceeds this TTL.
     TTL_SECONDS = 60
+
+    # Mayorista is the rate used to value DOLAR_LINKED bonds in pesos. If
+    # the upstream stops updating we silently price DL bonds against an old
+    # FX. Warn once per hour (not per fetch — would spam every 3s).
+    _STALE_THRESHOLD_HOURS = 6
+    _STALE_WARN_COOLDOWN_S = 3600
 
     _lock = threading.Lock()
     _cache: Dict[str, dict] = {}
     _last_fetch_ts: float = 0.0
+    _last_stale_warn_ts: float = 0.0
+
+    def invalidate_cache(self) -> None:
+        """Force the next get_* call to refetch from upstream. Called by the
+        refresh loop at the start of each cycle."""
+        type(self)._last_fetch_ts = 0.0
 
     def _fetch(self) -> None:
         with self._lock:
             if self._cache and (time.time() - self._last_fetch_ts) < self.TTL_SECONDS:
                 return
             try:
-                ctx = ssl._create_unverified_context()
-                req = urllib.request.Request(self.URL, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
-                    payload = json.loads(r.read().decode("utf-8"))
+                payload = http_get_json(
+                    self.URL, timeout=10, user_agent="Mozilla/5.0", source="DolarAPI",
+                )
                 fresh = {}
                 for row in payload:
                     casa = str(row.get("casa", "")).strip().lower()
@@ -49,11 +67,49 @@ class DolarAPIProvider:
                         "fechaActualizacion": row.get("fechaActualizacion"),
                     }
                 if fresh:
-                    self._cache = fresh
-                    self._last_fetch_ts = time.time()
-                    logger.info(f"Loaded {len(fresh)} USD quotes from dolarapi.")
+                    type(self)._cache = fresh
+                    type(self)._last_fetch_ts = time.time()
+                    # Cada ciclo del web server (5s) re-fetchea — INFO inundaría
+                    # ~17k líneas/día. Resumen periódico en server.py / heartbeat.
+                    logger.debug(f"Loaded {len(fresh)} USD quotes from dolarapi.")
+                    self._check_staleness()
             except Exception as e:
                 logger.warning(f"DolarAPI fetch failed: {e}")
+
+    def _check_staleness(self) -> None:
+        # Skip on weekends: the FX market doesn't trade Sat/Sun, so a quote
+        # from Friday's close registers as 40-60h "stale" on Sunday — that's
+        # normal, not an anomaly. A Monday morning warning with the same gap
+        # would be real. Holidays still trigger false positives but are rare
+        # enough that a hardcoded calendar isn't worth maintaining.
+        if datetime.now().weekday() >= 5:
+            return
+        mayorista = self._cache.get("mayorista")
+        if not mayorista:
+            return
+        raw = mayorista.get("fechaActualizacion")
+        if not raw:
+            return
+        try:
+            t = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return
+        try:
+            age = datetime.now(t.tzinfo) - t
+        except TypeError:
+            return
+        if age <= timedelta(hours=self._STALE_THRESHOLD_HOURS):
+            return
+        now = time.time()
+        if now - self._last_stale_warn_ts < self._STALE_WARN_COOLDOWN_S:
+            return
+        type(self)._last_stale_warn_ts = now
+        hours = age.total_seconds() / 3600
+        logger.warning(
+            "FX mayorista stale: dolarapi.com last update %.1fh ago (>%dh threshold). "
+            "DOLAR_LINKED bond valuations use this quote — verify upstream.",
+            hours, self._STALE_THRESHOLD_HOURS,
+        )
 
     def get_all(self) -> Dict[str, dict]:
         self._fetch()
@@ -66,3 +122,16 @@ class DolarAPIProvider:
     def get_mayorista_venta(self) -> Optional[float]:
         q = self.get_quote("mayorista")
         return q.get("venta") if q else None
+
+    def get_mayorista_mid(self) -> Optional[float]:
+        """Mid del dólar mayorista = (compra + venta) / 2. Usado como spot
+        para la TNA implícita de los futuros DLR — representa mejor el "spot
+        operable" que el A3500 (índice de referencia BCRA, no transable).
+        Fallback a venta si falta compra."""
+        q = self.get_quote("mayorista")
+        if not q:
+            return None
+        c, v = q.get("compra"), q.get("venta")
+        if c and v:
+            return (c + v) / 2.0
+        return v or c

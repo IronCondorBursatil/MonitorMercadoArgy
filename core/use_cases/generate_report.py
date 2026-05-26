@@ -1,7 +1,7 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
-from typing import List
+from typing import List, Optional
 
 from core.domain.interfaces import IInstrumentsRepository, IMarketDataProvider
 from core.domain.models import Instrument, InstrumentMetrics, MarketSnapshot
@@ -47,26 +47,36 @@ class GenerateMonitorReport:
 
         return [r for r in results if r is not None]
 
-    def _enrich_metrics(self, inst: Instrument, snapshot: MarketSnapshot, indices, fx) -> InstrumentMetrics:
-        hist = self.provider.fetch_historical_prices(inst.ric, 365)
+    def _enrich_metrics(self, inst: Instrument, snapshot: MarketSnapshot, indices, fx) -> Optional[InstrumentMetrics]:
+        # Per-instrument failures must not abort the whole batch — one bad
+        # cashflow row would silently take down every panel under the
+        # consolidated execute(). Return None on failure; execute() already
+        # filters Nones out of the result list.
+        try:
+            hist = self.provider.fetch_historical_prices(inst.ticker, 365)
 
-        today = date.today()
-        px_7d = hist.get(today - timedelta(days=7))
-        px_30d = hist.get(today - timedelta(days=30))
-        px_1y = hist.get(today - timedelta(days=365))
+            today = date.today()
+            px_7d = hist.get(today - timedelta(days=7))
+            px_30d = hist.get(today - timedelta(days=30))
+            px_1y = hist.get(today - timedelta(days=365))
 
-        metrics = InstrumentMetrics(snapshot=snapshot)
-        metrics.tir = FinancialEngine.calculate_tir(snapshot, indices_provider=indices, fx_provider=fx)
-        metrics.technical_value = FinancialEngine.calculate_technical_value(snapshot, indices_provider=indices)
+            metrics = InstrumentMetrics(snapshot=snapshot)
+            metrics.tir = FinancialEngine.calculate_tir(snapshot, indices_provider=indices, fx_provider=fx)
+            metrics.technical_value = FinancialEngine.calculate_technical_value(
+                snapshot, indices_provider=indices, fx_provider=fx,
+            )
 
-        if metrics.technical_value and snapshot.price:
-            metrics.parity = snapshot.price / metrics.technical_value
+            if metrics.technical_value and snapshot.price:
+                metrics.parity = snapshot.price / metrics.technical_value
 
-        if metrics.tir is not None:
-            metrics.duration = FinancialEngine.calculate_duration(snapshot, metrics.tir)
+            if metrics.tir is not None:
+                metrics.duration = FinancialEngine.calculate_duration(snapshot, metrics.tir)
 
-        metrics.variance_7d = FinancialEngine.calculate_pct_change(snapshot.price, px_7d)
-        metrics.variance_30d = FinancialEngine.calculate_pct_change(snapshot.price, px_30d)
-        metrics.variance_1y = FinancialEngine.calculate_pct_change(snapshot.price, px_1y)
+            metrics.variance_7d = FinancialEngine.calculate_pct_change(snapshot.price, px_7d)
+            metrics.variance_30d = FinancialEngine.calculate_pct_change(snapshot.price, px_30d)
+            metrics.variance_1y = FinancialEngine.calculate_pct_change(snapshot.price, px_1y)
 
-        return metrics
+            return metrics
+        except Exception as e:
+            logger.warning(f"Enrich failed for {inst.ticker}: {type(e).__name__}: {e}")
+            return None

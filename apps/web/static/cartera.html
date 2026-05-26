@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mi Cartera · Balanz</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("monitor-theme");
+        if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/static/style.css?v=43" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body { background: var(--page-bg); color: var(--text-white); font-family: "Inter Tight", sans-serif; margin: 0; }
+    .ct-header {
+      display: flex; align-items: center; gap: 16px;
+      background: var(--navy); padding: 10px 16px;
+      border-bottom: 1px solid #1f2a5a; position: sticky; top: 0; z-index: 10;
+    }
+    .ct-back {
+      background: var(--navy-light); border: 1px solid var(--accent-blue);
+      color: var(--text-white); border-radius: 4px; padding: 5px 12px;
+      font-size: 10px; font-weight: 800; letter-spacing: 0.8px; cursor: pointer; text-decoration: none;
+    }
+    .ct-title { font-size: 15px; font-weight: 800; letter-spacing: 1px; }
+    .ct-sub   { font-size: 11px; color: #8899cc; }
+    .ct-spacer { flex: 1; }
+    .ct-body { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+
+    .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .kpi-card {
+      flex: 1; min-width: 150px;
+      background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 6px;
+      padding: 12px 16px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .kpi-label { font-size: 9px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.8px; }
+    .kpi-val   { font-size: 22px; font-weight: 800; font-family: "JetBrains Mono", monospace; color: var(--text); }
+    .kpi-val.blue { color: #60c8ff; } .kpi-val.green { color: #37d67a; } .kpi-val.red { color: #ff6b6b; }
+    .kpi-sub   { font-size: 10px; color: var(--text-faint); font-family: "JetBrains Mono", monospace; }
+
+    .section-title {
+      font-size: 11px; font-weight: 800; letter-spacing: 1px; color: var(--text-dim);
+      text-transform: uppercase; border-bottom: 1px solid var(--panel-border); padding-bottom: 6px; margin-bottom: 10px;
+    }
+
+    /* alta de tenencia */
+    .add-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+    .add-field { display: flex; flex-direction: column; gap: 3px; }
+    .add-field label { font-size: 9px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.6px; }
+    .add-field input {
+      background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--text);
+      border-radius: 4px; padding: 6px 10px; font-family: inherit; font-size: 12px;
+    }
+    .add-field input:focus { outline: none; border-color: var(--accent-blue); }
+    .add-btn {
+      background: var(--accent-blue); border: none; color: #061026; border-radius: 4px;
+      padding: 7px 16px; font-weight: 800; font-size: 11px; letter-spacing: 0.6px; cursor: pointer;
+    }
+    .add-status { font-size: 11px; color: var(--text-faint); }
+
+    table.ct-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    table.ct-table thead th {
+      text-align: right; padding: 6px 10px; font-size: 9px; font-weight: 700;
+      color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.6px;
+      border-bottom: 1px solid var(--panel-border); white-space: nowrap;
+    }
+    table.ct-table thead th.l { text-align: left; }
+    table.ct-table tbody td { padding: 5px 10px; border-bottom: 1px solid var(--row-alt); text-align: right; font-family: "JetBrains Mono", monospace; white-space: nowrap; }
+    table.ct-table tbody td.l { text-align: left; font-family: "Inter Tight", sans-serif; }
+    table.ct-table tbody tr:hover { background: var(--row-hover); }
+    .tk { font-weight: 700; color: var(--text); }
+    .muted { color: var(--text-faint); font-size: 10px; }
+    .pos { color: #37d67a; } .neg { color: #ff6b6b; }
+    .del-btn { background: none; border: none; color: #ff6b6b; cursor: pointer; font-size: 13px; opacity: 0.6; }
+    .del-btn:hover { opacity: 1; }
+
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+    .card { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 6px; padding: 14px; }
+    .card canvas { width: 100% !important; height: 200px !important; }
+    .expo-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 11px; }
+    .expo-bar { height: 10px; border-radius: 2px; background: var(--accent-blue); }
+    .expo-name { width: 90px; color: var(--text-dim); } .expo-val { font-family: "JetBrains Mono", monospace; color: var(--text-faint); font-size: 10px; }
+    .loading-msg { padding: 30px; color: var(--text-faint); font-size: 13px; text-align: center; }
+    .empty-msg { padding: 24px; color: var(--text-faint); font-size: 12px; text-align: center; border: 1px dashed var(--panel-border); border-radius: 6px; }
+    .footnote { font-size: 10px; color: var(--text-faint); margin-top: 6px; }
+  </style>
+</head>
+<body>
+
+<header class="ct-header">
+  <a class="ct-back" href="/" title="Volver al monitor principal">← Monitor</a>
+  <div>
+    <div class="ct-title">Mi Cartera</div>
+    <div class="ct-sub" id="ct-asof">Cargando…</div>
+  </div>
+  <div class="ct-spacer"></div>
+  <button class="ct-back" onclick="loadCartera()" title="Refrescar">↺ Refrescar</button>
+</header>
+
+<div class="ct-body">
+  <div id="ct-loading" class="loading-msg">Cargando cartera…</div>
+
+  <!-- KPIs -->
+  <div id="kpi-section" style="display:none">
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-label">Valor de mercado</div>
+        <div class="kpi-val" id="kpi-value">—</div>
+        <div class="kpi-sub" id="kpi-value-sub">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Resultado (P&L)</div>
+        <div class="kpi-val" id="kpi-pnl">—</div>
+        <div class="kpi-sub" id="kpi-pnl-sub">vs. costo</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">TIR ponderada</div>
+        <div class="kpi-val blue" id="kpi-tir">—</div>
+        <div class="kpi-sub">por valor de mercado</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">MD de cartera</div>
+        <div class="kpi-val" id="kpi-md">—</div>
+        <div class="kpi-sub" id="kpi-spread">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alta / edición -->
+  <div>
+    <div class="section-title">Agregar / editar tenencia</div>
+    <form class="add-form" id="add-form" autocomplete="off">
+      <div class="add-field">
+        <label for="f-ticker">Ticker</label>
+        <input id="f-ticker" list="ticker-list" placeholder="AL30D" required style="width:120px" />
+        <datalist id="ticker-list"></datalist>
+      </div>
+      <div class="add-field">
+        <label for="f-nominal">Nominal (VN)</label>
+        <input id="f-nominal" type="number" step="any" min="0" placeholder="10000" required style="width:120px" />
+      </div>
+      <div class="add-field">
+        <label for="f-cost">Precio costo (opc.)</label>
+        <input id="f-cost" type="number" step="any" min="0" placeholder="70.10" style="width:120px" />
+      </div>
+      <button class="add-btn" type="submit">Guardar</button>
+      <span class="add-status" id="add-status"></span>
+    </form>
+  </div>
+
+  <!-- Posiciones -->
+  <div id="positions-section" style="display:none">
+    <div class="section-title">Posiciones</div>
+    <div id="positions-empty" class="empty-msg" style="display:none">
+      No tenés tenencias cargadas. Agregá una arriba (ticker + nominal).
+    </div>
+    <table class="ct-table" id="positions-table" style="display:none">
+      <thead>
+        <tr>
+          <th class="l">Ticker</th><th class="l">Tipo</th><th>Mon</th>
+          <th>Nominal</th><th>Costo</th><th>Último</th>
+          <th>P&L %</th><th>VM (ARS)</th><th>Peso</th>
+          <th>TIR</th><th>MD</th><th>vs curva</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="positions-tbody"></tbody>
+    </table>
+    <div class="footnote">P&L = variación de precio vs. costo (no incluye cupones cobrados). VM convertido a ARS al MEP para posiciones USD.</div>
+  </div>
+
+  <!-- Exposición + flujos -->
+  <div id="charts-section" style="display:none" class="grid2">
+    <div class="card">
+      <div class="section-title" style="border:none;padding:0">Exposición por tipo</div>
+      <div id="expo-grupo"></div>
+      <div class="section-title" style="border:none;padding:0;margin-top:14px">Por moneda</div>
+      <div id="expo-moneda"></div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="border:none;padding:0">Flujos futuros por mes</div>
+      <canvas id="chart-cf"></canvas>
+      <div class="footnote">Flujos en términos base. CER/TAMAR/DL se indexan al pago (montos aproximados); hard-dollar USD son exactos.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let _cartera = null;
+let _cfChart = null;
+
+const fmtNum = (v, dec = 2) =>
+  v == null ? "—" : Number(v).toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+const fmtPct = (v, dec = 2) => v == null ? "—" : `${fmtNum(v, dec)}%`;        // v ya en % units
+const fmtPctDec = (v, dec = 2) => v == null ? "—" : `${fmtNum(v * 100, dec)}%`; // v en fracción
+const signClass = (v) => v == null ? "" : (v >= 0 ? "pos" : "neg");
+const fmtMoney = (v, ccy = "ARS", dec = 0) => v == null ? "—" : `${ccy === "USD" ? "u$s" : "$"} ${fmtNum(v, dec)}`;
+
+async function loadTickerList() {
+  try {
+    const r = await fetch("/api/abm/instruments");
+    if (!r.ok) return;
+    const { items } = await r.json();
+    const dl = document.getElementById("ticker-list");
+    dl.innerHTML = (items || []).map((i) => `<option value="${i.ticker}">`).join("");
+  } catch (e) { /* no-op: el datalist es una ayuda, no un requisito */ }
+}
+
+async function loadCartera() {
+  document.getElementById("ct-loading").style.display = "";
+  try {
+    const r = await fetch("/api/cartera");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    _cartera = await r.json();
+    document.getElementById("ct-loading").style.display = "none";
+    document.getElementById("ct-asof").textContent =
+      `Al ${_cartera.summary.as_of}` + (_cartera.summary.fx_usd_ars ? ` · MEP $${fmtNum(_cartera.summary.fx_usd_ars, 0)}` : "");
+    renderKPIs();
+    renderPositions();
+    renderExposure();
+    renderCashflows();
+  } catch (e) {
+    document.getElementById("ct-loading").textContent = `Error: ${e.message}`;
+  }
+}
+
+function renderKPIs() {
+  const s = _cartera.summary;
+  document.getElementById("kpi-value").textContent = fmtMoney(s.total_market_value_ars, "ARS");
+  const byc = s.by_currency || {};
+  document.getElementById("kpi-value-sub").textContent =
+    Object.entries(byc).map(([c, v]) => `${c} ${fmtNum(v, 0)}`).join(" · ") || "—";
+
+  const pnlEl = document.getElementById("kpi-pnl");
+  if (s.pnl_ars != null) {
+    pnlEl.textContent = fmtMoney(s.pnl_ars, "ARS");
+    pnlEl.className = "kpi-val " + signClass(s.pnl_ars);
+    document.getElementById("kpi-pnl-sub").textContent = `${fmtPctDec(s.pnl_pct)} vs. costo`;
+  } else {
+    pnlEl.textContent = "—";
+    document.getElementById("kpi-pnl-sub").textContent = "cargá precio de costo";
+  }
+
+  document.getElementById("kpi-tir").textContent = fmtPct(s.weighted_tir);
+  document.getElementById("kpi-md").textContent = s.portfolio_md == null ? "—" : fmtNum(s.portfolio_md, 2);
+  document.getElementById("kpi-spread").textContent =
+    s.weighted_spread_curva == null ? "—" : `vs curva ${fmtPct(s.weighted_spread_curva)}`;
+  document.getElementById("kpi-section").style.display = "";
+}
+
+function renderPositions() {
+  const pos = _cartera.positions || [];
+  document.getElementById("positions-section").style.display = "";
+  const empty = document.getElementById("positions-empty");
+  const table = document.getElementById("positions-table");
+  if (pos.length === 0) {
+    empty.style.display = ""; table.style.display = "none"; return;
+  }
+  empty.style.display = "none"; table.style.display = "";
+  const tb = document.getElementById("positions-tbody");
+  tb.innerHTML = "";
+  for (const p of pos) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="l"><span class="tk">${p.ticker}</span>${p.short_name ? `<div class="muted">${p.short_name}</div>` : ""}</td>
+      <td class="l muted">${p.grupo ?? "—"}</td>
+      <td>${p.currency}</td>
+      <td>${fmtNum(p.nominal, 0)}</td>
+      <td>${p.cost_price == null ? "—" : fmtNum(p.cost_price, 2)}</td>
+      <td>${p.price == null ? '<span class="muted">s/precio</span>' : fmtNum(p.price, 2)}</td>
+      <td class="${signClass(p.pnl_pct)}">${fmtPctDec(p.pnl_pct)}</td>
+      <td>${p.market_value_ars == null ? "—" : fmtNum(p.market_value_ars, 0)}</td>
+      <td>${fmtPctDec(p.weight)}</td>
+      <td>${fmtPct(p.tir)}</td>
+      <td>${p.md == null ? "—" : fmtNum(p.md, 2)}</td>
+      <td class="${signClass(p.spread_curva)}">${p.spread_curva == null ? "—" : fmtPct(p.spread_curva)}</td>
+      <td><button class="del-btn" title="Eliminar" data-ticker="${p.ticker}">✕</button></td>`;
+    tb.appendChild(tr);
+  }
+  tb.querySelectorAll(".del-btn").forEach((b) =>
+    b.addEventListener("click", () => deleteHolding(b.dataset.ticker)));
+}
+
+function _expoBars(containerId, obj, ccyLabel) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = "";
+  const entries = Object.entries(obj || {}).sort((a, b) => b[1] - a[1]);
+  const max = entries.length ? Math.max(...entries.map((e) => e[1])) : 0;
+  for (const [name, val] of entries) {
+    const row = document.createElement("div");
+    row.className = "expo-row";
+    const w = max > 0 ? Math.max(3, Math.round((val / max) * 160)) : 3;
+    row.innerHTML = `<span class="expo-name">${name}</span>
+      <span class="expo-bar" style="width:${w}px"></span>
+      <span class="expo-val">${fmtNum(val, 0)}</span>`;
+    el.appendChild(row);
+  }
+  if (entries.length === 0) el.innerHTML = '<span class="muted">Sin datos.</span>';
+}
+
+function renderExposure() {
+  const s = _cartera.summary;
+  document.getElementById("charts-section").style.display = "";
+  _expoBars("expo-grupo", s.by_grupo);
+  _expoBars("expo-moneda", s.by_currency);
+}
+
+function renderCashflows() {
+  const months = (_cartera.cashflows && _cartera.cashflows.months) || [];
+  const labels = months.map((m) => m.month);
+  const ars = months.map((m) => m.ars || 0);
+  const usd = months.map((m) => m.usd || 0);
+  const canvas = document.getElementById("chart-cf");
+  if (_cfChart) _cfChart.destroy();
+  _cfChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "ARS", data: ars, backgroundColor: "#60c8ff", yAxisID: "yArs" },
+        { label: "USD", data: usd, backgroundColor: "#37d67a", yAxisID: "yUsd" },
+      ],
+    },
+    options: {
+      animation: false,
+      plugins: { legend: { labels: { color: "#8899cc", font: { size: 10 } } } },
+      scales: {
+        x: { ticks: { color: "#7080b0", font: { size: 9 }, maxTicksLimit: 12 }, grid: { color: "#131c45" } },
+        yArs: { position: "left", ticks: { color: "#60c8ff", font: { size: 9 } }, grid: { color: "#1a2460" } },
+        yUsd: { position: "right", ticks: { color: "#37d67a", font: { size: 9 } }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+async function deleteHolding(ticker) {
+  if (!confirm(`¿Eliminar ${ticker} de la cartera?`)) return;
+  try {
+    const r = await fetch(`/api/cartera/${encodeURIComponent(ticker)}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    await loadCartera();
+  } catch (e) { alert(`Error al eliminar: ${e.message}`); }
+}
+
+document.getElementById("add-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const status = document.getElementById("add-status");
+  const body = {
+    ticker: document.getElementById("f-ticker").value.trim().toUpperCase(),
+    nominal: parseFloat(document.getElementById("f-nominal").value),
+    cost_price: document.getElementById("f-cost").value || null,
+  };
+  status.textContent = "Guardando…";
+  try {
+    const r = await fetch("/api/cartera", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const res = await r.json();
+    if (!r.ok) throw new Error(res.error || `HTTP ${r.status}`);
+    status.textContent = `${res.action === "created" ? "Agregada" : "Actualizada"} ${res.ticker}`;
+    document.getElementById("f-ticker").value = "";
+    document.getElementById("f-nominal").value = "";
+    document.getElementById("f-cost").value = "";
+    await loadCartera();
+    setTimeout(() => (status.textContent = ""), 2500);
+  } catch (e) { status.textContent = `Error: ${e.message}`; }
+});
+
+loadTickerList();
+loadCartera();
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# Monitor de Bonos · Balanz — dependencias de runtime.
+# Versiones pinneadas a las del entorno de desarrollo (mayo 2026).
+
+# Datos numéricos / financieros
+numpy==2.4.6
+pandas==3.0.3
+scipy==1.17.1
+
+# Excel (instruments_master.xlsx, export de feriados)
+openpyxl==3.1.5
+
+# Calendarios de mercado / feriados (BYMA)
+holidays==0.97
+pandas-market-calendars==5.3.2
+python-dateutil==2.9.0.post0
+
+# HTTP (data912, BCRA)
+requests==2.34.2
+
+# WebSocket público Matba/Primary (curva de futuros DLR — futures_provider.py)
+websockets==16.0
+
+# Tests
+pytest==9.0.3

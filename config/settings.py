@@ -1,5 +1,6 @@
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,23 +30,29 @@ _load_dotenv()
 DATA_DIR = os.path.join(BASE_DIR, "data")
 MASTER_XLSX = os.path.join(DATA_DIR, "instruments_master.xlsx")
 
-# Constantes de negocio
-REFRESH_INTERVAL_SEC = 30
-HISTORY_DAYS = 120
-PRICE_SCALE_THRESHOLD = 1000
-
 # Logging centralizado
 LOG_LEVEL = logging.INFO
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+# Ruta del log file — relativa al BASE_DIR del proyecto, no al cwd.
+_LOG_FILE = os.path.join(BASE_DIR, "monitores_global.log")
+
+
 def setup_logging():
     if logging.getLogger().handlers:
         return
+    # RotatingFileHandler: máx. 5 MB por archivo, 5 backups (= 25 MB máximo).
+    # Evita que el log crezca indefinidamente en producción 24×7.
+    file_handler = RotatingFileHandler(
+        _LOG_FILE,
+        maxBytes=5 * 1024 * 1024,  # 5 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(logging.Formatter(LOG_FORMAT))
     logging.basicConfig(
         level=LOG_LEVEL,
-        format=LOG_FORMAT,
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler("monitores_global.log", encoding="utf-8")
-        ]
+        handlers=[stream_handler, file_handler],
     )

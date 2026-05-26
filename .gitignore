@@ -23,6 +23,13 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Backups manuales de Excel / data
+*.bak
+*.bak[0-9]
+
+# Artefactos de Playwright MCP (snapshots/console de pruebas de UI)
+.playwright-mcp/
+
 # Scratch
 scratch/
 
