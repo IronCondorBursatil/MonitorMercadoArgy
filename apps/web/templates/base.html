@@ -29,6 +29,13 @@
       <nav>
         <a href="/">Bonos</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
         <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/abm">ABM</a>
+        {# CONFIG de paneles: elegir qué cuadros ver / restaurar los cerrados con X.
+           El menú lo arma el JS del dashboard (index.html); en otras páginas el
+           link lleva al dashboard. #}
+        <span class="nav-cfg-wrap" id="panel-config-wrap">
+          <a href="/" id="nav-config-btn">CONFIG</a>
+          <div class="panel-config-menu" id="panel-config-menu"></div>
+        </span>
         <button class="theme-btn" onclick="toggleTheme()" title="Cambiar tema">◑</button>
       </nav>
     </div>

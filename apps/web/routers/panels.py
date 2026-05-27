@@ -10,17 +10,21 @@ fragmentos server-side. Reusa los InstrumentMetrics ya calculados en AppState
 
 from __future__ import annotations
 
+import json
+import logging
 import math
+import os
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_fx, get_indices, get_provider, get_rofex, get_state
+from config.settings import settings
 from core.domain.instrument_groups import PANEL_LIDER
 from core.domain.portfolio import position_currency
 from core.domain.services import FinancialEngine
@@ -31,8 +35,25 @@ from core.infrastructure.futures_provider import (
     resolve_spot_for_tna,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
+
+# Layout por defecto del dashboard (posiciones + paneles cerrados + columnas).
+# Se guarda junto a la .db (fuera de OneDrive); si no existe, el front usa el
+# auto-layout. El usuario lo setea con "Guardar como default" en el menú CONFIG.
+_LAYOUT_FILE = str(Path(str(settings.catalog_db)).parent / "dashboard_layout.json")
+
+
+def _read_default_layout() -> str:
+    """Contenido JSON del layout default (string crudo para embeber), o 'null'."""
+    try:
+        with open(_LAYOUT_FILE, "r", encoding="utf-8") as f:
+            txt = f.read().strip()
+        json.loads(txt)  # validar
+        return txt
+    except (OSError, ValueError):
+        return "null"
 
 # --- Column schemas (espejo de server._get_columns para los paneles de bonos) --- #
 _BONARES_COLS = [
@@ -465,11 +486,42 @@ def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
 def index(request: Request, state=Depends(get_state)):
     panels = [{"id": pid, "title": PANELS[pid][0], "columns": PANELS[pid][2],
                "ccy_filter": pid in CCY_FILTER_PANELS,
+               "chartable": bool(PANELS[pid][1]),  # tiene MD/TIR → muestra botón Gráfico
                "rows": _build_rows(pid, state)} for pid in PANEL_ORDER]
     return _TEMPLATES.TemplateResponse(
         request, "pages/index.html",
-        {"panels": panels, "last_refresh": state.last_refresh},
+        {"panels": panels, "last_refresh": state.last_refresh,
+         "default_layout": _read_default_layout()},
     )
+
+
+@router.post("/panels/layout")
+async def save_default_layout(request: Request):
+    """Guarda el layout actual ({layout, hidden, cols}) como default del dashboard."""
+    raw = await request.body()
+    try:
+        json.loads(raw)  # debe ser JSON válido
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
+    try:
+        os.makedirs(os.path.dirname(_LAYOUT_FILE), exist_ok=True)
+        with open(_LAYOUT_FILE, "w", encoding="utf-8") as f:
+            f.write(raw.decode("utf-8"))
+    except OSError as e:
+        logger.warning("No se pudo guardar el layout default: %s", e)
+        return JSONResponse({"ok": False}, status_code=500)
+    logger.info("Dashboard: layout default guardado.")
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/panels/layout")
+def clear_default_layout():
+    """Borra el layout default (vuelve al auto-layout)."""
+    try:
+        os.remove(_LAYOUT_FILE)
+    except OSError:
+        pass
+    return JSONResponse({"ok": True})
 
 
 @router.get("/panels/{panel_id}/rows", response_class=HTMLResponse)
@@ -484,4 +536,61 @@ def panel_rows(panel_id: str, request: Request, state=Depends(get_state),
     return _TEMPLATES.TemplateResponse(
         request, "fragments/panel_rows.html",
         {"rows": rows, "ncols": len(cols)},
+    )
+
+
+# --- Gráfico (popup): dispersión TIR×MD + curva log por grupo --------------- #
+def _chart_payload(panel_id: str, state, ccy_set: Optional[set]) -> List[dict]:
+    """[{label, color, points:[{x:MD,y:TIR%,t:ticker}], curve:[{x,y}]}] por grupo.
+
+    BONARES separa Bonares (BONAR) vs Globales (GLOBAL) en dos colores; el resto
+    de los paneles de bonos van en una sola curva. Paneles sin MD/TIR → []."""
+    if panel_id not in PANELS:
+        return []
+    title, types, _cols = PANELS[panel_id]
+    if not types:  # valor_relativo / panel_lider / futuros / BEI: sin scatter MD/TIR
+        return []
+    buckets: dict = {}
+    for m in state.metrics():
+        inst = m.snapshot.instrument if m.snapshot else None
+        if not inst or inst.instrument_type not in types:
+            continue
+        if not m.duration or m.duration <= 0 or m.tir is None:
+            continue
+        if ccy_set is not None and _ticker_ccy(inst.ticker) not in ccy_set:
+            continue
+        if panel_id == "bonares":
+            label, color = ("Bonares", "#3a5fcf") if inst.instrument_type == "BONAR" \
+                else ("Globales", "#d99a2b")
+        else:
+            label, color = title, "#3a5fcf"
+        buckets.setdefault(label, {"color": color, "ms": []})["ms"].append(m)
+
+    datasets: List[dict] = []
+    for label, b in buckets.items():
+        ms = b["ms"]
+        points = [{"x": round(m.duration, 3), "y": round(m.tir * 100, 3),
+                   "t": m.snapshot.instrument.ticker} for m in ms]
+        curve: List[dict] = []
+        fit = _fit_log_curve(ms)
+        mds = sorted(m.duration for m in ms)
+        if fit and len(mds) >= 3 and mds[-1] > mds[0]:
+            a, bb = fit
+            lo, hi = mds[0], mds[-1]
+            for i in range(24):
+                x = lo + (hi - lo) * i / 23.0
+                if x > 0:
+                    curve.append({"x": round(x, 3), "y": round((a + bb * math.log(x)) * 100, 3)})
+        datasets.append({"label": label, "color": b["color"], "points": points, "curve": curve})
+    return datasets
+
+
+@router.get("/panels/{panel_id}/chart", response_class=HTMLResponse)
+def panel_chart(panel_id: str, request: Request, ccy: str = "", state=Depends(get_state)):
+    ccy_set = {c.strip().upper() for c in ccy.split(",") if c.strip()} or None
+    datasets = _chart_payload(panel_id, state, ccy_set)
+    title = PANELS.get(panel_id, (panel_id,))[0]
+    return _TEMPLATES.TemplateResponse(
+        request, "fragments/panel_chart.html",
+        {"title": title, "datasets_json": json.dumps(datasets)},
     )

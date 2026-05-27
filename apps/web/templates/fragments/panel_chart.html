@@ -1,0 +1,98 @@
+{# Popup del gráfico de un panel: dispersión TIR×MD + curva log por grupo.
+   Chart.js se carga en el <head> de index.html. htmx ejecuta este <script> al swap. #}
+<div class="modal-overlay" onclick="if(event.target===this)document.getElementById('modal').innerHTML=''">
+  <div class="modal-card" style="width:min(880px,96vw)">
+    <div class="modal-head">
+      <b>{{ title }} · curva TIR vs MD</b>
+      <button type="button" class="ph-btn ph-x" onclick="document.getElementById('modal').innerHTML=''">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="curve-wrap" style="height:62vh"><canvas id="curveChart"></canvas></div>
+      <script id="curveData" type="application/json">{{ datasets_json|safe }}</script>
+      <script>
+        (function () {
+          var data = [];
+          try { data = JSON.parse(document.getElementById("curveData").textContent || "[]"); } catch (e) {}
+          var cv = document.getElementById("curveChart");
+          if (typeof Chart === "undefined" || !data.length) {
+            document.getElementById("curve-wrap").outerHTML =
+              '<div class="err">Sin datos para graficar (este panel no tiene MD/TIR).</div>';
+            return;
+          }
+          var dark = document.documentElement.getAttribute("data-theme") === "dark";
+          var txt = dark ? "#aab4d4" : "#4a5780";
+          var grid = dark ? "rgba(255,255,255,.08)" : "rgba(10,29,74,.08)";
+          var ds = [];
+          data.forEach(function (g) {
+            ds.push({ type: "scatter", label: g.label, data: g.points,
+                      backgroundColor: g.color, borderColor: g.color,
+                      pointRadius: 4, pointHoverRadius: 6 });
+            if (g.curve && g.curve.length)
+              ds.push({ type: "line", label: g.label + " (log)", data: g.curve,
+                        borderColor: g.color, borderWidth: 2, pointRadius: 0,
+                        fill: false, tension: 0.25, borderDash: [5, 4] });
+          });
+          // Interp lineal de la curva en x (para decidir arriba/abajo del punto).
+          function curveYAt(curve, x) {
+            if (!curve || !curve.length) return null;
+            if (x <= curve[0].x) return curve[0].y;
+            if (x >= curve[curve.length - 1].x) return curve[curve.length - 1].y;
+            for (var i = 1; i < curve.length; i++) {
+              if (curve[i].x >= x) {
+                var a = curve[i - 1], b = curve[i], f = (x - a.x) / (b.x - a.x);
+                return a.y + (b.y - a.y) * f;
+              }
+            }
+            return null;
+          }
+          // Plugin: ticker centrado arriba/abajo del punto (nunca sobre la curva).
+          var tickerLabels = {
+            id: "tickerLabels",
+            afterDatasetsDraw: function (chart) {
+              var ctx = chart.ctx;
+              chart.data.datasets.forEach(function (dset, di) {
+                if (dset.type !== "scatter") return;
+                var meta = chart.getDatasetMeta(di);
+                var grp = data.filter(function (g) { return g.label === dset.label; })[0];
+                var curve = grp ? grp.curve : null;
+                ctx.save();
+                ctx.font = "600 10px 'Inter Tight', -apple-system, sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillStyle = dset.borderColor || txt;
+                meta.data.forEach(function (pt, i) {
+                  var d = dset.data[i];
+                  if (!d || !d.t) return;
+                  var cy = curveYAt(curve, d.x);
+                  // punto sobre (o igual a) la curva → label arriba; debajo → label abajo
+                  if (cy === null || d.y >= cy) { ctx.textBaseline = "bottom"; ctx.fillText(d.t, pt.x, pt.y - 7); }
+                  else { ctx.textBaseline = "top"; ctx.fillText(d.t, pt.x, pt.y + 7); }
+                });
+                ctx.restore();
+              });
+            }
+          };
+          new Chart(cv.getContext("2d"), {
+            data: { datasets: ds },
+            plugins: [tickerLabels],
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              scales: {
+                x: { type: "linear", title: { display: true, text: "MD (años)", color: txt },
+                     ticks: { color: txt }, grid: { color: grid } },
+                y: { title: { display: true, text: "TIR %", color: txt },
+                     ticks: { color: txt }, grid: { color: grid } }
+              },
+              plugins: {
+                legend: { labels: { color: txt,
+                          filter: function (it) { return it.text.indexOf("(log)") < 0; } } },
+                tooltip: { callbacks: { label: function (c) {
+                  var p = c.raw; return (p.t ? p.t + ": " : "") +
+                    "MD " + p.x.toFixed(2) + " · TIR " + p.y.toFixed(2) + "%"; } } }
+              }
+            }
+          });
+        })();
+      </script>
+    </div>
+  </div>
+</div>

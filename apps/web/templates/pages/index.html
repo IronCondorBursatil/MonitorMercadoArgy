@@ -3,18 +3,52 @@
 <link rel="stylesheet" href="/static/vendor/gridstack/gridstack.min.css">
 <script src="/static/vendor/gridstack/gridstack-all.js"></script>
 <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 {% endblock %}
 {% block content %}
+{# Resolución del grid: columnas y celdas chicas = resize de grano fino (se siente
+   continuo, sin saltos discretos). El script de abajo lee COL/CELL/MARGIN del
+   data-* del contenedor y genera el CSS de las COL columnas (GridStack sólo trae
+   el de 12). Mantené COL múltiplo de 2 para que el medio ancho sea exacto. #}
+{% set COL = 200 %}
+{% set CELL = 5 %}
+{% set MARGIN = 5 %}
+{% set DEFH = (372 / CELL) | round | int %}  {# alto por defecto = el de antes (6×62px) #}
 {% set wide = ["valor_relativo", "panel_lider", "futuros", "bei_tenor", "bei_sendero", "bei_pares"] %}
 {# SSE (§7.4): el server pushea `refresh` cada ciclo del loop → los paneles
    recargan event-driven. `every 15s` queda como fallback si la conexión SSE
    se cae (reconexión) o la extensión no carga. #}
-<div class="grid-stack" hx-ext="sse" sse-connect="/stream">
+<div class="grid-stack" data-col="{{ COL }}" data-cell="{{ CELL }}" data-margin="{{ MARGIN }}"
+     hx-ext="sse" sse-connect="/stream">
   {% for p in panels %}
   <div class="grid-stack-item" gs-id="{{ p.id }}"
-       gs-w="{{ 12 if p.id in wide else 6 }}" gs-h="6">
+       gs-w="{{ COL if p.id in wide else COL // 2 }}" gs-h="{{ DEFH }}"
+       gs-min-w="{{ COL // 7 }}" gs-min-h="8">
     <div class="grid-stack-item-content panel" data-id="{{ p.id }}">
-      <div class="panel-head">{{ p.title }}</div>
+      <div class="panel-head">
+        <span class="ph-title">{{ p.title }}</span>
+        <span class="ph-tools">
+          {% if p.chartable %}<button type="button" class="ph-btn" data-act="chart">Gráfico</button>{% endif %}
+          <span class="ph-cfg">
+            <button type="button" class="ph-btn" data-act="cfg">Config</button>
+            {# Desplegable: mostrar/ocultar columnas (mismo estilo que el CONFIG global). #}
+            <div class="col-menu">
+              {% for c in p.columns %}
+              <button type="button" class="cfg-item on" data-col="{{ loop.index }}">{{ c.label }}</button>
+              {% endfor %}
+            </div>
+          </span>
+          {% if p.ccy_filter %}
+          {# Filtro de moneda: single-select; con Ctrl elegís varias. Default: MEP. #}
+          <span class="ccy-filter">
+            <button type="button" class="ccy-btn" data-ccy="ARS">ARS</button>
+            <button type="button" class="ccy-btn on" data-ccy="MEP">MEP</button>
+            <button type="button" class="ccy-btn" data-ccy="CABLE">CABLE</button>
+          </span>
+          {% endif %}
+          <button type="button" class="ph-btn ph-x" data-act="close" title="Cerrar panel">✕</button>
+        </span>
+      </div>
       <div class="panel-body">
         <table>
           <thead>
@@ -37,18 +71,290 @@
 <script>
   (function () {
     if (typeof GridStack === "undefined") return;  // fallback: bloques apilados
+    var el = document.querySelector(".grid-stack");
+    var COL = parseInt(el.dataset.col, 10) || 12;
+    var CELL = parseInt(el.dataset.cell, 10) || 62;
+    var MARGIN = parseInt(el.dataset.margin, 10) || 7;
+
+    // GridStack sólo incluye el CSS de columnas para 12; con muchas columnas el
+    // ancho/posición de cada item no tendría regla. Generamos las COL reglas →
+    // el resize horizontal avanza ~100/COL % por paso (con COL alto, casi continuo).
+    var css = ".gs-" + COL + ">.grid-stack-item{width:" + (100 / COL).toFixed(4) + "%}";
+    for (var i = 0; i < COL; i++) {
+      css += ".gs-" + COL + ">.grid-stack-item[gs-x='" + i + "']{left:" + (i * 100 / COL).toFixed(4) + "%}";
+      css += ".gs-" + COL + ">.grid-stack-item[gs-w='" + (i + 1) + "']{width:" + ((i + 1) * 100 / COL).toFixed(4) + "%}";
+    }
+    var st = document.createElement("style");
+    st.id = "gs-cols";
+    st.textContent = css;
+    document.head.appendChild(st);  // antes del init: la clase .gs-COL ya queda estilada
+
+    // Por DEFAULT el alto se ajusta al contenido (sin scrollbar); DESPUÉS el
+    // resize es libre — alto y ancho, desde los bordes y las esquinas (se/sw).
+    // Al redimensionar a mano, el panel queda "manual" y deja de auto-ajustarse
+    // (salvo que cambies de moneda, que fuerza el re-fit para mostrar todas).
     var grid = GridStack.init({
-      column: 12, cellHeight: 62, margin: 7, float: false,
-      handle: ".panel-head", resizable: { handles: "e, se, s" },
+      column: COL, cellHeight: CELL, margin: MARGIN, float: false,
+      handle: ".panel-head", resizable: { handles: "e, s, se, sw" },
     });
-    var KEY = "grid-layout-v1";
+    // v3: el alto arranca en auto-fit. Prioridad: layout personal (localStorage) >
+    // layout default del server (DEFAULT_LAYOUT) > auto-layout de GridStack.
+    var KEY = "grid-layout-v3";
+    var DEFAULT_LAYOUT = {{ default_layout|safe }};
+    var DL = (DEFAULT_LAYOUT && typeof DEFAULT_LAYOUT === "object") ? DEFAULT_LAYOUT : null;
     try {
       var saved = JSON.parse(localStorage.getItem(KEY) || "null");
-      if (saved && saved.length) grid.load(saved, false);  // false: sólo reposiciona existentes
+      if ((!saved || !saved.length) && DL && DL.layout && DL.layout.length) saved = DL.layout;
+      if (saved && saved.length) grid.load(saved, false);  // restaura posición/ancho/alto
     } catch (e) {}
     grid.on("change", function () {
       try { localStorage.setItem(KEY, JSON.stringify(grid.save(false))); } catch (e) {}
     });
+    // Resize manual → el panel queda fijado por el usuario (no más auto-fit).
+    grid.on("resizestart", function (event, element) {
+      if (element) element.dataset.manual = "1";
+    });
+
+    // --- Auto-fit de altura al contenido ---------------------------------- //
+    // Mide el alto natural (head + tabla; las filas ocultas por el filtro de
+    // moneda no cuentan) y fija gs-h = ceil(px / cellHeight). table.offsetHeight
+    // da el alto natural tanto para crecer como para encoger (scrollHeight no:
+    // si el panel sobra, devuelve el alto actual, no el del contenido).
+    var MINROWS = 12;
+    var FIT_PAD = 4;    // colchón mínimo al fondo: pegado al último dato, sin scrollbar
+    function fitPanel(item, force) {
+      if (!item || !item.gridstackNode) return;
+      if (!force && item.dataset.manual === "1") return;  // respeta el resize manual
+      var body = item.querySelector(".panel-body");
+      var table = item.querySelector(".panel-body table");
+      if (!body || !table || body.clientHeight === 0) return;  // oculto / sin layout
+      // Ajuste relativo MEDIDO: queremos que el body sea apenas FIT_PAD más alto
+      // que la tabla (pegado al último dato, sin scrollbar). Cada fila ≈ CELL px de
+      // body, así que no hace falta modelar el margin interno de GridStack.
+      var deltaPx = (table.offsetHeight + FIT_PAD) - body.clientHeight;
+      var deltaRows = Math.ceil(deltaPx / CELL);
+      if (deltaRows === 0) return;
+      var rows = Math.max(MINROWS, item.gridstackNode.h + deltaRows);
+      if (rows !== item.gridstackNode.h) grid.update(item, { h: rows });
+    }
+    function fitAll() {
+      el.querySelectorAll(".grid-stack-item").forEach(function (it) { fitPanel(it); });
+    }
+
+    // --- Filtro de moneda por panel (ARS/MEP/CABLE) ----------------------- //
+    // El estado vive en `data-flt` del .panel (sobrevive a los swaps de HTMX del
+    // tbody); el CSS oculta las filas cuya `data-ccy` no esté activa. Single-select
+    // por defecto; con Ctrl/⌘ se eligen varias. Al cambiar, el panel se re-ajusta.
+    document.querySelectorAll(".ccy-filter").forEach(function (bar) {
+      var panel = bar.closest(".panel");
+      var item = bar.closest(".grid-stack-item");
+      function apply() {
+        var on = Array.prototype.map.call(
+          bar.querySelectorAll(".ccy-btn.on"), function (b) { return b.dataset.ccy; });
+        if (on.length) panel.setAttribute("data-flt", on.join(" "));
+        else panel.removeAttribute("data-flt");
+      }
+      // No arrastrar el panel (el head es el handle de GridStack) al tocar botones.
+      bar.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+      bar.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+      bar.addEventListener("click", function (e) {
+        var btn = e.target.closest(".ccy-btn");
+        if (!btn) return;
+        e.stopPropagation();
+        if (e.ctrlKey || e.metaKey) {
+          btn.classList.toggle("on");                       // multi: alterna esta
+        } else {                                            // single: solo esta
+          bar.querySelectorAll(".ccy-btn.on").forEach(function (b) { b.classList.remove("on"); });
+          btn.classList.add("on");
+        }
+        apply();
+        // cambiar de moneda muestra TODAS las disponibles → re-fit forzado (auto).
+        if (item) delete item.dataset.manual;
+        requestAnimationFrame(function () { fitPanel(item, true); });
+      });
+      apply();  // estado inicial (MEP por defecto)
+    });
+
+    // --- Toolbar del panel (Gráfico | Config | X) + persistencia ---------- //
+    function lsGet(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
+    function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+    // Personal (localStorage) > default del server (DL) > vacío.
+    var HIDDEN_PANELS = lsGet("panels-hidden-v1", null);   // [gs-id]
+    if (HIDDEN_PANELS == null) HIDDEN_PANELS = (DL && DL.hidden) ? DL.hidden.slice() : [];
+    var HIDDEN_COLS = lsGet("panel-cols-v1", null);        // {gs-id: [colIndex]}
+    if (HIDDEN_COLS == null) HIDDEN_COLS = (DL && DL.cols) ? JSON.parse(JSON.stringify(DL.cols)) : {};
+
+    function panelTitle(item) {
+      var t = item.querySelector(".ph-title");
+      return t ? t.textContent : item.getAttribute("gs-id");
+    }
+    function showPanel(item) {
+      item.style.display = "";
+      grid.makeWidget(item);
+      requestAnimationFrame(function () { fitPanel(item, true); });
+    }
+    function hidePanel(item) {
+      grid.removeWidget(item, false);  // saca del grid pero conserva el DOM
+      item.style.display = "none";
+    }
+
+    // Estado persistido: columnas ocultas + paneles ocultos.
+    el.querySelectorAll(".grid-stack-item").forEach(function (item) {
+      var id = item.getAttribute("gs-id");
+      (HIDDEN_COLS[id] || []).forEach(function (n) {
+        item.querySelector(".panel").classList.add("hcol-" + n);
+        var b = item.querySelector('.col-menu .cfg-item[data-col="' + n + '"]');
+        if (b) b.classList.remove("on");
+      });
+    });
+    HIDDEN_PANELS.forEach(function (id) {
+      var item = el.querySelector('.grid-stack-item[gs-id="' + id + '"]');
+      if (item) hidePanel(item);
+    });
+
+    // Clicks de la toolbar (delegado en el contenedor del grid).
+    el.addEventListener("click", function (e) {
+      var btn = e.target.closest(".ph-btn");
+      if (!btn) return;
+      e.stopPropagation();
+      var item = btn.closest(".grid-stack-item");
+      var panel = item.querySelector(".panel");
+      var id = item.getAttribute("gs-id");
+      var act = btn.dataset.act;
+      if (act === "close") {
+        hidePanel(item);
+        if (HIDDEN_PANELS.indexOf(id) < 0) { HIDDEN_PANELS.push(id); lsSet("panels-hidden-v1", HIDDEN_PANELS); }
+      } else if (act === "cfg") {
+        var menu = item.querySelector(".col-menu");
+        var willOpen = !menu.classList.contains("open");
+        document.querySelectorAll(".col-menu.open").forEach(function (mm) { mm.classList.remove("open"); });
+        if (willOpen) {
+          // fixed posicionado al botón → escapa el overflow:hidden del panel.
+          var r = btn.getBoundingClientRect();
+          menu.style.left = "auto";
+          menu.style.right = (window.innerWidth - r.right) + "px";
+          menu.style.top = (r.bottom + 5) + "px";
+          menu.style.bottom = "auto";
+          menu.classList.add("open");
+          if (r.bottom + 5 + menu.offsetHeight > window.innerHeight - 8) {  // no entra abajo → arriba
+            menu.style.top = "auto";
+            menu.style.bottom = (window.innerHeight - r.top + 5) + "px";
+          }
+        }
+      } else if (act === "chart") {
+        var flt = panel.getAttribute("data-flt");
+        var url = "/panels/" + id + "/chart" + (flt ? "?ccy=" + encodeURIComponent(flt.split(" ").join(",")) : "");
+        if (window.htmx) htmx.ajax("GET", url, "#modal");
+      }
+    });
+    // No arrastrar el panel al interactuar con la toolbar (el head es el handle).
+    document.querySelectorAll(".ph-tools").forEach(function (t) {
+      t.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+      t.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+    });
+    // Toggle de columnas (item-botón del Config): independiente por columna.
+    el.addEventListener("click", function (e) {
+      var ci = e.target.closest(".col-menu .cfg-item");
+      if (!ci) return;
+      e.stopPropagation();  // no cerrar el menú al togglear (solo ESC / click afuera)
+      var item = ci.closest(".grid-stack-item");
+      var panel = item.querySelector(".panel");
+      var id = item.getAttribute("gs-id");
+      var n = ci.dataset.col;
+      var nowOn = ci.classList.toggle("on");
+      panel.classList.toggle("hcol-" + n, !nowOn);
+      var hid = (HIDDEN_COLS[id] || []).filter(function (x) { return String(x) !== String(n); });
+      if (!nowOn) hid.push(parseInt(n, 10));
+      HIDDEN_COLS[id] = hid;
+      lsSet("panel-cols-v1", HIDDEN_COLS);
+    });
+
+    // --- CONFIG global (nav): elegir qué paneles ver / restaurar cerrados -- //
+    var cfgWrap = document.getElementById("panel-config-wrap");
+    var cfgMenu = document.getElementById("panel-config-menu");
+    var cfgBtn = document.getElementById("nav-config-btn");
+    function renderConfigMenu() {
+      if (!cfgMenu) return;
+      var items = Array.prototype.slice.call(el.querySelectorAll(".grid-stack-item"));
+      cfgMenu.innerHTML = items.map(function (item) {
+        var id = item.getAttribute("gs-id");
+        var visible = item.style.display !== "none";
+        return '<button type="button" class="cfg-item' + (visible ? " on" : "") +
+               '" data-panel="' + id + '">' + panelTitle(item) + '</button>';
+      }).join("") +
+        '<div class="cfg-sep"></div>' +
+        '<button type="button" class="cfg-action" data-action="save-default">★ Guardar layout como default</button>' +
+        '<button type="button" class="cfg-action" data-action="reset-default">↺ Restaurar default</button>';
+    }
+    if (cfgBtn && cfgWrap) {
+      cfgBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        var willOpen = !cfgWrap.classList.contains("open");
+        if (willOpen) renderConfigMenu();
+        cfgWrap.classList.toggle("open", willOpen);
+      });
+    }
+    if (cfgMenu) {
+      cfgMenu.addEventListener("click", function (e) {
+        var action = e.target.closest(".cfg-action");
+        if (action) {
+          e.stopPropagation();
+          if (action.dataset.action === "save-default") {
+            var payload = { layout: grid.save(false), hidden: HIDDEN_PANELS, cols: HIDDEN_COLS };
+            fetch("/panels/layout", { method: "POST", headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify(payload) })
+              .then(function () {
+                var t = action.textContent; action.textContent = "✓ Guardado";
+                setTimeout(function () { action.textContent = t; }, 1500);
+              }).catch(function () {});
+          } else if (action.dataset.action === "reset-default") {
+            localStorage.removeItem("grid-layout-v3");
+            localStorage.removeItem("panels-hidden-v1");
+            localStorage.removeItem("panel-cols-v1");
+            location.reload();  // recarga → toma el layout default del server
+          }
+          return;
+        }
+        var btn = e.target.closest(".cfg-item");
+        if (!btn) return;
+        e.stopPropagation();  // no cerrar el menú al elegir (solo ESC / click afuera)
+        var id = btn.dataset.panel;
+        // Toggle independiente: habilita/deshabilita SOLO este panel (no toca el resto),
+        // igual que el Config de columnas de cada panel.
+        var item = el.querySelector('.grid-stack-item[gs-id="' + id + '"]');
+        if (item.style.display === "none") {
+          showPanel(item);
+          HIDDEN_PANELS = HIDDEN_PANELS.filter(function (x) { return x !== id; });
+        } else {
+          hidePanel(item);
+          if (HIDDEN_PANELS.indexOf(id) < 0) HIDDEN_PANELS.push(id);
+        }
+        lsSet("panels-hidden-v1", HIDDEN_PANELS);
+        renderConfigMenu();  // refresca el resaltado (on/off) sin cerrar el menú
+      });
+    }
+    // Cerrar desplegables al clickear afuera.
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".ph-cfg"))
+        document.querySelectorAll(".col-menu.open").forEach(function (m) { m.classList.remove("open"); });
+      if (cfgWrap && !e.target.closest("#panel-config-wrap")) cfgWrap.classList.remove("open");
+    });
+    // ESC cierra los desplegables abiertos (y el gráfico si está abierto).
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      if (cfgWrap) cfgWrap.classList.remove("open");
+      document.querySelectorAll(".col-menu.open").forEach(function (m) { m.classList.remove("open"); });
+      var modal = document.getElementById("modal");
+      if (modal && modal.innerHTML) modal.innerHTML = "";
+    });
+
+    // Re-fit cuando HTMX reemplaza un tbody (carga inicial, SSE, polling 15s) y
+    // un fit global tras aplicar los filtros por defecto.
+    document.body.addEventListener("htmx:afterSwap", function (e) {
+      var item = e.target.closest && e.target.closest(".grid-stack-item");
+      if (item) requestAnimationFrame(function () { fitPanel(item); });
+    });
+    requestAnimationFrame(fitAll);
   })();
 </script>
 {% endblock %}

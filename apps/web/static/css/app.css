@@ -11,6 +11,7 @@
   --pos: #0d6e3a; --neg: #a8242b; --live: #37d67a;
   --bar-pos: #cde9d6; --bar-neg: #f3d6d8;
   --shadow-panel: 0 4px 14px rgba(10,29,74,.10);
+  --scroll-thumb: #c2cadb; --scroll-thumb-hover: #a7b1c8;
   --font-body: "Inter Tight", -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
   --radius: 8px;
@@ -24,11 +25,23 @@
   --pos: #4fcf85; --neg: #f28a8f;
   --bar-pos: #16331f; --bar-neg: #3a1d22;
   --shadow-panel: 0 4px 14px rgba(0,0,0,.5);
+  --scroll-thumb: #3a4d7a; --scroll-thumb-hover: #4d639c;
 }
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page-bg); color: var(--text);
        font: 13px/1.45 var(--font-body); }
+
+/* ---- scrollbars: finos y acordes al tema (light/dark) ---- */
+/* Firefox */
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+/* WebKit/Chromium: track transparente + thumb redondeado con padding (queda fino) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 7px;
+                            border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* ---- header ---- */
 header { display: flex; flex-direction: column; padding: 0;
@@ -79,7 +92,63 @@ main { padding: 14px; display: grid; gap: 14px;
          border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-panel); }
 .panel-head { padding: 8px 13px; background: var(--navy-band); color: #fff;
               font-weight: 600; font-size: 11.5px; letter-spacing: .5px;
-              display: flex; align-items: center; justify-content: space-between; cursor: grab; }
+              display: flex; align-items: center; justify-content: space-between; cursor: grab; gap: 8px; }
+.panel-head .ph-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+
+/* ---- toolbar del panel (Gráfico | Config | filtro | X) ---- */
+/* Botones con el mismo estilo que los links del nav (texto celeste, hover/activo
+   con el resaltado de selección). */
+.ph-tools { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; cursor: default; }
+.ph-btn, .ccy-btn { background: transparent; color: #c7d0ee; border: none; border-radius: 6px;
+           padding: 4px 9px; cursor: pointer; font: 600 11px var(--font-body); letter-spacing: .3px;
+           white-space: nowrap; }
+.ph-btn:hover, .ccy-btn:hover { background: rgba(255,255,255,.12); color: #fff; }
+.ccy-btn.on { background: rgba(255,255,255,.12); color: #fff; }
+.ph-x { color: #c7d0ee; padding: 4px 8px; }
+.ph-x:hover { background: rgba(242,138,143,.22); color: #fff; }
+.ccy-filter { display: inline-flex; gap: 3px; flex: 0 0 auto; margin: 0 2px; }
+
+/* desplegable de columnas del Config — mismo look que el CONFIG global (.cfg-item).
+   position: fixed (posicionado por JS) → escapa el overflow:hidden del panel, no se corta. */
+.ph-cfg { position: relative; display: inline-flex; }
+.col-menu { display: none; position: fixed; z-index: 600;
+            background: var(--panel-bg); color: var(--text); border: 1px solid var(--panel-border);
+            border-radius: 8px; box-shadow: var(--shadow-panel); padding: 6px; min-width: 160px;
+            max-height: 70vh; overflow: auto; }
+.col-menu.open { display: block; }
+
+/* oculta las filas cuya moneda no esté activa (estado en `data-flt` del panel) */
+.panel[data-flt] tbody tr[data-ccy] { display: none; }
+.panel[data-flt~="ARS"]   tbody tr[data-ccy="ARS"],
+.panel[data-flt~="MEP"]   tbody tr[data-ccy="MEP"],
+.panel[data-flt~="CABLE"] tbody tr[data-ccy="CABLE"] { display: table-row; }
+
+/* ocultar columnas vía clases hcol-N en el .panel (Config de columnas) */
+.panel.hcol-1 tr > :nth-child(1), .panel.hcol-2 tr > :nth-child(2),
+.panel.hcol-3 tr > :nth-child(3), .panel.hcol-4 tr > :nth-child(4),
+.panel.hcol-5 tr > :nth-child(5), .panel.hcol-6 tr > :nth-child(6),
+.panel.hcol-7 tr > :nth-child(7), .panel.hcol-8 tr > :nth-child(8),
+.panel.hcol-9 tr > :nth-child(9), .panel.hcol-10 tr > :nth-child(10),
+.panel.hcol-11 tr > :nth-child(11), .panel.hcol-12 tr > :nth-child(12) { display: none; }
+
+/* ---- CONFIG global (nav): desplegable de paneles disponibles ---- */
+.nav-cfg-wrap { position: relative; display: inline-flex; }
+.panel-config-menu { display: none; position: absolute; top: calc(100% + 8px); right: 0; z-index: 300;
+            background: var(--panel-bg); color: var(--text); border: 1px solid var(--panel-border);
+            border-radius: 8px; box-shadow: var(--shadow-panel); padding: 6px; min-width: 220px;
+            max-height: 70vh; overflow: auto; }
+.nav-cfg-wrap.open .panel-config-menu { display: block; }
+/* items tipo botón (simil ARS/MEP/CABLE): activo = resaltado, inactivo = normal */
+.cfg-item { display: block; width: 100%; text-align: left; background: transparent; color: var(--text);
+            border: none; border-radius: 6px; padding: 6px 9px; margin-bottom: 2px; cursor: pointer;
+            font: 600 12px var(--font-body); letter-spacing: .2px; }
+.cfg-item:hover { background: var(--row-hover); }
+.cfg-item.on { background: var(--accent); color: #fff; }
+.cfg-sep { height: 1px; background: var(--panel-border); margin: 6px 4px; }
+.cfg-action { display: block; width: 100%; text-align: left; background: transparent; color: var(--accent);
+              border: none; border-radius: 6px; padding: 6px 9px; cursor: pointer;
+              font: 600 11.5px var(--font-body); }
+.cfg-action:hover { background: var(--row-hover); }
 
 /* ---- tablas ---- */
 table { width: 100%; border-collapse: collapse; }
