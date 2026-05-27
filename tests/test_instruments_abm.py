@@ -141,6 +141,56 @@ class TestSaveInstrumentTransactional:
             )
         assert get_instrument("BADCF") is None
 
+    def test_save_soberano_multi_ticker_creates_legs(self, abm_db):
+        """Form nuevo con 3 tickers → 3 especies, mismos cashflows, 1 grupo."""
+        from apps.web.instruments_abm import list_instruments
+        save_instrument("Soberanos", {
+            "ticker_ars": "ZZ9", "ticker_mep": "ZZ9D", "ticker_ccl": "ZZ9C",
+            "short_name": "ZZ9", "tipo": "BONAR",
+            "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
+            "cupon anual %": "1.0", "frecuencia pagos": "2",
+        })
+        for t in ("ZZ9", "ZZ9D", "ZZ9C"):
+            assert get_instrument(t) is not None
+        # cashflows idénticos entre especies
+        cf_ars = get_instrument("ZZ9")["cashflows"]
+        cf_mep = get_instrument("ZZ9D")["cashflows"]
+        assert cf_ars and cf_ars == cf_mep
+        # 1 sola entrada consolidada
+        by_key = {it["key"]: it for it in list_instruments()}
+        assert set(by_key["ZZ9"]["tickers"]) == {"ZZ9", "ZZ9D", "ZZ9C"}
+
+    def test_save_soberano_sync_removes_cleared_leg(self, abm_db):
+        """Reeditar el bono dejando vacío un slot borra esa especie."""
+        save_instrument("Soberanos", {
+            "ticker_ars": "ZZ8", "ticker_mep": "ZZ8D", "ticker_ccl": "ZZ8C",
+            "short_name": "ZZ8", "tipo": "GLOBAL",
+            "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
+            "cupon anual %": "1.0", "frecuencia pagos": "2",
+        })
+        # re-guardar sin CABLE → ZZ8C debe desaparecer; ARS/MEP permanecen
+        save_instrument("Soberanos", {
+            "ticker_ars": "ZZ8", "ticker_mep": "ZZ8D", "ticker_ccl": "",
+            "short_name": "ZZ8", "tipo": "GLOBAL",
+            "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
+            "cupon anual %": "1.0", "frecuencia pagos": "2",
+        })
+        assert get_instrument("ZZ8") is not None
+        assert get_instrument("ZZ8D") is not None
+        assert get_instrument("ZZ8C") is None
+
+    def test_delete_soberano_group_removes_all_legs(self, abm_db):
+        save_instrument("Soberanos", {
+            "ticker_ars": "ZZ7", "ticker_mep": "ZZ7D", "ticker_ccl": "",
+            "short_name": "ZZ7", "tipo": "BONAR",
+            "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
+            "cupon anual %": "1.0", "frecuencia pagos": "2",
+        })
+        result = delete_instrument("ZZ7")  # key = grupo
+        assert result["action"] == "deleted"
+        assert set(result["tickers"]) == {"ZZ7", "ZZ7D"}
+        assert get_instrument("ZZ7") is None and get_instrument("ZZ7D") is None
+
     def test_save_updates_existing(self, abm_db):
         """Editar un ticker existente devuelve 'updated' y persiste el cambio."""
         save_instrument("Soberanos", {
@@ -210,11 +260,25 @@ class TestDeleteInstrument:
 
 class TestListInstruments:
     def test_returns_known_tickers(self, abm_db):
-        tickers = {it["ticker"] for it in list_instruments()}
-        assert "AL30D" in tickers
-        assert "S29Y6" in tickers
+        # Soberanos consolidados: las especies aparecen en `tickers` de su grupo.
+        all_tickers = {t for it in list_instruments() for t in it["tickers"]}
+        assert "AL30D" in all_tickers
+        assert "S29Y6" in all_tickers
 
     def test_returns_sheet_per_ticker(self, abm_db):
-        sheet_by_ticker = {it["ticker"]: it["sheet"] for it in list_instruments()}
+        sheet_by_ticker = {}
+        for it in list_instruments():
+            for t in it["tickers"]:
+                sheet_by_ticker[t] = it["sheet"]
         assert sheet_by_ticker.get("AL30D") == "Soberanos"
         assert sheet_by_ticker.get("S29Y6") == "Tasa_Fija"
+
+    def test_soberano_legs_consolidated_into_one_group(self, abm_db):
+        """AL30 / AL30D / AL30C → 1 sola entrada (grupo 'AL30')."""
+        by_key = {it["key"]: it for it in list_instruments()}
+        assert "AL30" in by_key
+        grp = by_key["AL30"]
+        assert grp["sheet"] == "Soberanos"
+        assert set(grp["tickers"]) >= {"AL30", "AL30D", "AL30C"}
+        # las especies no aparecen como entradas top-level sueltas
+        assert "AL30D" not in by_key and "AL30C" not in by_key

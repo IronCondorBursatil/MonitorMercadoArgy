@@ -162,6 +162,23 @@ PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreale
                "valor_relativo", "panel_lider", "futuros",
                "bei_tenor", "bei_sendero", "bei_pares"]
 
+# Paneles cuyas especies cotizan en 3 monedas (mismo bono): se les agrega el
+# filtro ARS/MEP/CABLE en el header. La moneda se deriva del sufijo del ticker.
+# Solo BONARES/GLOBALES: tienen las 3 patas (ARS/MEP/CABLE) limpias. Los BOPREAL
+# son casi todos sólo-MEP (sufijo D), así que el default ARS los ocultaría — si
+# se quisieran filtrar habría que elegirles otro default.
+CCY_FILTER_PANELS = {"bonares"}
+
+
+def _ticker_ccy(ticker: str) -> str:
+    """Moneda de una especie soberana por su sufijo: D=MEP, C=CABLE, resto=ARS."""
+    t = (ticker or "").upper()
+    if t.endswith("D"):
+        return "MEP"
+    if t.endswith("C"):
+        return "CABLE"
+    return "ARS"
+
 # Grupos para el ajuste de curva log (TIR = a + b·ln(MD)) — un fit por grupo.
 # Sólo curvas peso de flavor único (Tasa Fija nominal, CER real): los soberanos
 # hard-dollar conviven en 3 flavors (peso/MEP/cable) con escalas de precio/TIR
@@ -418,26 +435,36 @@ def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
         return []
     _title, types, cols = PANELS[panel_id]
     today = date.today()
+    ccy_filterable = panel_id in CCY_FILTER_PANELS
     metrics = [m for m in state.metrics()
                if m.snapshot and m.snapshot.instrument and m.snapshot.instrument.instrument_type in types]
     metrics.sort(key=lambda m: (m.duration is None, m.duration or 0.0))
     rows = []
     for m in metrics:
         vals = _row_values(m, today)
+        ccy = _ticker_ccy(vals["ticker"]) if ccy_filterable else None
         cells = []
         for c in cols:
             raw = vals.get(c["key"])
+            dec = c.get("decimals", 2)
+            # Precio en pesos de la pata ARS de un soberano: sin decimales (91,990).
+            if c["key"] == "price" and ccy == "ARS":
+                dec = 0
             cells.append({
-                "text": _fmt(raw, c["kind"], c.get("decimals", 2)),
+                "text": _fmt(raw, c["kind"], dec),
                 "cls": _cell_class(raw, c["kind"]),
             })
-        rows.append({"ticker": vals["ticker"], "cells": cells})
+        row = {"ticker": vals["ticker"], "cells": cells}
+        if ccy is not None:
+            row["ccy"] = ccy
+        rows.append(row)
     return rows
 
 
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, state=Depends(get_state)):
     panels = [{"id": pid, "title": PANELS[pid][0], "columns": PANELS[pid][2],
+               "ccy_filter": pid in CCY_FILTER_PANELS,
                "rows": _build_rows(pid, state)} for pid in PANEL_ORDER]
     return _TEMPLATES.TemplateResponse(
         request, "pages/index.html",

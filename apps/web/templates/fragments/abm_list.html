@@ -1,16 +1,16 @@
 <table>
-  <thead><tr><th>Ticker</th><th>Hoja</th><th></th></tr></thead>
+  <thead><tr><th>Ticker(s)</th><th>Hoja</th><th></th></tr></thead>
   <tbody>
     {% for i in instruments %}
     <tr>
-      <td>{{ i.ticker }}</td>
+      <td>{{ i.display }}</td>
       <td>{{ i.sheet }}</td>
       <td>
-        <button hx-get="/abm/form?sheet={{ i.sheet }}&ticker={{ i.ticker }}"
+        <button hx-get="/abm/form?sheet={{ i.sheet }}&key={{ i.key }}"
                 hx-target="#abm-form" hx-swap="innerHTML">editar</button>
-        <button class="delx" hx-delete="/abm/instrument/{{ i.ticker }}"
+        <button class="delx" hx-delete="/abm/instrument/{{ i.key }}"
                 hx-target="#abm-list" hx-swap="innerHTML"
-                hx-confirm="¿Borrar {{ i.ticker }} del master?">✕</button>
+                hx-confirm="¿Borrar {{ i.display }} del master?">✕</button>
       </td>
     </tr>
     {% else %}

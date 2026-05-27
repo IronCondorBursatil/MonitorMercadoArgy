@@ -34,20 +34,23 @@ def abm_page(request: Request):
 
 
 @router.get("/abm/form", response_class=HTMLResponse)
-def abm_form(request: Request, sheet: str, ticker: str = ""):
+def abm_form(request: Request, sheet: str, key: str = ""):
     if sheet not in abm_store.SHEET_SCHEMAS:
         return HTMLResponse("<div class='err'>Hoja desconocida</div>", status_code=400)
     values = {}
-    if ticker:
-        inst = abm_store.get_instrument(ticker)
-        if inst:
-            values = inst.get("fields", {})
+    if key:
+        # Soberanos: `key` es el grupo (bono) → prefill de las 3 monedas.
+        if sheet == abm_store._SOBERANOS_SHEET:
+            values = abm_store.get_soberano_form_values(key) or {}
+        else:
+            inst = abm_store.get_instrument(key)
+            values = inst.get("fields", {}) if inst else {}
     return _TEMPLATES.TemplateResponse(request, "fragments/abm_form.html", {
         "sheet": sheet,
         "fields": abm_store.SHEET_SCHEMAS[sheet]["fields"],
         "label": abm_store.SHEET_SCHEMAS[sheet]["label"],
         "values": values,
-        "ticker": ticker,
+        "ticker": key,
     })
 
 
