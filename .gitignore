@@ -52,3 +52,11 @@ data/cartera.json
 secrets/
 *.secret
 
+# Claude Code: estado local (settings.local, etc.) — no se trackea
+.claude/
+
+# Worktrees de Superpowers: NUNCA project-local (OneDrive). Ver "Flujo Superpowers"
+# en CLAUDE.md — usar la tool nativa o el path global ~/.config/superpowers/worktrees/.
+.worktrees/
+worktrees/
+
