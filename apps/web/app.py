@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 
 from apps.web.deps import get_repo, get_state
 from apps.web.routers import (
-    abm, bcra, bonds, cartera, cashflows, curva, escenarios, fci, panels,
+    abm, bcra, bonds, cartera, cashflows, curva, escenarios, fci, panels, stream,
 )
 from apps.web.state import AppState
 from config.settings import settings
@@ -45,16 +45,19 @@ _ALL_TYPES = [*SOBERANOS, *BOPREALES, *TASA_FIJA, *CER, *DOLAR_LINKED, *TAMAR, *
 
 
 async def _refresh_loop(app: FastAPI) -> None:
-    """Reemplaza _refresh_loop daemon. Reusa GenerateMonitorReport (motor Fase 1)
-    + providers sync vía to_thread (puente CPU §6.5)."""
-    from core.infrastructure.repositories import Data912MarketDataProvider
+    """Ingesta async (§6.3-6.5): `hub.refresh_all()` trae Data912 (4 endpoints en
+    paralelo, httpx + circuit breaker + pool) y el motor de pricing corre off-loop
+    vía `to_thread` leyendo el snapshot ya materializado por el hub."""
+    from core.infrastructure.provider_hub import HubMarketDataProvider
     from core.use_cases.generate_report import GenerateMonitorReport
 
     repo = get_repo()
+    provider = HubMarketDataProvider(app.state.hub, app.state.provider)
     while True:
         await asyncio.sleep(settings.refresh_sec)
         try:
-            use_case = GenerateMonitorReport(repo, Data912MarketDataProvider())
+            await app.state.hub.refresh_all()  # I/O async (no bloquea el event loop)
+            use_case = GenerateMonitorReport(repo, provider)
             metrics = await asyncio.to_thread(use_case.execute, _ALL_TYPES)
             await app.state.app_state.update(metrics)
         except asyncio.CancelledError:
@@ -67,18 +70,20 @@ async def _bei_loop(app: FastAPI) -> None:
     """Loop dedicado de BEI (pesado: bootstrap + NSS fits). Corre 1× al arranque
     y luego cada bei_refresh_sec. Reemplaza el daemon _bei_refresh_loop."""
     from apps.cli.monitors.bei import compute_bei_tables
-    from core.infrastructure.repositories import Data912MarketDataProvider
+    from core.infrastructure.provider_hub import HubMarketDataProvider
     from core.use_cases.generate_report import GenerateMonitorReport
 
     repo = get_repo()
     bcra = app.state.indices
+    provider = HubMarketDataProvider(app.state.hub, app.state.provider)
     first = True
     while True:
         if not first:
             await asyncio.sleep(settings.bei_refresh_sec)
         first = False
         try:
-            use_case = GenerateMonitorReport(repo, Data912MarketDataProvider())
+            await app.state.hub.refresh_all()  # snapshot fresco (la 1ª corrida es en startup)
+            use_case = GenerateMonitorReport(repo, provider)
             tables = await asyncio.to_thread(
                 compute_bei_tables, use_case=use_case, indices_provider=bcra)
             app.state.app_state.set_bei(tables)
@@ -135,6 +140,7 @@ app.include_router(escenarios.router)
 app.include_router(curva.router)
 app.include_router(fci.router)
 app.include_router(abm.router)
+app.include_router(stream.router)
 
 
 @app.get("/api/health")

@@ -7,7 +7,16 @@ import pytest
 
 from core.infrastructure.async_http import ResilientClient
 from core.infrastructure.circuit_breaker import CircuitOpenError
-from core.infrastructure.provider_hub import ProviderHub
+from core.infrastructure.provider_hub import HubMarketDataProvider, ProviderHub
+
+
+class _StubHistory:
+    """history_provider mínimo para HubMarketDataProvider (sin red)."""
+    def fetch_historical_prices(self, ticker, days):
+        return {}
+
+    def fetch_stock_history(self, ticker):
+        return []
 
 
 def test_get_json_ok():
@@ -93,6 +102,32 @@ def test_provider_hub_preserves_stale_on_total_failure():
             assert "AL30" in await hub.fetch_data912()
             state["fail"] = True
             assert "AL30" in await hub.fetch_data912()  # stale preservado, no wipe
+        finally:
+            await c.aclose()
+    asyncio.run(run())
+
+
+def test_refresh_all_feeds_hub_market_data_provider():
+    """refresh_all() puebla el hub y HubMarketDataProvider sirve MarketSnapshots
+    desde ese snapshot (incluido el alias _CER de los duales)."""
+    def handler(req):
+        if "arg_bonds" in str(req.url):
+            return httpx.Response(200, json=[
+                {"symbol": "TXMJ8", "c": 142.5, "px_bid": 142.0, "px_ask": 143.0},
+            ])
+        return httpx.Response(200, json=[])
+
+    async def run():
+        c = ResilientClient(transport=httpx.MockTransport(handler))
+        hub = ProviderHub(c)
+        try:
+            await hub.refresh_all()
+            provider = HubMarketDataProvider(hub, history_provider=_StubHistory())
+            snaps = provider.fetch_snapshots(["TXMJ8", "TXMJ8_CER", "NOPE"])
+            assert snaps["TXMJ8"].price == 142.5
+            assert snaps["TXMJ8"].bid == 142.0
+            assert snaps["TXMJ8_CER"].price == 142.5   # alias → mismo subyacente
+            assert "NOPE" not in snaps                   # sin fila → omitido
         finally:
             await c.aclose()
     asyncio.run(run())

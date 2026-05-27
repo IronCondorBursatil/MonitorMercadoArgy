@@ -18,6 +18,10 @@ class AppState:
         self._last_refresh: Optional[datetime] = None
         self._bei: Optional[dict] = None  # tablas crudas de compute_bei_tables
         self._lock = asyncio.Lock()
+        # Notificación para SSE (§7.4): cada update incrementa _revision y
+        # despierta a los suscriptores de /stream (push event-driven vs polling).
+        self._revision = 0
+        self._cond = asyncio.Condition()
 
     async def update(self, metrics: List[InstrumentMetrics]) -> None:
         by_ticker = {
@@ -29,6 +33,22 @@ class AppState:
             self._metrics = metrics
             self._by_ticker = by_ticker
             self._last_refresh = datetime.now()
+        await self._notify()
+
+    async def _notify(self) -> None:
+        async with self._cond:
+            self._revision += 1
+            self._cond.notify_all()
+
+    @property
+    def revision(self) -> int:
+        return self._revision
+
+    async def wait_for_change(self, last_seen: int) -> int:
+        """Bloquea hasta que la revisión difiera de `last_seen`; devuelve la nueva."""
+        async with self._cond:
+            await self._cond.wait_for(lambda: self._revision != last_seen)
+            return self._revision
 
     def metrics(self) -> List[InstrumentMetrics]:
         return self._metrics

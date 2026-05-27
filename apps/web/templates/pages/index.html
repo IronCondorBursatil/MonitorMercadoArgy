@@ -2,10 +2,14 @@
 {% block head %}
 <link rel="stylesheet" href="/static/vendor/gridstack/gridstack.min.css">
 <script src="/static/vendor/gridstack/gridstack-all.js"></script>
+<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js" crossorigin="anonymous"></script>
 {% endblock %}
 {% block content %}
 {% set wide = ["valor_relativo", "panel_lider", "futuros", "bei_tenor", "bei_sendero", "bei_pares"] %}
-<div class="grid-stack">
+{# SSE (§7.4): el server pushea `refresh` cada ciclo del loop → los paneles
+   recargan event-driven. `every 15s` queda como fallback si la conexión SSE
+   se cae (reconexión) o la extensión no carga. #}
+<div class="grid-stack" hx-ext="sse" sse-connect="/stream">
   {% for p in panels %}
   <div class="grid-stack-item" gs-id="{{ p.id }}"
        gs-w="{{ 12 if p.id in wide else 6 }}" gs-h="6">
@@ -18,7 +22,7 @@
           </thead>
           <tbody id="tbody-{{ p.id }}"
                  hx-get="/panels/{{ p.id }}/rows"
-                 hx-trigger="load, every 5s"
+                 hx-trigger="load, sse:refresh, every 15s"
                  hx-swap="innerHTML">
             {% with rows=p.rows, ncols=p.columns|length %}
               {% include "fragments/panel_rows.html" %}
