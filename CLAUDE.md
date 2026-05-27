@@ -79,6 +79,27 @@ polling como fallback). El detalle es un modal (`/bond/{t}/detail` + `/bond/{t}/
 - **Intérprete Python**: usar `py -3.12` / `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`. Ver memoria `env_python_interpreter`. (El viejo "Store Python" ya no existe; sus deps se reinstalaron acá.)
 - **OneDrive**: nada de venv ni `.db` dentro del proyecto.
 
+## Flujo Superpowers (método de trabajo)
+
+Este repo usa el plugin **Superpowers** (obra). El flujo para features nuevas es:
+`brainstorming → spec → writing-plans → plan → TDD/subagent-driven → code-review →
+finishing-branch`. Artefactos en `docs/superpowers/` (`specs/`, `plans/` — ver su
+README). **Las skills se auto-disparan al arrancar Claude Code** (no en caliente).
+
+- **Prioridad**: las instrucciones de este CLAUDE.md **ganan** sobre las skills. Si una
+  skill choca con una convención de acá (financieras de `agents.md`, equivalencia del
+  motor, Excel=semilla), manda CLAUDE.md.
+- **TDD aplica** a features nuevas, bugfixes y refactors (test rojo → mínimo verde →
+  refactor). Encaja con la disciplina ya existente: `test_pricing_equivalence.py` y los
+  137 tests son la red. Excepción: prototipos descartables / config (consultar antes).
+- **Worktrees + OneDrive**: worktrees **sí**, pero **nunca** `.worktrees/` dentro del
+  proyecto (OneDrive + regla de [[feedback_no_venv]]). Usar la tool nativa
+  `EnterWorktree` del harness, o el path global `~/.config/superpowers/worktrees/`
+  (fuera de OneDrive). Subagentes paralelos: ojo con la sincronización de OneDrive si se
+  trabaja in-place.
+- **Intérprete en los planes**: los comandos de test/run deben usar `py -3.12` (ver
+  invariante de abajo), no `python`/`pytest` pelado.
+
 ## Pendiente (cola, no funcional)
 
 - **Providers sync restantes**: FX/indices/REM/CAFCI/argentinadatos siguen sync vía `_http.py`.
