@@ -7,7 +7,6 @@ import warnings
 import pandas as pd
 from typing import List, Dict, Optional
 from datetime import date, datetime, timedelta
-from dateutil.relativedelta import relativedelta
 from core.domain.models import Instrument, Cashflow, MarketSnapshot
 from core.domain.interfaces import IInstrumentsRepository, IMarketDataProvider
 from core.infrastructure._http import http_get_json
@@ -39,6 +38,163 @@ def _infer_payment_frequency(cashflows) -> int:
     return max(1, min(12, freq))
 
 
+# --------------------------------------------------------------------------- #
+# Parsing de fila → Instrument (compartido por el loader Excel y el ABM SQLite).
+# Acepta cualquier mapping con `.get`/`in`: una pandas Series (loader) o un dict
+# (form del ABM, claves ya en minúscula).
+# --------------------------------------------------------------------------- #
+
+def _isna(v) -> bool:
+    try:
+        return bool(pd.isna(v))
+    except (TypeError, ValueError):
+        return False
+
+
+def _safe_int(val, default: int = 0) -> int:
+    try:
+        if pd.isna(val):
+            return default
+        return int(float(val))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(val, default: float = 0.0) -> float:
+    try:
+        if pd.isna(val):
+            return default
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_date_value(val) -> Optional[date]:
+    """Parsea date de varios formatos sin warnings.
+
+    Crítico: detectar ISO (YYYY-MM-DD) y parsear con dayfirst=False. pandas con
+    dayfirst=True swapea mes/día en strings ISO (corrompía el schedule de cupones
+    de los soberanos, que guardan fechas ISO en la hoja Cashflows)."""
+    if val is None or _isna(val):
+        return None
+    if isinstance(val, pd.Timestamp):
+        return val.date()
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):
+        return val
+    s = str(val).strip()
+    if not s:
+        return None
+    iso_like = (len(s) >= 10 and s[4] == "-" and s[7] == "-" and s[:4].isdigit())
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            dt = pd.to_datetime(s, dayfirst=not iso_like, errors="coerce")
+            return dt.date() if pd.notna(dt) else None
+        except (ValueError, TypeError):
+            return None
+
+
+def _resolve_ticker(row) -> Optional[str]:
+    raw = None
+    for cand in ("ticker", "ticker_ref", "symbol"):
+        if cand in row:
+            raw = str(row.get(cand)).upper().strip()
+            break
+    if not raw or raw in ("NAN", "NONE"):
+        return None
+    return raw
+
+
+def _first_present(row, keys):
+    """Valor de la primera clave que EXISTE (aunque su valor sea None/NaN) —
+    replica la semántica de `row.get(a, row.get(b, ...))`."""
+    for k in keys:
+        if k in row:
+            return row.get(k)
+    return None
+
+
+def _first_date(row, candidates) -> Optional[date]:
+    for c in candidates:
+        if c in row:
+            d = _parse_date_value(row.get(c))
+            if d:
+                return d
+    return None
+
+
+def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Instrument]:
+    """Construye un `Instrument` desde una fila (mapping de columnas en minúscula)
+    + nombre de hoja + cashflows ya resueltos. Devuelve None si no hay ticker."""
+    raw_ticker = _resolve_ticker(row)
+    if not raw_ticker:
+        return None
+    short = str(row.get("short_name", row.get("short name", raw_ticker)))
+    itype = str(row.get("tipo", row.get("clase", sheet))).upper().strip()
+    m_date = _first_date(row, ("fecha_vencimiento", "fecha vencimiento", "fecha_pago", "maturity"))
+    e_date = _first_date(row, ("fecha_emision", "fecha emision"))
+
+    # cer base: "cer emision" (legacy) / "cer_emision" (snake) / "cer_base" (TAMAR duals).
+    cer_b = _safe_float(_first_present(row, ("cer emision", "cer_emision", "cer_base")), default=1.0)
+    lag_val = _safe_int(_first_present(row, ("dias habiles previos", "dias_lag")), default=10)
+
+    cat_raw = row.get("categoria")
+    category = str(cat_raw).strip() if (cat_raw is not None and not _isna(cat_raw)) else None
+
+    floor_raw = row.get("tasa_fija_mensual") or row.get("tem_licit")
+    floor = float(floor_raw) if (floor_raw is not None and not _isna(floor_raw)) else None
+
+    spread_raw = _first_present(row, ("spread", "spread_anual"))
+    spread = float(spread_raw) if (spread_raw is not None and not _isna(spread_raw)) else None
+
+    cer_spread_raw = _first_present(row, ("cer_spread", "spread_cer"))
+    cer_spread_val = float(cer_spread_raw) if (cer_spread_raw is not None and not _isna(cer_spread_raw)) else None
+
+    freq_raw = _first_present(row, ("frecuencia pagos", "frecuencia"))
+    freq = _safe_int(freq_raw, default=0) if freq_raw is not None else 0
+    if freq <= 0:
+        freq = _infer_payment_frequency(cashflows)
+
+    dc_raw = _first_present(row, ("base calculo", "base_calculo"))
+    dc_str = str(dc_raw).strip() if (dc_raw is not None and not _isna(dc_raw)) else ""
+    if not dc_str and itype == "BOPREAL":  # 30/360 por prospecto BCRA
+        dc_str = "30/360"
+    day_count = dc_str or "ACT/365.25"
+
+    return Instrument(
+        ticker=raw_ticker, short_name=short, instrument_type=itype,
+        maturity_date=m_date, emission_date=e_date, cashflows=cashflows,
+        cer_base=cer_b, cer_lag=lag_val, category=category,
+        floor_rate_monthly=floor, spread_rate=spread, cer_spread=cer_spread_val,
+        payment_frequency=freq, day_count=day_count,
+    )
+
+
+def _json_scalar(v):
+    """Coerce un valor de celda a un escalar JSON-serializable (para raw_fields)."""
+    if v is None or _isna(v):
+        return None
+    if isinstance(v, pd.Timestamp):
+        return v.date().isoformat()
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    if hasattr(v, "item"):  # escalares numpy
+        v = v.item()
+    if isinstance(v, (str, int, float, bool)):
+        return v
+    return str(v)
+
+
+def row_to_raw_fields(row) -> Dict[str, object]:
+    """Serializa una fila (Series/dict, claves en minúscula) a un dict JSON-safe."""
+    items = row.items() if hasattr(row, "items") else []
+    return {str(k).lower().strip(): _json_scalar(v) for k, v in items}
+
+
 class ExcelInstrumentsRepository(IInstrumentsRepository):
     NON_INSTRUMENT_SHEETS = frozenset({"Cashflows", "Cashflows_Fija", "Metadata", "Cotizaciones"})
 
@@ -47,92 +203,21 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
         self._cache_instruments: List[Instrument] = []
         self._by_ticker: Dict[str, Instrument] = {}
         self._by_type: Dict[str, List[Instrument]] = {}
+        # ticker -> (sheet, raw_fields) para el seeding del ABM (round-trip del form).
+        self._meta: Dict[str, tuple] = {}
         self._load_all()
 
+    # Delegaciones a los helpers módulo (compartidos con build_instrument / ABM).
     def _parse_date(self, val) -> Optional[date]:
-        """Safely parse date from various formats without warnings.
-
-        Critical: detect ISO strings (YYYY-MM-DD) and parse with dayfirst=False.
-        pandas with dayfirst=True swaps month/day on ISO strings — e.g.
-        "2026-07-09" becomes 2026-09-07. The Cashflows sheet stores AL29 dates
-        as ISO strings, so this swap silently corrupted every soberano's
-        coupon schedule before this fix.
-        """
-        if pd.isna(val) or val is None:
-            return None
-        if isinstance(val, pd.Timestamp):
-            return val.date()
-        if isinstance(val, (date, datetime)):
-            return val.date() if hasattr(val, 'date') else val
-
-        s = str(val).strip()
-        if not s:
-            return None
-        # ISO format YYYY-MM-DD[...]: year first, MM and DD unambiguous.
-        iso_like = (len(s) >= 10 and s[4] == "-" and s[7] == "-" and s[:4].isdigit())
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            try:
-                dt = pd.to_datetime(s, dayfirst=not iso_like, errors='coerce')
-                return dt.date() if pd.notna(dt) else None
-            except (ValueError, TypeError):
-                return None
+        return _parse_date_value(val)
 
     @staticmethod
     def _safe_int(val, default=0):
-        try:
-            if pd.isna(val):
-                return default
-            return int(float(val))
-        except (TypeError, ValueError):
-            return default
+        return _safe_int(val, default)
 
     @staticmethod
     def _safe_float(val, default=0.0):
-        try:
-            if pd.isna(val):
-                return default
-            return float(val)
-        except (TypeError, ValueError):
-            return default
-
-    def _get_date(self, row: pd.Series, candidates):
-        for c in candidates:
-            if c in row.index:
-                d = self._parse_date(row[c])
-                if d:
-                    return d
-        return None
-
-    def _parse_coupon_rate(self, raw, asof: date):
-        """Return coupon as decimal (0.05 = 5%). Supports step-up schedules
-        like '2003-12-31:0.63;2009-03-31:1.18' (picks rate active at `asof`).
-        """
-        if raw is None or (not isinstance(raw, str) and pd.isna(raw)):
-            return None
-        if isinstance(raw, (int, float)):
-            return float(raw) / 100.0
-        s = str(raw).strip()
-        if not s:
-            return None
-        if ";" in s and ":" in s:
-            try:
-                pairs = []
-                for entry in s.split(";"):
-                    d_str, r_str = entry.split(":")
-                    d = self._parse_date(d_str.strip())
-                    if d is not None:
-                        pairs.append((d, float(r_str.strip()) / 100.0))
-                pairs.sort()
-                applicable = [r for d, r in pairs if d <= asof]
-                return applicable[-1] if applicable else (pairs[0][1] if pairs else None)
-            except (ValueError, TypeError):
-                return None
-        try:
-            return float(s) / 100.0
-        except ValueError:
-            return None
+        return _safe_float(val, default)
 
     def _generate_bond_cashflows(self, row: pd.Series) -> List[Cashflow]:
         """Delegate al synth puro en core.domain.cashflow_synth.
@@ -179,22 +264,9 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
         return skipped
 
     def _load_all(self):
-        # Race-condition protection: la ABM escribe al mismo archivo Excel
-        # vía instruments_abm._LOCK. Tomamos el MISMO lock acá para que un
-        # reload del repo nunca coincida con un wb.save() en curso (que
-        # podría dejar el archivo truncado mid-read). Import diferido para
-        # evitar dependencia cíclica.
-        try:
-            from apps.web.instruments_abm import _LOCK as _ABM_LOCK
-        except Exception:
-            _ABM_LOCK = None  # tests / CLI sin la layer web cargada
-        if _ABM_LOCK is not None:
-            _ABM_LOCK.acquire()
-        try:
-            return self._load_all_impl()
-        finally:
-            if _ABM_LOCK is not None:
-                _ABM_LOCK.release()
+        # El Excel ya es solo semilla: la ABM escribe SQLite, no toca el master.
+        # Por eso ya no hace falta compartir lock con instruments_abm.
+        return self._load_all_impl()
 
     def _load_all_impl(self):
         try:
@@ -208,6 +280,7 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
                 logger.warning(f"Skipped {skipped} cashflow rows with invalid fecha_pago.")
 
             self._cache_instruments = []
+            self._meta = {}
             xl = pd.ExcelFile(self.excel_path)
             sheet_names = [s for s in xl.sheet_names if s not in self.NON_INSTRUMENT_SHEETS]
 
@@ -215,105 +288,27 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
                 try:
                     df = xl.parse(sheet)
                     df.columns = [str(c).lower().strip() for c in df.columns]
-                    
-                    for _, row in df.iterrows():
-                        raw_ticker = None
-                        for t_cand in ["ticker", "ticker_ref", "symbol"]:
-                            if t_cand in row:
-                                raw_ticker = str(row[t_cand]).upper().strip()
-                                break
-                        if not raw_ticker or raw_ticker in ("NAN", "NONE"):
-                            continue
-                        
-                        # Excel `ticker` column is the source of truth — it must match what
-                        # Data912 returns.
-                        clean_ticker = raw_ticker
-                        short = str(row.get("short_name", row.get("short name", raw_ticker)))
-                        itype = str(row.get("tipo", row.get("clase", sheet))).upper().strip()
-                        
-                        # Load maturity date
-                        m_date = None
-                        for d_cand in ["fecha_vencimiento", "fecha vencimiento", "fecha_pago", "maturity"]:
-                            if d_cand in row:
-                                m_date = self._parse_date(row[d_cand])
-                                if m_date: break
 
-                        e_date = None
-                        for d_cand in ["fecha_emision", "fecha emision"]:
-                            if d_cand in row:
-                                e_date = self._parse_date(row[d_cand])
-                                if e_date: break
-                        
-                        # Link cashflows
-                        cfs = cf_map.get(short.upper(), cf_map.get(raw_ticker, cf_map.get(clean_ticker, [])))
-                        
-                        # Dynamic Generation fallback
+                    for _, row in df.iterrows():
+                        raw_ticker = _resolve_ticker(row)
+                        if not raw_ticker:
+                            continue
+                        short = str(row.get("short_name", row.get("short name", raw_ticker)))
+                        m_date = _first_date(row, ("fecha_vencimiento", "fecha vencimiento",
+                                                   "fecha_pago", "maturity"))
+
+                        # Link cashflows (hoja Cashflows por ticker/short) o synth fallback.
+                        cfs = cf_map.get(short.upper(), cf_map.get(raw_ticker, []))
                         if not cfs and m_date:
                             cfs = self._generate_bond_cashflows(row)
-                        
-                        # Accept three column names: "cer emision" (CER sheet legacy),
-                        # "cer_emision" (snake_case), "cer_base" (TAMAR sheet for TXMJ duals).
-                        cer_b = self._safe_float(
-                            row.get("cer emision",
-                                    row.get("cer_emision",
-                                            row.get("cer_base"))),
-                            default=1.0,
-                        )
-                        lag_val = self._safe_int(row.get("dias habiles previos", row.get("dias_lag")), default=10)
 
-                        cat_raw = row.get("categoria")
-                        category = str(cat_raw).strip() if cat_raw is not None and not pd.isna(cat_raw) else None
-
-                        floor_raw = row.get("tasa_fija_mensual") or row.get("tem_licit")
-                        floor = float(floor_raw) if floor_raw is not None and not pd.isna(floor_raw) else None
-
-                        # TAMAR spread (decimal, e.g. 0.05 for "TAMAR + 5%").
-                        spread_raw = row.get("spread", row.get("spread_anual"))
-                        spread = float(spread_raw) if spread_raw is not None and not pd.isna(spread_raw) else None
-
-                        # CER spread for DUAL CER/TAMAR (TXMJ series).
-                        cer_spread_raw = row.get("cer_spread", row.get("spread_cer"))
-                        cer_spread_val = (
-                            float(cer_spread_raw)
-                            if cer_spread_raw is not None and not pd.isna(cer_spread_raw)
-                            else None
-                        )
-
-                        # Payment frequency: prefer Excel column, fall back to
-                        # inference from cashflows (median time-between-flows).
-                        freq_raw = row.get("frecuencia pagos", row.get("frecuencia"))
-                        freq = self._safe_int(freq_raw, default=0) if freq_raw is not None else 0
-                        if freq <= 0:
-                            freq = _infer_payment_frequency(cfs)
-
-                        # Day-count convention. Acepta "base calculo" (con espacio, AR)
-                        # o "base_calculo" (snake_case). Normaliza a forma canónica.
-                        dc_raw = row.get("base calculo", row.get("base_calculo"))
-                        if dc_raw is not None and not (isinstance(dc_raw, float) and pd.isna(dc_raw)):
-                            dc_str = str(dc_raw).strip()
-                        else:
-                            dc_str = ""
-                        # BOPREAL: 30/360 por prospecto BCRA aunque no esté en Excel.
-                        if not dc_str and itype == "BOPREAL":
-                            dc_str = "30/360"
-                        day_count = dc_str if dc_str else "ACT/365.25"
-
-                        self._cache_instruments.append(Instrument(
-                            ticker=clean_ticker,
-                            short_name=short,
-                            instrument_type=itype,
-                            maturity_date=m_date,
-                            emission_date=e_date,
-                            cashflows=cfs,
-                            cer_base=cer_b,
-                            cer_lag=lag_val,
-                            category=category,
-                            floor_rate_monthly=floor,
-                            spread_rate=spread,
-                            cer_spread=cer_spread_val,
-                            payment_frequency=freq,
-                            day_count=day_count,
-                        ))
+                        inst = build_instrument(row, sheet, cfs)
+                        if inst is None:
+                            continue
+                        self._cache_instruments.append(inst)
+                        # Meta para el ABM: dedupe coherente con los Instruments
+                        # (hojas posteriores pisan a las anteriores).
+                        self._meta[inst.ticker] = (sheet, row_to_raw_fields(row))
                 except Exception as e:
                     logger.warning(f"Could not load sheet {sheet}: {e}")
 
@@ -342,6 +337,14 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
 
     def get_instrument_by_ticker(self, ticker: str) -> Optional[Instrument]:
         return self._by_ticker.get(ticker)
+
+    def get_all_with_meta(self):
+        """[(Instrument, sheet, raw_fields), ...] — para el seeding del ABM."""
+        out = []
+        for inst in self._cache_instruments:
+            sheet, raw = self._meta.get(inst.ticker, (None, None))
+            out.append((inst, sheet, raw))
+        return out
 
 class Data912MarketDataProvider(IMarketDataProvider):
     ENDPOINTS = {

@@ -13,7 +13,7 @@ import logging
 import math
 from typing import Dict, List, Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, inspect, select
 
 from core.domain.interfaces import IInstrumentsRepository
 from core.domain.models import Cashflow, Instrument
@@ -24,7 +24,18 @@ logger = logging.getLogger(__name__)
 
 
 def init_db() -> None:
-    Base.metadata.create_all(get_engine())
+    """Crea las tablas si faltan. Si la tabla `instruments` existe pero le faltan
+    columnas nuevas (sheet/raw_fields del ABM), la recrea — la .db es solo un
+    cache derivado del Excel, así que dropear y re-sembrar es seguro."""
+    eng = get_engine()
+    Base.metadata.create_all(eng)
+    insp = inspect(eng)
+    if insp.has_table("instruments"):
+        cols = {c["name"] for c in insp.get_columns("instruments")}
+        if not {"sheet", "raw_fields"} <= cols:
+            logger.info("catalog schema drift: recreando tablas (faltan sheet/raw_fields).")
+            Base.metadata.drop_all(eng)
+            Base.metadata.create_all(eng)
 
 
 def _num(x: Optional[float]) -> float:
@@ -41,36 +52,49 @@ def _num(x: Optional[float]) -> float:
     return float(x)
 
 
+def instrument_to_orm(inst: Instrument, sheet: Optional[str] = None,
+                      raw_fields: Optional[dict] = None) -> InstrumentORM:
+    """Domain Instrument (+ meta del ABM) → InstrumentORM con cashflows materializados."""
+    orm = InstrumentORM(
+        ticker=inst.ticker, short_name=inst.short_name,
+        instrument_type=inst.instrument_type,
+        maturity_date=inst.maturity_date, emission_date=inst.emission_date,
+        cer_base=inst.cer_base, cer_lag=inst.cer_lag, category=inst.category,
+        floor_rate_monthly=inst.floor_rate_monthly, spread_rate=inst.spread_rate,
+        cer_spread=inst.cer_spread, payment_frequency=inst.payment_frequency,
+        day_count=inst.day_count, sheet=sheet, raw_fields=raw_fields,
+    )
+    orm.cashflows = [
+        CashflowORM(ticker=inst.ticker, fecha_pago=cf.date,
+                    amortizacion=_num(cf.amortization), cupon_interes=_num(cf.interest))
+        for cf in inst.cashflows
+    ]
+    return orm
+
+
 def reseed(instruments: List[Instrument]) -> int:
-    """Wipe + reseed SQLite desde domain Instruments (transaccional, idempotente)."""
+    """Wipe + reseed SQLite desde domain Instruments (sin meta del ABM)."""
+    return reseed_with_meta([(i, None, None) for i in instruments])
+
+
+def reseed_with_meta(triples) -> int:
+    """Wipe + reseed desde (Instrument, sheet, raw_fields) — transaccional, idempotente."""
     init_db()
+    triples = list(triples)
     with SessionLocal.begin() as s:
         s.execute(delete(CashflowORM))
         s.execute(delete(InstrumentORM))
-        for inst in instruments:
-            orm = InstrumentORM(
-                ticker=inst.ticker, short_name=inst.short_name,
-                instrument_type=inst.instrument_type,
-                maturity_date=inst.maturity_date, emission_date=inst.emission_date,
-                cer_base=inst.cer_base, cer_lag=inst.cer_lag, category=inst.category,
-                floor_rate_monthly=inst.floor_rate_monthly, spread_rate=inst.spread_rate,
-                cer_spread=inst.cer_spread, payment_frequency=inst.payment_frequency,
-                day_count=inst.day_count,
-            )
-            orm.cashflows = [
-                CashflowORM(ticker=inst.ticker, fecha_pago=cf.date,
-                            amortizacion=_num(cf.amortization), cupon_interes=_num(cf.interest))
-                for cf in inst.cashflows
-            ]
-            s.add(orm)
-    return len(instruments)
+        for inst, sheet, raw in triples:
+            s.add(instrument_to_orm(inst, sheet, raw))
+    return len(triples)
 
 
 def ingest_from_excel(xlsx_path: str) -> int:
-    """Excel → SQLite. Reusa el parsing probado de ExcelInstrumentsRepository."""
+    """Excel → SQLite. Reusa el parsing probado de ExcelInstrumentsRepository,
+    preservando sheet + raw_fields para el round-trip del form del ABM."""
     from core.infrastructure.repositories import ExcelInstrumentsRepository
-    insts = ExcelInstrumentsRepository(xlsx_path).get_all_instruments()
-    n = reseed(insts)
+    triples = ExcelInstrumentsRepository(xlsx_path).get_all_with_meta()
+    n = reseed_with_meta(triples)
     logger.info("ingest_from_excel: seeded %d instruments into SQLite.", n)
     return n
 

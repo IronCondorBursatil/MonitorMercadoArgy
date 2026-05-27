@@ -1,14 +1,20 @@
 """ORM SQLAlchemy 2.0 (typed). Espejo 1:1 de los campos del dominio `Instrument`
 + `Cashflow`. Las columnas de cashflow usan los nombres del Excel (amortizacion,
-cupon_interes, fecha_pago) para que el seeding sea directo."""
+cupon_interes, fecha_pago) para que el seeding sea directo.
+
+`sheet` + `raw_fields` (JSON) preservan los parámetros crudos por hoja del ABM
+(cupón %, tem_licit, schedule de amort, etc.) para que el form de edición pueda
+hacer round-trip — el `Instrument` normalizado solo no alcanza para reconstruir
+esos inputs (quedan horneados en los cashflows materializados)."""
 
 from __future__ import annotations
 
 from datetime import date
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 
 class Base(DeclarativeBase):
@@ -31,6 +37,9 @@ class InstrumentORM(Base):
     cer_spread: Mapped[Optional[float]] = mapped_column(default=None)
     payment_frequency: Mapped[int] = mapped_column(default=2)
     day_count: Mapped[str] = mapped_column(String, default="ACT/365.25")
+    # Metadata del ABM (no la usa el motor de pricing).
+    sheet: Mapped[Optional[str]] = mapped_column(String, default=None)
+    raw_fields: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, default=None)
 
     cashflows: Mapped[List["CashflowORM"]] = relationship(
         back_populates="instrument",

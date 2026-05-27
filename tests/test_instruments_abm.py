@@ -1,17 +1,16 @@
-"""Tests del módulo `apps.web.instruments_abm`.
+"""Tests del módulo `apps.web.instruments_abm` (backend SQLite, §5.5).
 
-Foco: transactionality + atomic save (Batch 1 del audit fix).
+Foco: CRUD transaccional sobre SQLite. La fixture `abm_db` apunta el engine a
+una .db temporal sembrada desde el Excel real, sin tocar la catalog.db de prod.
 """
 
-import os
-import shutil
-from datetime import datetime
-
-import openpyxl
 import pytest
 
+from config.settings import MASTER_XLSX, settings
+from core.infrastructure.db import engine as db_engine
+from core.infrastructure.db.catalog_repository import ingest_from_excel
+
 from apps.web.instruments_abm import (
-    _atomic_save_workbook,
     _parse_cashflows,
     delete_instrument,
     get_instrument,
@@ -22,19 +21,18 @@ from apps.web.instruments_abm import (
 
 
 @pytest.fixture
-def tmp_master(tmp_path):
-    """Copia el master real a un tmpfile aislado por test."""
-    src = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "data", "instruments_master.xlsx",
-    )
-    dst = tmp_path / "master_test.xlsx"
-    shutil.copy2(src, dst)
-    return str(dst)
+def abm_db(tmp_path):
+    """Engine apuntado a una .db temporal sembrada desde el master Excel."""
+    db_engine.configure(tmp_path / "abm_test.db")
+    try:
+        ingest_from_excel(MASTER_XLSX)
+        yield
+    finally:
+        db_engine.configure(settings.catalog_db)  # restaurar la .db real
 
 
 # --------------------------------------------------------------------------- #
-# _parse_cashflows — validación de input del frontend
+# _parse_cashflows — validación de input del frontend (función pura)
 # --------------------------------------------------------------------------- #
 
 class TestParseCashflows:
@@ -77,38 +75,13 @@ class TestParseCashflows:
 
 
 # --------------------------------------------------------------------------- #
-# Atomic save: el .tmp + os.replace pattern
-# --------------------------------------------------------------------------- #
-
-class TestAtomicSave:
-    def test_atomic_save_writes_then_replaces(self, tmp_path):
-        path = str(tmp_path / "test.xlsx")
-        wb = openpyxl.Workbook()
-        wb.active.title = "Test"
-        wb.active["A1"] = "hello"
-        # Pre-existing file (simular update)
-        wb.save(path)
-        # Mutamos y re-guardamos atomic
-        wb2 = openpyxl.load_workbook(path)
-        wb2.active["A2"] = "world"
-        _atomic_save_workbook(wb2, path)
-        # El .tmp NO debe quedar después
-        assert not os.path.exists(path + ".tmp")
-        # El destino contiene la mutación
-        wb3 = openpyxl.load_workbook(path, read_only=True)
-        assert wb3["Test"]["A2"].value == "world"
-        wb3.close()
-
-
-# --------------------------------------------------------------------------- #
-# save_instrument transaccional (row + cashflows en un solo wb handle)
+# save_instrument transaccional (row + cashflows en una sola txn SQLAlchemy)
 # --------------------------------------------------------------------------- #
 
 class TestSaveInstrumentTransactional:
-    def test_save_row_only_no_cashflows(self, tmp_master):
-        """Sin cashflows kwarg, save_instrument solo escribe la fila."""
+    def test_save_row_only_no_cashflows(self, abm_db):
+        """Sin cashflows kwarg → solo escribe la fila (synth on-the-fly)."""
         result = save_instrument(
-            tmp_master,
             "Soberanos",
             {
                 "ticker": "TESTROW",
@@ -124,15 +97,13 @@ class TestSaveInstrumentTransactional:
         assert result["ticker"] == "TESTROW"
         assert "cashflows" not in result
 
-    def test_save_with_cashflows_atomic(self, tmp_master):
-        """Con cashflows, ambas escrituras pasan en un solo wb save.
-        Verificamos que ambas mutaciones persisten."""
+    def test_save_with_cashflows_atomic(self, abm_db):
+        """Con cashflows, row + cashflows persisten juntos."""
         cashflows = [
             {"date": "2026-01-01", "amortization": 50.0, "interest": 1.0},
             {"date": "2027-01-01", "amortization": 50.0, "interest": 0.5},
         ]
         result = save_instrument(
-            tmp_master,
             "Soberanos",
             {
                 "ticker": "TXN1",
@@ -147,19 +118,16 @@ class TestSaveInstrumentTransactional:
         )
         assert result["cashflows"] == 2
 
-        # Verificar que get_instrument lee tanto row como cashflows
-        loaded = get_instrument(tmp_master, "TXN1")
+        loaded = get_instrument("TXN1")
         assert loaded is not None
         assert loaded["fields"]["tipo"] == "BONAR"
         assert len(loaded["cashflows"]) == 2
         assert loaded["cashflows_source"] == "sheet"
 
-    def test_save_invalid_cashflow_aborts_everything(self, tmp_master):
-        """Si los cashflows tienen una fecha inválida, ni la row ni los
-        cashflows deben persistir (validación pre-write)."""
+    def test_save_invalid_cashflow_aborts_everything(self, abm_db):
+        """Cashflow con fecha inválida → ni la row ni los cashflows persisten."""
         with pytest.raises(ValueError, match="invalid date"):
             save_instrument(
-                tmp_master,
                 "Soberanos",
                 {
                     "ticker": "BADCF",
@@ -169,32 +137,24 @@ class TestSaveInstrumentTransactional:
                     "fecha_vencimiento": "2030-01-01",
                     "cupon anual %": "1.0",
                 },
-                cashflows=[
-                    {"date": "GARBAGE", "amortization": 100, "interest": 0},
-                ],
+                cashflows=[{"date": "GARBAGE", "amortization": 100, "interest": 0}],
             )
-        # Verificar que la row NO se creó
-        assert get_instrument(tmp_master, "BADCF") is None
+        assert get_instrument("BADCF") is None
 
-    def test_save_updates_existing(self, tmp_master):
-        """Editar un ticker existente preserva otros campos no pasados."""
-        # Primer save
-        save_instrument(tmp_master, "Soberanos", {
+    def test_save_updates_existing(self, abm_db):
+        """Editar un ticker existente devuelve 'updated' y persiste el cambio."""
+        save_instrument("Soberanos", {
             "ticker": "UPDT1", "short_name": "UPDT1", "tipo": "BONAR",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "1.0", "frecuencia pagos": "2",
         })
-        # Update
-        result = save_instrument(tmp_master, "Soberanos", {
-            "ticker": "UPDT1", "short_name": "UPDT1",
-            "tipo": "BONAR",  # mismo
-            "fecha_emision": "2025-01-01",
-            "fecha_vencimiento": "2030-01-01",
-            "cupon anual %": "2.5",  # cambiado
-            "frecuencia pagos": "2",
+        result = save_instrument("Soberanos", {
+            "ticker": "UPDT1", "short_name": "UPDT1", "tipo": "BONAR",
+            "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
+            "cupon anual %": "2.5", "frecuencia pagos": "2",
         })
         assert result["action"] == "updated"
-        loaded = get_instrument(tmp_master, "UPDT1")
+        loaded = get_instrument("UPDT1")
         assert str(loaded["fields"]["cupon anual %"]) in ("2.5", "2,5")
 
 
@@ -203,23 +163,21 @@ class TestSaveInstrumentTransactional:
 # --------------------------------------------------------------------------- #
 
 class TestSaveCashflows:
-    def test_replace_existing_cashflows(self, tmp_master):
-        """save_cashflows reemplaza TODAS las filas del ticker (delete + insert)."""
-        # AL30D tiene 9 cashflows en el master. Las reemplazamos por 2.
-        result = save_cashflows(tmp_master, "AL30D", [
+    def test_replace_existing_cashflows(self, abm_db):
+        """Reemplaza TODAS las filas del ticker (delete + insert)."""
+        result = save_cashflows("AL30D", [
             {"date": "2030-01-01", "amortization": 100, "interest": 5},
         ])
         assert result["count"] == 1
-        loaded = get_instrument(tmp_master, "AL30D")
+        loaded = get_instrument("AL30D")
         assert loaded["cashflows_source"] == "sheet"
         assert len(loaded["cashflows"]) == 1
         assert loaded["cashflows"][0]["amortization"] == 100
 
-    def test_empty_cashflows_clears(self, tmp_master):
-        """Pasar [] borra todas las cashflows del ticker."""
-        save_cashflows(tmp_master, "AL30D", [])
-        loaded = get_instrument(tmp_master, "AL30D")
-        # Sin cashflows explícitos, fall-back a synth
+    def test_empty_cashflows_clears(self, abm_db):
+        """Pasar [] borra todas las cashflows → fallback a synth/empty."""
+        save_cashflows("AL30D", [])
+        loaded = get_instrument("AL30D")
         assert loaded["cashflows_source"] in ("synth", "empty")
 
 
@@ -228,23 +186,21 @@ class TestSaveCashflows:
 # --------------------------------------------------------------------------- #
 
 class TestDeleteInstrument:
-    def test_delete_removes_row_and_cashflows(self, tmp_master):
-        # Crear ticker con cashflows
-        save_instrument(tmp_master, "Soberanos", {
+    def test_delete_removes_row_and_cashflows(self, abm_db):
+        save_instrument("Soberanos", {
             "ticker": "DELME", "short_name": "DELME", "tipo": "BONAR",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "1.0",
         }, cashflows=[{"date": "2030-01-01", "amortization": 100, "interest": 0}])
-        assert get_instrument(tmp_master, "DELME") is not None
+        assert get_instrument("DELME") is not None
 
-        # Borrar
-        result = delete_instrument(tmp_master, "DELME")
+        result = delete_instrument("DELME")
         assert result["action"] == "deleted"
         assert result["ticker"] == "DELME"
-        assert get_instrument(tmp_master, "DELME") is None
+        assert get_instrument("DELME") is None
 
-    def test_delete_nonexistent_returns_not_found(self, tmp_master):
-        result = delete_instrument(tmp_master, "NEVEREXISTED")
+    def test_delete_nonexistent_returns_not_found(self, abm_db):
+        result = delete_instrument("NEVEREXISTED")
         assert result["action"] == "not_found"
 
 
@@ -253,14 +209,12 @@ class TestDeleteInstrument:
 # --------------------------------------------------------------------------- #
 
 class TestListInstruments:
-    def test_returns_known_tickers(self, tmp_master):
-        items = list_instruments(tmp_master)
-        tickers = {it["ticker"] for it in items}
+    def test_returns_known_tickers(self, abm_db):
+        tickers = {it["ticker"] for it in list_instruments()}
         assert "AL30D" in tickers
         assert "S29Y6" in tickers
 
-    def test_returns_sheet_per_ticker(self, tmp_master):
-        items = list_instruments(tmp_master)
-        sheet_by_ticker = {it["ticker"]: it["sheet"] for it in items}
+    def test_returns_sheet_per_ticker(self, abm_db):
+        sheet_by_ticker = {it["ticker"]: it["sheet"] for it in list_instruments()}
         assert sheet_by_ticker.get("AL30D") == "Soberanos"
         assert sheet_by_ticker.get("S29Y6") == "Tasa_Fija"
