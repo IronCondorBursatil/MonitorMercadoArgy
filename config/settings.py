@@ -92,45 +92,47 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 _LOG_FILE = str(settings.base_dir / "monitores_global.log")
 
 
-class _AccessErrorsOnly(logging.Filter):
-    """Filtro para `uvicorn.access`: deja pasar SOLO requests con error (status
-    >= 400). El log de acceso emite un INFO por cada GET de panel (~12/ciclo) y
-    httpx otro por cada fetch OK — ese ruido tapa las fallas reales en la consola.
+class _ConsoleFilter(logging.Filter):
+    """Política de CONSOLA: solo lo accionable. (El archivo recibe TODO.)
 
-    El record de uvicorn.access trae args = (client, method, path, http_ver, status).
-    Si el formato cambiara, ante la duda dejamos pasar el record (no ocultar)."""
+    Deja pasar a la terminal únicamente:
+      - WARNING / ERROR / CRITICAL  → fallas a resolver.
+      - requests HTTP con error (uvicorn.access status >= 400).
+      - cualquier record marcado explícito con extra={"console": True}.
+    Oculta de la consola (pero NO del archivo): el ruido por-ciclo —
+    httpx/httpcore (200 OK por fetch), access 2xx/3xx, e INFO de arranque/app.
+
+    Para forzar un INFO puntual a la terminal:  logger.info(msg, extra={"console": True})
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            return int(record.args[4]) >= 400
-        except (TypeError, IndexError, ValueError):
+        if record.levelno >= logging.WARNING:
             return True
-
-
-def _quiet_noisy_loggers() -> None:
-    # httpx/httpcore logean cada request OK a INFO → 4 líneas/ciclo de ruido.
-    for name in ("httpx", "httpcore"):
-        logging.getLogger(name).setLevel(logging.WARNING)
-    # uvicorn.access: mostrar solo los requests con error (4xx/5xx).
-    logging.getLogger("uvicorn.access").addFilter(_AccessErrorsOnly())
+        if getattr(record, "console", False):
+            return True
+        if record.name == "uvicorn.access":
+            # args = (client, method, path, http_ver, status); mostrar solo >=400.
+            try:
+                return int(record.args[4]) >= 400
+            except (TypeError, IndexError, ValueError):
+                return True
+        return False  # resto de INFO/DEBUG → solo al archivo
 
 
 def setup_logging():
     if logging.getLogger().handlers:
         return
-    # RotatingFileHandler: máx. 5 MB por archivo, 5 backups (= 25 MB máximo).
-    # Evita que el log crezca indefinidamente en producción 24×7.
+    fmt = logging.Formatter(LOG_FORMAT)
+    # ARCHIVO: log COMPLETO (INFO+, incluye httpx/access) — registro durable para
+    # debug. RotatingFileHandler: 5 MB × 5 backups (= 25 MB máx, respeta OneDrive).
     file_handler = RotatingFileHandler(
-        _LOG_FILE,
-        maxBytes=5 * 1024 * 1024,  # 5 MB
-        backupCount=5,
-        encoding="utf-8",
+        _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8",
     )
-    file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    file_handler.setFormatter(fmt)
+    file_handler.setLevel(logging.INFO)
+    # CONSOLA: solo lo accionable (ver _ConsoleFilter). El ruido va al archivo.
     stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(logging.Formatter(LOG_FORMAT))
-    logging.basicConfig(
-        level=LOG_LEVEL,
-        handlers=[stream_handler, file_handler],
-    )
-    _quiet_noisy_loggers()
+    stream_handler.setFormatter(fmt)
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.addFilter(_ConsoleFilter())
+    logging.basicConfig(level=LOG_LEVEL, handlers=[stream_handler, file_handler])

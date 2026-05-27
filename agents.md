@@ -12,6 +12,12 @@
 > - **Web**: el `http.server` + SPA (`server.py`, `app.js`, `style.css`, los HTML) fue
 >   **retirado** y reemplazado por **FastAPI + HTMX SSR** (`apps/web/app.py` + `routers/` +
 >   `templates/`). `run.py` ahora arranca uvicorn. HTTP: `requests`→`httpx`.
+> - **Logging** (`config/settings.py::_ConsoleFilter`): la **consola** muestra SOLO lo
+>   accionable — `WARNING`+/errores, requests HTTP con status ≥ 400, y todo lo marcado
+>   `extra={"console": True}`. El **archivo** `monitores_global.log` recibe **TODO** (INFO,
+>   httpx, access; rota 5 MB × 5). Regla para futuros arreglos: **no** ensuciar la consola
+>   con INFO por-ciclo (fetches OK, access 2xx) — va al archivo; si querés que un INFO salga
+>   puntualmente en la terminal, usá `logger.info(msg, extra={"console": True})`.
 > - **Las secciones de abajo sobre la capa web (server.py / app.js / Gridstack / endpoints
 >   `/api/*`) son HISTÓRICAS.** Las **convenciones financieras** (CER, TAMAR, BEI, day-counts,
 >   MD, accrued, settle T+0/T+1) SIGUEN VIGENTES — el motor preserva la matemática.
