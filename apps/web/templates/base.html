@@ -23,13 +23,21 @@
 </head>
 <body>
   <header>
-    <h1>MONITOR · Renta Fija AR</h1>
-    <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
-    <nav>
-      <a href="/">Bonos</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
-      <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/abm">ABM</a>
-      <button class="theme-btn" onclick="toggleTheme()" title="Cambiar tema">◑</button>
-    </nav>
+    <div class="header-top">
+      <h1>MONITOR · Renta Fija AR</h1>
+      <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
+      <nav>
+        <a href="/">Bonos</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
+        <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/abm">ABM</a>
+        <button class="theme-btn" onclick="toggleTheme()" title="Cambiar tema">◑</button>
+      </nav>
+    </div>
+    {# Strip de cotizaciones (dólares + reservas + riesgo país). Autocargable por
+       HTMX → presente en todas las páginas sin tocar cada router. #}
+    <div class="header-strip" hx-get="/header/cards"
+         hx-trigger="load, every 60s" hx-swap="innerHTML">
+      <span class="hstrip-loading">Cargando cotizaciones…</span>
+    </div>
   </header>
   {% block content %}{% endblock %}
   <div id="modal"></div>

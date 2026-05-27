@@ -31,9 +31,10 @@ body { margin: 0; background: var(--page-bg); color: var(--text);
        font: 13px/1.45 var(--font-body); }
 
 /* ---- header ---- */
-header { display: flex; align-items: center; gap: 16px; padding: 9px 18px;
+header { display: flex; flex-direction: column; padding: 0;
          background: var(--head-bg); color: var(--text-white);
          position: sticky; top: 0; z-index: 200; box-shadow: var(--shadow-panel); }
+.header-top { display: flex; align-items: center; gap: 16px; padding: 9px 18px; }
 header h1 { font-size: 15px; margin: 0; letter-spacing: .6px; font-weight: 700; }
 header .meta { color: #c7d0ee; font-size: 12px; display: flex; align-items: center; gap: 6px; }
 header .live { width: 8px; height: 8px; border-radius: 50%; background: var(--live);
@@ -45,6 +46,28 @@ header nav a { color: #c7d0ee; text-decoration: none; font-size: 12.5px; font-we
 header nav a:hover { background: rgba(255,255,255,.12); color: #fff; }
 header .theme-btn { background: rgba(255,255,255,.12); border: none; color: #fff;
                     cursor: pointer; border-radius: 6px; padding: 5px 9px; font-size: 13px; margin-left: 6px; }
+
+/* ---- header strip: cotizaciones (dólares + reservas + riesgo país) ---- */
+.header-strip { display: flex; align-items: stretch; gap: 7px; padding: 6px 14px 8px;
+                background: var(--navy-dark); border-top: 1px solid rgba(255,255,255,.07);
+                overflow-x: auto; }
+.header-strip::-webkit-scrollbar { height: 5px; }
+.header-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 3px; }
+.hstrip-loading { color: #aab4d4; font-size: 11px; padding: 4px 2px; }
+.hcard { display: flex; flex-direction: column; justify-content: center; gap: 1px;
+         background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+         border-radius: 6px; padding: 4px 10px; min-width: 74px; white-space: nowrap; flex: 0 0 auto; }
+.hcard .lbl { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+              font-size: 9.5px; color: #aab4d4; text-transform: uppercase; letter-spacing: .3px; }
+.hcard .lbl .chg { font-size: 10px; letter-spacing: 0; font-family: var(--font-mono); }
+.hcard .lbl .chg.pos { color: #4fcf85; } .hcard .lbl .chg.neg { color: #f28a8f; }
+.hcard .val { font-size: 13px; color: #fff; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.hcard .val small { font-size: 10px; margin-left: 3px; font-family: var(--font-mono); }
+.hcard .val small.pos { color: #4fcf85; } .hcard .val small.neg { color: #f28a8f; }
+/* puntas dólar: compra (bid) atenuada, venta (offer) en blanco */
+.hcard .val .bid { color: #aab4d4; } .hcard .val .ask { color: #fff; }
+.hcard .val .bsep { color: #6b7aa8; margin: 0 3px; }
+.hcard.hcard-bcra { background: rgba(58,95,207,.20); border-color: rgba(100,134,230,.38); }
 
 /* ---- grid de paneles ---- */
 main { padding: 14px; display: grid; gap: 14px;

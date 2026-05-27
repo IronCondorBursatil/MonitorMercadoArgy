@@ -1,0 +1,20 @@
+{# Cards del header: tipos de dólar (dolarapi) + reservas + riesgo país (BCRA/JPM).
+   Renderizado por GET /header/cards e incluido en base.html (todas las páginas). #}
+{% macro money(v, d=0) %}{% if v is none %}—{% else %}{{ ('{:,.' ~ d ~ 'f}').format(v) }}{% endif %}{% endmacro %}
+{% for d in dolares %}
+<div class="hcard" title="{{ d.label }} · compra {{ money(d.compra, 2) }} / venta {{ money(d.venta, 2) }}{% if d.var_pct is not none %} · día {{ '{:+.1f}%'.format(d.var_pct) }} (venta vs cierre ayer){% endif %}">
+  {# Label + variación diaria de la venta (vs cierre ayer) al lado del nombre. #}
+  <span class="lbl"><span class="nm">{{ d.label }}</span>{% if d.var_pct is not none %}<span class="chg {{ 'pos' if d.var_pct > 0 else ('neg' if d.var_pct < 0 else '') }}">{{ '{:+.1f}%'.format(d.var_pct) }}</span>{% endif %}</span>
+  {# Puntas: compra (bid) / venta (offer). Si falta compra, sólo venta. #}
+  <span class="val">{% if d.compra is not none %}<span class="bid">{{ money(d.compra) }}</span><span class="bsep">/</span>{% endif %}<span class="ask">{{ money(d.venta) }}</span></span>
+</div>
+{% endfor %}
+<div class="hcard hcard-bcra" title="Reservas internacionales brutas del BCRA (USD millones)">
+  <span class="lbl">Reservas</span>
+  <span class="val">{{ money(reservas) }}{% if reservas_delta is not none %}<small class="{{ 'pos' if reservas_delta > 0 else ('neg' if reservas_delta < 0 else '') }}">{{ '{:+,.0f}'.format(reservas_delta) }}</small>{% endif %}</span>
+</div>
+<div class="hcard hcard-bcra" title="Riesgo País — EMBI+ (bps){% if riesgo_pais and riesgo_pais.fecha %} · {{ riesgo_pais.fecha }}{% endif %}">
+  <span class="lbl">Riesgo País</span>
+  {# Riesgo país sube = malo (rojo); baja = bueno (verde). #}
+  <span class="val">{% if riesgo_pais and riesgo_pais.valor is not none %}{{ '{:,.0f}'.format(riesgo_pais.valor) }}{% if riesgo_pais.delta_abs is not none %}<small class="{{ 'neg' if riesgo_pais.delta_abs > 0 else ('pos' if riesgo_pais.delta_abs < 0 else '') }}">{{ '{:+,.0f}'.format(riesgo_pais.delta_abs) }}</small>{% endif %}{% else %}—{% endif %}</span>
+</div>

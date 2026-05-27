@@ -15,7 +15,8 @@ TTL 1h — se usa solo para obtener el valor del día anterior.
 import logging
 import threading
 import time
-from typing import List, Optional
+from datetime import date
+from typing import Dict, List, Optional
 
 from core.infrastructure._http import http_get_json
 
@@ -29,6 +30,10 @@ _RIESGO_PAIS_HIST_URL = "https://api.argentinadatos.com/v1/finanzas/indices/ries
 _RP_TTL_S      = 300   # 5 min — valor actual
 _RP_HIST_TTL_S = 3600  # 1 hora — valor anterior (delta diario)
 
+# Histórico de cotizaciones de dólar (todas las casas, serie completa). Lo usamos
+# sólo para el cierre del día hábil anterior → variación diaria de las cards.
+_DOLARES_HIST_URL = "https://api.argentinadatos.com/v1/cotizaciones/dolares"
+
 
 class ArgentinaDatosProvider:
     def __init__(self):
@@ -40,6 +45,9 @@ class ArgentinaDatosProvider:
         self._rp_lock = threading.Lock()
         self._rp_prev_valor: Optional[int] = None
         self._rp_prev_ts: float = 0.0
+        self._dolares_prev: Dict[str, float] = {}
+        self._dolares_prev_date: Optional[date] = None
+        self._dolares_lock = threading.Lock()
 
     def fetch_letras(self, *, force: bool = False) -> List[dict]:
         """Devuelve la lista completa de letras activas. Thread-safe."""
@@ -132,6 +140,46 @@ class ArgentinaDatosProvider:
             except Exception as e:
                 logger.warning("Riesgo País fetch failed: %s", e)
             return self._rp_cache
+
+    def get_dolares_prev_close(self) -> Dict[str, float]:
+        """`{casa: venta del último día hábil anterior a hoy}` para la variación
+        diaria de las cards de dólar (venta live de dolarapi vs cierre de ayer).
+
+        Cache por día: el cierre previo es fijo dentro de la jornada. La casa se
+        nombra igual que en dolarapi (oficial/blue/mayorista/bolsa/...), así que
+        mapea directo; casas muertas (p.ej. `solidario`) quedan con fecha vieja y
+        las ignora el caller al cruzar contra las casas vivas de dolarapi.
+        """
+        today = date.today()
+        with self._dolares_lock:
+            if self._dolares_prev_date == today and self._dolares_prev:
+                return dict(self._dolares_prev)
+            try:
+                data = http_get_json(
+                    _DOLARES_HIST_URL,
+                    timeout=20,
+                    user_agent="balanz-monitor/1.0",
+                    source="ArgentinaDatos/dolares-hist",
+                )
+                if isinstance(data, list):
+                    today_str = today.isoformat()
+                    latest: Dict[str, tuple] = {}  # casa -> (fecha_str, venta)
+                    for row in data:
+                        casa, fecha, venta = row.get("casa"), row.get("fecha"), row.get("venta")
+                        if not casa or not fecha or venta is None or fecha >= today_str:
+                            continue
+                        cur = latest.get(casa)
+                        if cur is None or fecha > cur[0]:
+                            latest[casa] = (fecha, venta)
+                    if latest:
+                        self._dolares_prev = {c: float(v) for c, (_f, v) in latest.items()}
+                        self._dolares_prev_date = today
+                        ref = max(f for f, _v in latest.values())
+                        logger.info("Dólares cierre previo: %d casas (ref %s).",
+                                    len(self._dolares_prev), ref)
+            except Exception as e:
+                logger.warning("Dólares histórico fetch failed: %s", e)
+            return dict(self._dolares_prev)
 
 
 # Singleton a nivel de módulo — compartido por todos los endpoints.

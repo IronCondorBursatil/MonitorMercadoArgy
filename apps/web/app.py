@@ -29,7 +29,8 @@ from fastapi.staticfiles import StaticFiles
 
 from apps.web.deps import get_repo, get_state
 from apps.web.routers import (
-    abm, bcra, bonds, cartera, cashflows, curva, escenarios, fci, panels, stream,
+    abm, bcra, bonds, cartera, cashflows, curva, escenarios, fci, header, panels,
+    stream,
 )
 from apps.web.state import AppState
 from config.settings import settings
@@ -140,6 +141,7 @@ app.include_router(escenarios.router)
 app.include_router(curva.router)
 app.include_router(fci.router)
 app.include_router(abm.router)
+app.include_router(header.router)
 app.include_router(stream.router)
 
 
