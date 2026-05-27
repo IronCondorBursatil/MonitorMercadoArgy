@@ -246,9 +246,16 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
 
 `MD = Macaulay_years / (1+TEA)^(1/freq)`, donde `freq` es la frecuencia anual de pagos (2 = semestral). El campo `payment_frequency` del Instrument se infiere automáticamente del gap mediano entre cashflows si no está en el Excel.
 
-### Filtro MEP-only para Bonares / Bopreales
+### Soberanos: 3 especies por moneda (ARS / MEP / CABLE) + pricing de la pata ARS
 
-En el dashboard web, los paneles `bonares` y `bopreales` muestran **solo tickers MEP** (sufijo `D`). Pesos (sin sufijo) tendrían TIRs negativas absurdas por mismatch ARS-price / USD-cashflows, y CABLE (sufijo `C`) duplicaría puntos con un spread mínimo. Los tickers no-D siguen estando en el master para el popup de histórico, pero no en el panel. (Si en el futuro querés sumar CABLE, ver `_isCurvaTicker` y `_refresh_bond_panels`).
+> ⚠️ Reemplaza el viejo "filtro MEP-only": ya **no** se ocultan las patas pesos/CABLE.
+> Ahora se muestran las 3 monedas y la pata ARS se pricea bien (ver abajo).
+
+Cada bono soberano (BONAR/GLOBAL) cotiza en 3 monedas con tickers distintos pero **mismo flujo** — solo cambia el precio: **ARS** (sin sufijo, ej. AL30), **MEP** (sufijo `D`, AL30D), **CABLE** (sufijo `C`, AL30C). AO27D/AO28D son sólo-MEP. Convención de moneda por sufijo (single source of truth, en `portfolio.position_currency` / `panels._ticker_ccy` / `instruments_abm._sob_slot`): última letra **D→MEP, C→CABLE, resto→ARS**.
+
+**Pricing de la pata ARS** (corrige el mismatch ARS-price / USD-cashflows que antes daba TIR −94% / paridad 130000%): la pata peso cotiza en pesos pero los cashflows son USD, así que para las métricas se usa el **precio USD implícito = precio_pesos ÷ offer (venta)**, **MEP si BONAR / CABLE si GLOBAL** (dolarapi: `bolsa`=MEP, `contadoconliqui`=CABLE). Vive en `generate_report._enrich_metrics` (NO en el motor, para no romper el test de equivalencia): TIR / V.Téc / MD / paridad se calculan sobre el precio dolarizado, pero la columna **Precio** del panel muestra los **pesos sin decimales**.
+
+**ABM**: las 3 especies se consolidan en **1 solo bono** (form con los 3 tickers, agrupadas por sufijo). Siguen siendo filas independientes en SQLite (el pricing las pricea por ticker como siempre); la consolidación es solo de la capa ABM. **Panel BONARES**: botones **ARS/MEP/CABLE** filtran las filas por moneda (default MEP). Detalle de la capa web (HTMX) en `CLAUDE.md`.
 
 ### Date parsing — bug histórico
 
@@ -488,8 +495,22 @@ REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limi
 
 ---
 
-**Última actualización:** 2026-05-26
-**Versión:** 7.0 — **Reingeniería `mejora.md`** (branch `refactor/mejora-reingenieria`): pricing core Strategy/Protocol/Pydantic (equivalencia verificada), persistencia SQLite+DuckDB (`CatalogRepository`), primitivas async (httpx/breaker/hub), y **web FastAPI + HTMX** reemplazando el http.server + SPA. **Arquitectura actual en `CLAUDE.md`.** · 6.5 — Cartera + Escenarios + Valor Relativo (ver CHANGELOG v6.5). · 6.4 — Panel FCI (CAFCI). Nueva fuente de datos: Fondos Comunes de Inversión vía el micrositio de estadísticas de CAFCI (`estadisticas.cafci.org.ar/comparador-de-fondos.json`), que bundle-a en un solo JSON diario el catálogo completo (1149 fondos / 4602 clases) + la matriz de rendimientos diaria (~3723 clases con VCP + TNA/Directo a 7d/1m/3m/6m/YTD/12m). El método histórico del repo `fedemoglia/cafci-api` (pegarle a `api.cafci.org.ar` sin auth) está muerto: ese host hoy está detrás de una CloudFront Function con allowlist de rutas (`{"error":"Route not allowed"}`). Nuevo `CAFCIProvider` (fetch 1×/día, disk-mirror, offline-friendly, prime en background), endpoints `/api/fci` + `/api/fci/<clase_id>`, panel web `fci` con filtros (tipo de renta + moneda) + buscador + toggle TNA/Directo + headers ordenables + popup de detalle. Tests en `tests/test_cafci_provider.py`.
+**Última actualización:** 2026-05-27
+**Versión:** 7.1 — **Dashboard HTMX: UI + ABM soberanos + pricing pata ARS** (sobre la web FastAPI+HTMX de v7.0; arquitectura actual en `CLAUDE.md`). Ver CHANGELOG v7.1. · 7.0 — **Reingeniería `mejora.md`** (branch `refactor/mejora-reingenieria`): pricing core Strategy/Protocol/Pydantic (equivalencia verificada), persistencia SQLite+DuckDB (`CatalogRepository`), primitivas async (httpx/breaker/hub), y **web FastAPI + HTMX** reemplazando el http.server + SPA. **Arquitectura actual en `CLAUDE.md`.** · 6.5 — Cartera + Escenarios + Valor Relativo (ver CHANGELOG v6.5). · 6.4 — Panel FCI (CAFCI). Nueva fuente de datos: Fondos Comunes de Inversión vía el micrositio de estadísticas de CAFCI (`estadisticas.cafci.org.ar/comparador-de-fondos.json`), que bundle-a en un solo JSON diario el catálogo completo (1149 fondos / 4602 clases) + la matriz de rendimientos diaria (~3723 clases con VCP + TNA/Directo a 7d/1m/3m/6m/YTD/12m). El método histórico del repo `fedemoglia/cafci-api` (pegarle a `api.cafci.org.ar` sin auth) está muerto: ese host hoy está detrás de una CloudFront Function con allowlist de rutas (`{"error":"Route not allowed"}`). Nuevo `CAFCIProvider` (fetch 1×/día, disk-mirror, offline-friendly, prime en background), endpoints `/api/fci` + `/api/fci/<clase_id>`, panel web `fci` con filtros (tipo de renta + moneda) + buscador + toggle TNA/Directo + headers ordenables + popup de detalle. Tests en `tests/test_cafci_provider.py`.
+
+### CHANGELOG v7.1
+
+Trabajo sobre la web **FastAPI + HTMX** (arquitectura actual en `CLAUDE.md`; las secciones "DASHBOARD WEB" de este doc son del viejo http.server). Foco: cotizaciones en el header, soberanos por moneda + fix de pricing de la pata ARS, y herramientas por panel.
+
+| Tipo | Item | Detalle |
+|---|---|---|
+| Feature | **Header strip de cotizaciones** | Cards en el header (todas las páginas): tipos de dólar de dolarapi (compra/venta **bid/offer** + **variación diaria** de la venta vs cierre de ayer de argentinadatos), **Reservas** y **Riesgo País** (BCRA / JPM) con su delta. `routers/header.py` + `fragments/header_cards.html`, autocargable por HTMX (`/header/cards`, poll 60s). |
+| Feature | **Soberanos consolidados (ABM)** | 1 bono = 3 especies por moneda (ARS / MEP-`D` / CABLE-`C`). El form de Soberanos tiene los 3 tickers; el listado del ABM muestra **1 fila por bono**; al guardar sincroniza las especies con cashflows compartidos. Sin cambio de esquema: agrupa por sufijo (`_sob_group`). `instruments_abm.py`. |
+| **Fix** | **Pricing de la pata ARS** | La pata pesos se dolariza para las métricas: precio USD implícito = `precio_pesos ÷ offer` (**MEP si BONAR, CABLE si GLOBAL**); TIR/V.Téc/MD/paridad sobre ese USD, la columna Precio muestra los pesos (sin decimales). Corrige el TIR −94% / paridad 130000% que daba la pata peso. En `generate_report._enrich_metrics` (no toca el motor → test de equivalencia intacto). Ver convención "Soberanos: 3 especies por moneda". |
+| Feature | **Filtro de moneda en BONARES** | Botones **ARS / MEP / CABLE** en el header del panel; **toggle independiente** (cada uno prende/apaga su moneda); default MEP. CSS-driven (`data-flt` en el panel, `data-ccy` en la fila), sobrevive a los swaps de HTMX del tbody. |
+| Feature | **Toolbar por panel** | Botones `Gráfico` · `Config` · `✕`. **Gráfico** (solo paneles con MD/TIR) = popup Chart.js (CDN): dispersión TIR×MD, Bonares vs Globales en colores, curva log por grupo, ticker arriba/abajo de cada punto. **Config** = mostrar/ocultar columnas (clases `hcol-N`). **✕** = cerrar panel. `routers/panels.py::panel_chart` + `fragments/panel_chart.html`. |
+| Feature | **CONFIG global + layout default** | Menú en el nav (al lado de ABM): toggle independiente de paneles visibles + restaurar los cerrados. **"Guardar layout como default"** persiste el arreglo (posiciones + ocultos + columnas) server-side: `POST /panels/layout` → `dashboard_layout.json` en `%LOCALAPPDATA%\monitor`. Prioridad al cargar: **localStorage personal > default del server > auto-layout**. |
+| UI | **Grid: auto-fit + resize fino + scrollbars** | Paneles auto-ajustan el alto a su contenido (sin scrollbar vertical; ajuste relativo medido en JS). Resize libre de grano fino (grid 200 col × cellHeight 5px). Scrollbars finos temáticos (navy/Balanz, light/dark). Layout en localStorage `grid-layout-v3`. |
 
 ### CHANGELOG v6.5
 
