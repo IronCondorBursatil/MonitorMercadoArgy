@@ -1,7 +1,8 @@
 # Monitor de Bonos · Balanz — dependencias de runtime.
-# Python 3.12 del sistema, SIN venv (límite OneDrive). En esta máquina el
-# runtime es el "Microsoft Store" Python 3.12, no el de Programs — instalar con:
-#   & "$env:LOCALAPPDATA\Microsoft\WindowsApps\python3.12.exe" -m pip install -r requirements.txt
+# Python 3.12 del sistema, SIN venv (límite OneDrive). El runtime es el Python de
+# Programs (py -3.12). El antiguo "Store Python" ya no existe. Instalar con:
+#   py -3.12 -m pip install -r requirements.txt
+#   (equiv.: & "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m pip install -r requirements.txt)
 
 # --- núcleo financiero (sin cambios) ---
 numpy

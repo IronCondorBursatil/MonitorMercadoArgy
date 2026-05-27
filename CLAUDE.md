@@ -12,10 +12,11 @@ Bopreales, Futuros DLR, BEI, Panel Líder) + Cartera + ABM. Precios de **Data912
 ## Cómo correr
 
 ```powershell
-# SIEMPRE con el Microsoft Store Python 3.12 (no el de Programs ni `py -3.12`):
-$py = "$env:LOCALAPPDATA\Microsoft\WindowsApps\python3.12.exe"
+# Python 3.12 del sistema (el de Programs; `py -3.12` resuelve a él). El antiguo
+# "Microsoft Store Python" ya NO existe en esta máquina — ver memoria env_python_interpreter.
+$py = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"   # o simplemente: py -3.12
 & $py run.py                          # levanta uvicorn → http://localhost:8000
-& $py -m pytest tests/ -q             # tests (≈131)
+& $py -m pytest tests/ -q             # tests (137)
 & $py scripts/ingest_master.py        # Excel → SQLite (cuando editás el master a mano)
 ```
 
@@ -38,16 +39,17 @@ core/domain/
     metrics.py tamar.py stubs.py   métricas popup / payoff BONTE TAMAR / ZeroTamar.
   cashflow_synth.py portfolio.py scenarios.py yield_curve.py inflation_path.py   (sin cambios)
 core/infrastructure/
-  db/        engine.py (SQLite+WAL) · models.py (ORM 2.0) · catalog_repository.py (CatalogRepository, drop-in del ExcelRepo)
+  db/        engine.py (SQLite+WAL, reconfigurable p/ tests) · models.py (ORM 2.0, + sheet/raw_fields del ABM) · catalog_repository.py (CatalogRepository, drop-in del ExcelRepo; reseed_with_meta)
   analytics/duck.py    cer_asof / avg_tamar (DuckDB sobre los CSV de history)
-  async_http.py circuit_breaker.py provider_hub.py   primitivas async (httpx + breaker + hub) — testeadas
+  async_http.py circuit_breaker.py provider_hub.py   ingesta async (httpx + breaker + hub). ProviderHub.refresh_all + HubMarketDataProvider CABLEADOS al refresh loop.
   schemas.py           Data912Row (validación Pydantic en el borde de ingesta)
-  _http.py             http_get_json SYNC (httpx pooled) — usado por los providers (sync, vía to_thread)
+  _http.py             http_get_json SYNC (httpx pooled) — read-path de los 5 providers sync (FX/indices/REM/CAFCI/argentinadatos + histórico), corren en to_thread fuera del event loop
   repositories.py indices_provider.py fx_provider.py futures_provider.py rem_provider.py cafci_provider.py
+  repositories.build_instrument()   parser de fila → Instrument, COMPARTIDO por el loader Excel y el ABM SQLite
 apps/web/
-  app.py               FastAPI + lifespan (refresh loop + BEI loop vía asyncio.to_thread). MONITOR_DISABLE_LOOPS en tests.
-  state.py deps.py      AppState (snapshot vivo) + Depends (get_repo→CatalogRepository, get_state, get_provider, ...)
-  routers/             panels (12 paneles + /bond detalle), bonds, cartera, bcra, cashflows, abm
+  app.py               FastAPI + lifespan (refresh loop con hub.refresh_all async + BEI loop, motor vía to_thread). MONITOR_DISABLE_LOOPS en tests.
+  state.py deps.py      AppState (snapshot vivo + revision/wait_for_change p/ SSE) + Depends (get_repo→CatalogRepository, get_state, get_hub, ...)
+  routers/             panels (12 paneles + /bond detalle), bonds, cartera, bcra, cashflows, escenarios, curva, fci, abm, stream (SSE)
   templates/           base.html + pages/* + fragments/* (Jinja + HTMX)
   static/css/app.css   diseño Balanz (light/dark) · static/vendor/gridstack
   bond_detail.py instruments_abm.py cartera_store.py   (reusados por los routers)
@@ -56,11 +58,13 @@ run.py scripts/ tests/ data/ config/
 
 ## Flujo web (HTMX SSR)
 
-`run.py`→uvicorn→`app.py`. El **lifespan** arranca 2 tasks: `_refresh_loop` (cada 5s,
-corre `GenerateMonitorReport.execute` vía `to_thread` → `AppState`) y `_bei_loop`
-(`compute_bei_tables`). Cada panel es un `<tbody hx-get="/panels/{id}/rows" hx-trigger="every 5s">`
-que renderiza un fragmento server-side desde `AppState`. El detalle es un modal
-(`/bond/{t}/detail` + `/bond/{t}/metrics` calculadora).
+`run.py`→uvicorn→`app.py`. El **lifespan** arranca 2 tasks: `_refresh_loop` (cada 5s:
+`await hub.refresh_all()` trae Data912 async con breaker+pool, luego el motor corre
+`GenerateMonitorReport.execute` vía `to_thread` leyendo el snapshot del hub → `AppState`)
+y `_bei_loop` (`compute_bei_tables`). Cada panel es un `<tbody hx-get="/panels/{id}/rows">`
+que renderiza un fragmento SSR desde `AppState`; el auto-refresh es **event-driven por SSE**
+(`/stream` pushea `refresh` por ciclo; `hx-trigger="load, sse:refresh, every 15s"` con el
+polling como fallback). El detalle es un modal (`/bond/{t}/detail` + `/bond/{t}/metrics`).
 
 ## Invariantes (no romper)
 
@@ -68,12 +72,19 @@ que renderiza un fragmento server-side desde `AppState`. El detalle es un modal
   contra el original congelado (`tests/_legacy_engine.py`) sobre todos los instrumentos.
   Cualquier cambio de pricing debe dejarlo verde.
 - **`FinancialEngine` preserva firmas** públicas (sus consumidores: bond_detail, generate_report).
-- **Excel = semilla**: `CatalogRepository` lee SQLite (auto-siembra del Excel si vacío);
-  la ABM edita el Excel y llama `reload()` para re-sembrar. `ingest_master.py` re-siembra.
-- **Store Python**: ver `~/.claude/.../memory/env_python_interpreter.md`. `py -3.12` es el INTÉRPRETE EQUIVOCADO.
+- **Excel = semilla**: `CatalogRepository` lee SQLite (auto-siembra del Excel si vacío vía
+  `ingest_master.py` / `ingest_from_excel`, que preserva `sheet`+`raw_fields`). La **ABM
+  escribe SQLite directo** (SQLAlchemy transaccional, §5.5 — ya NO toca el Excel) y llama
+  `reload(reseed_from_excel=False)` para refrescar el cache en memoria desde SQLite.
+- **Intérprete Python**: usar `py -3.12` / `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`. Ver memoria `env_python_interpreter`. (El viejo "Store Python" ya no existe; sus deps se reinstalaron acá.)
 - **OneDrive**: nada de venv ni `.db` dentro del proyecto.
 
 ## Pendiente (cola, no funcional)
-Reescritura async de los 6 providers (cablear `ProviderHub`/`ResilientClient`, retirar `_http.py` sync);
-charts/sparklines (Chart.js island); ABM transaccional SQLAlchemy (§5.5, hoy escribe Excel+reseed);
-valor_relativo de soberanos (universo curado). Ver `mejora.md` + memoria `reingenieria-progress`.
+
+- **Providers sync restantes**: FX/indices/REM/CAFCI/argentinadatos siguen sync vía `_http.py`.
+  Es **deliberado**: se llaman dentro del cómputo de pricing (que corre en `to_thread`, fuera del
+  event loop) y tienen cache propio con TTL; el hot-path real (Data912, 4 endpoints cada 5s) ya
+  está en el hub async. Migrarlos a `ResilientClient` (y retirar `_http.py`) es bajo valor / alto
+  riesgo — queda como cola opcional.
+- Charts/sparklines adicionales (Chart.js); más cobertura de tests de routers.
+Ver `mejora.md`.
