@@ -92,6 +92,29 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 _LOG_FILE = str(settings.base_dir / "monitores_global.log")
 
 
+class _AccessErrorsOnly(logging.Filter):
+    """Filtro para `uvicorn.access`: deja pasar SOLO requests con error (status
+    >= 400). El log de acceso emite un INFO por cada GET de panel (~12/ciclo) y
+    httpx otro por cada fetch OK — ese ruido tapa las fallas reales en la consola.
+
+    El record de uvicorn.access trae args = (client, method, path, http_ver, status).
+    Si el formato cambiara, ante la duda dejamos pasar el record (no ocultar)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            return int(record.args[4]) >= 400
+        except (TypeError, IndexError, ValueError):
+            return True
+
+
+def _quiet_noisy_loggers() -> None:
+    # httpx/httpcore logean cada request OK a INFO → 4 líneas/ciclo de ruido.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+    # uvicorn.access: mostrar solo los requests con error (4xx/5xx).
+    logging.getLogger("uvicorn.access").addFilter(_AccessErrorsOnly())
+
+
 def setup_logging():
     if logging.getLogger().handlers:
         return
@@ -110,3 +133,4 @@ def setup_logging():
         level=LOG_LEVEL,
         handlers=[stream_handler, file_handler],
     )
+    _quiet_noisy_loggers()
