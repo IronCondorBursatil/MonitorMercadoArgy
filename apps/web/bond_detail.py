@@ -51,7 +51,7 @@ def _is_usd_quoted(instrument: Instrument) -> bool:
     con sufijo D. Dolar Linked cotiza en pesos pese a ser USD-linked."""
     ticker = (instrument.ticker or "").upper()
     return (
-        instrument.instrument_type in ("BONAR", "GLOBAL", "BOPREAL")
+        instrument.instrument_type in ("BONAR", "GLOBAL", "BOPREAL", "HARD DOLLAR", "DOLLAR LINKED")
         and ticker.endswith("D")
     )
 
@@ -59,6 +59,23 @@ def _is_usd_quoted(instrument: Instrument) -> bool:
 _TAMAR_TYPES = frozenset({"PURO", "DUAL", "DUAL_CER_TAMAR"})
 
 _VALID_LEGS = frozenset({"TF", "TAM", "CER"})
+
+
+def _nominal_tna(instrument, tea):
+    """TNA "Tir Nominal" alineada al informe IAMC/Balanz, seleccionada por tipo:
+    - bonos CON cupón (hard-dollar/ON/soberanos/tasa fija): m = frecuencia de pago
+      (semestral → 2) vía `tea_to_tna_freq` — la convención del informe.
+    - TAMAR/DUAL y capitalizables peso (LECAP/BONCAP/LECER): m = 12 (mensual), que
+      es lo que Balanz/IAMC rotula como 'Tasa Nominal' para esos.
+    (El `tea_to_tna` base-365 que se mostraba antes sub-representaba el nominal del
+    cupón → daba la 'Tir Nominal' sistemáticamente baja vs el informe.)"""
+    if tea is None:
+        return None
+    itype = (instrument.instrument_type or "").upper().strip()
+    if itype in _TAMAR_TYPES or any(t in itype for t in ("LECAP", "BONCAP", "LECER")):
+        return FinancialEngine.tea_to_tna_monthly(tea)
+    freq = getattr(instrument, "payment_frequency", 2) or 2
+    return FinancialEngine.tea_to_tna_freq(tea, freq)
 
 
 class _ZeroTamar:
@@ -213,6 +230,8 @@ def _bond_metadata(instrument: Instrument, *, leg: Optional[str] = None) -> Dict
         "payment_frequency": instrument.payment_frequency,
         "cupon": cupon,
         "is_tamar_family": is_tamar_family,
+        # CER puro (no DUAL_CER): habilita el cajón "Proyección CER" del popup.
+        "is_cer_proj": is_cer,
     }
     # CER fields: bonos CER + DUAL_CER_TAMAR (que usa cer_base como rail CER).
     if is_cer or is_dual_cer:
@@ -294,7 +313,7 @@ def _cashflows_all(instrument: Instrument, ref_date: date,
     vr_running = total_amort if total_amort > 0 else 100.0
     # Próximo cupón con interés > 0 (el que está accruing).
     next_with_interest = next(
-        (c for c in cfs if c.date >= ref_date and c.interest > 0), None,
+        (c for c in cfs if c.date > ref_date and c.interest > 0), None,  # ex-cupón: > settle
     )
     next_date = next_with_interest.date if next_with_interest else None
 
@@ -316,7 +335,7 @@ def _cashflows_all(instrument: Instrument, ref_date: date,
             "interest": _safe(cf.interest),
             "total": _safe(cf.amortization + cf.interest),
             "label": label,
-            "is_past": cf.date < ref_date,
+            "is_past": cf.date <= ref_date,   # ex-cupón: flujo en la liquidación = ya pagado
             "is_next": (next_date is not None and cf.date == next_date),
         })
         vr_running = vr_after
@@ -415,6 +434,7 @@ def _live_metrics(
     return {
         "tir": _safe(tea),
         "tna": _safe(tna),
+        "tna_nominal": _safe(_nominal_tna(inst, tea)),
         "tna_mensual": _safe(tna_mensual),
         "tem": _safe(tem),
         "tem_360": _safe(tem_360),
@@ -472,7 +492,7 @@ def get_bond_detail(
     if fx is not None:
         try:
             fx_rate = fx.get_mayorista_venta()
-        except Exception:
+        except Exception:  # noqa: BLE001 — FX externo, degradar a None
             fx_rate = None
 
     metrics = _live_metrics(snapshot, indices_eff, fx, ref_date, tamar_forecast=tamar_forecast)
@@ -575,6 +595,7 @@ def calculate(
     out["tir"] = _safe(tir_calc)
     if tir_calc is not None:
         out["tna"] = _safe(FinancialEngine.tea_to_tna(tir_calc))
+        out["tna_nominal"] = _safe(_nominal_tna(instrument, tir_calc))
         out["tna_mensual"] = _safe(FinancialEngine.tea_to_tna_monthly(tir_calc))
         out["tem"] = _safe(FinancialEngine.tea_to_tem(tir_calc))
         out["tem_360"] = _safe(FinancialEngine.tea_to_tem_m12(tir_calc))
@@ -740,10 +761,11 @@ def cer_return_scenarios(
 
     def make_rate_fn(scen_map, fb):
         fbv = fb if fb is not None else 0.0
+        rem_fbv = rem_fb if rem_fb is not None else 0.0
         def f(iy, im):
             key = (iy, im)
-            if key < current_key:                       # IPC ya publicado (locked)
-                return rem_map.get(key, fbv)
+            if key < current_key:                       # IPC ya publicado (locked) → SIEMPRE REM
+                return rem_map.get(key, rem_fbv)        # (no el fallback del escenario)
             return scen_map.get(key, fbv)               # IPC futuro (escenario)
         return f
 
@@ -786,3 +808,155 @@ def cer_return_scenarios(
             "tea_nominal": _safe(xirr),
         })
     return {"rows": rows}
+
+
+_MES_ABBR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
+             "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+_MES_NUM = {"ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+            "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12}
+
+
+def _sendero_maps(bei_sendero) -> Tuple[Dict[Tuple[int, int], float], Dict[Tuple[int, int], float]]:
+    """De la tabla `sendero` de compute_bei_tables → (rem_map, bei_map) por (año, mes).
+    Parsea el label 'mmm-yy' (ej. 'may-26'). Valores decimales."""
+    rem_map: Dict[Tuple[int, int], float] = {}
+    bei_map: Dict[Tuple[int, int], float] = {}
+    for row in bei_sendero or []:
+        parts = str(row.get("mes", "")).lower().split("-")
+        if len(parts) < 2:
+            continue
+        mm = _MES_NUM.get(parts[0])
+        if not mm:
+            continue
+        try:
+            yy = 2000 + int(parts[1])
+        except ValueError:
+            continue
+        key = (yy, mm)
+        if row.get("rem_mensual") is not None:
+            rem_map[key] = row["rem_mensual"]
+        if row.get("bei_mensual") is not None:
+            bei_map[key] = row["bei_mensual"]
+    return rem_map, bei_map
+
+
+def _month_keys(start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
+    """Lista de (año, mes) desde `start` hasta `end` (inclusive)."""
+    out: List[Tuple[int, int]] = []
+    y, m = start
+    guard = 0
+    while (y, m) <= end and guard < 600:
+        out.append((y, m))
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+        guard += 1
+    return out
+
+
+def cer_projection(
+    ticker: str, repo, provider, indices, fx,
+    *, price_dirty: Optional[float], settlement_lag: int = 1,
+    bei_sendero: Optional[list] = None,
+    rem_provider=None,
+    custom_infl_monthly: Optional[float] = None,
+    custom_monthly: Optional[Dict[Tuple[int, int], float]] = None,
+) -> Dict[str, Any]:
+    """Datos del cajón "Proyección CER": valor del índice CER mes a mes hasta el
+    vencimiento (con REM/BEI como referencia) + tabla de retorno por escenario.
+
+    Devuelve:
+      {
+        "is_cer": bool, "ticker", "cer_today", "cer_base",
+        "months":    [{label, ym, cer_proj, rem, bei}, ...]  (rem/bei decimal),
+        "scenarios": [...]  (filas de cer_return_scenarios: REM / BEI / Mi escenario),
+        "default_unif": float|None,  # 1ª ref mensual REM (o BEI) para el input uniforme
+      }
+
+    El índice CER proyectado usa la senda REM como referencia (locked = REM,
+    futuro = REM); los inputs por mes alimentan la tabla de escenarios.
+    """
+    empty = {"is_cer": False, "months": [], "scenarios": [], "default_unif": None}
+    resolved = _resolve_instrument_and_leg(ticker, repo, indices)
+    if resolved is None:
+        return empty
+    base_ticker, instrument, indices_eff, leg, ticker_u = resolved
+    if not _is_cer_type(instrument.instrument_type) or not instrument.cer_base:
+        return empty
+
+    today = date.today()
+    cer_today = indices_eff.get_cer(today) if indices_eff is not None else None
+    cer_base = instrument.cer_base
+
+    # Referencias: REM (provider, fuente de verdad) + BEI (sendero), con fallbacks.
+    rem_map: Dict[Tuple[int, int], float] = {}
+    rem_fb: Optional[float] = None
+    if rem_provider is not None:
+        try:
+            path = rem_provider.get_monthly_path() or {}
+            rem_map = {(d.year, d.month): v for d, v in path.items() if v is not None}
+            yoy = rem_provider.get_next_12m_yoy()
+            if yoy is not None and yoy > -1.0:
+                rem_fb = (1.0 + yoy) ** (1.0 / 12.0) - 1.0
+        except Exception:  # noqa: BLE001 — REM externo, degradar
+            rem_map, rem_fb = {}, None
+    if rem_fb is None and rem_map:
+        rem_fb = list(rem_map.values())[-1]
+
+    _, bei_map = _sendero_maps(bei_sendero)
+    bei_fb = list(bei_map.values())[-1] if bei_map else None
+
+    # Lista de meses + proyección del índice CER (referencia REM).
+    months: List[Dict[str, Any]] = []
+    if instrument.maturity_date and cer_today and cer_base and indices_eff is not None:
+        anchors = _build_anchors(
+            date(today.year, today.month, 1) - timedelta(days=5),
+            instrument.maturity_date + timedelta(days=40),
+        )
+
+        def rem_rate_fn(iy: int, im: int) -> float:
+            return rem_map.get((iy, im), rem_fb if rem_fb is not None else 0.0)
+
+        keys = _month_keys(
+            (today.year, today.month),
+            (instrument.maturity_date.year, instrument.maturity_date.month),
+        )
+        for (y, m) in keys:
+            anchor = anchors.get((y, m))
+            cer_proj: Optional[float] = None
+            if anchor is not None:
+                if anchor <= today:
+                    cer_proj = indices_eff.get_cer(anchor)
+                else:
+                    cer_proj = cer_today * _windowed_cer_growth(today, anchor, rem_rate_fn, anchors)
+            months.append({
+                "label": f"{_MES_ABBR[m - 1]}-{y % 100:02d}",
+                "ym": f"{y}-{m:02d}",
+                "cer_proj": _safe(cer_proj),
+                "rem": _safe(rem_map.get((y, m), rem_fb)),
+                "bei": _safe(bei_map.get((y, m), bei_fb)),
+            })
+
+    # Tabla de escenarios (reusa la maquinaria existente; pasa el BEI del sendero).
+    scen = cer_return_scenarios(
+        ticker, repo, provider, indices, fx,
+        price_dirty=price_dirty, settlement_lag=settlement_lag,
+        custom_infl_monthly=custom_infl_monthly, custom_monthly=custom_monthly,
+        rem_provider=rem_provider, bei_monthly=bei_map,
+    )
+    scenarios = (scen or {}).get("rows", [])
+
+    # Default del input "uniforme": primera referencia mensual REM (o BEI) disponible.
+    default_unif = next((mm["rem"] for mm in months if mm["rem"] is not None), None)
+    if default_unif is None:
+        default_unif = next((mm["bei"] for mm in months if mm["bei"] is not None), None)
+
+    return {
+        "is_cer": True,
+        "ticker": ticker_u,
+        "cer_today": _safe(cer_today),
+        "cer_base": _safe(cer_base),
+        "months": months,
+        "scenarios": scenarios,
+        "default_unif": _safe(default_unif),
+    }

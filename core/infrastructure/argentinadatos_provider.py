@@ -74,14 +74,6 @@ class ArgentinaDatosProvider:
                 logger.warning("ArgentinaDatos letras fetch failed: %s", e)
             return self._cache or []
 
-    def get_by_ticker(self, ticker: str) -> Optional[dict]:
-        """Busca una letra por ticker (case-insensitive). None si no existe."""
-        t = ticker.upper().strip()
-        for row in self.fetch_letras():
-            if str(row.get("ticker", "")).upper().strip() == t:
-                return row
-        return None
-
     def _get_prev_valor(self) -> Optional[int]:
         """Valor del día anterior desde el histórico. Cache 1h."""
         if (

@@ -13,7 +13,9 @@ from typing import Optional
 
 # Re-export: única fuente de verdad del day-count 30/360.
 from core.domain.cashflow_synth import days_30_360  # noqa: F401
-from core.holiday_engine import is_habil, settlement_byma  # noqa: F401  (re-export)
+from core.holiday_engine import (  # noqa: F401  (re-export)
+    es_habil, is_habil, settlement_byma, settlement_byma_date,
+)
 
 # --------------------------------------------------------------------------- #
 # Fórmula oficial BONTE TAMAR: TAMAR_TEM = ((1 + TNA/k)^k)^(1/12) − 1, k=365/32.
@@ -64,6 +66,21 @@ def tea_to_tna(tea: Optional[float]) -> Optional[float]:
         return None
 
 
+def tea_to_tna_freq(tea: Optional[float], freq: int) -> Optional[float]:
+    """TEA → TNA nominal a la frecuencia de pago m=freq: freq × ((1+TEA)^(1/freq) − 1).
+
+    Es la convención de "TIR Nominal" del informe IAMC/Balanz para bonos CON cupón:
+    la tasa nominal anual capitalizable a la frecuencia del cupón (semestral → freq=2,
+    trimestral → freq=4). Distinta de `tea_to_tna` (base 365, diaria) y de
+    `tea_to_tna_monthly` (m=12) — esas se reservan para peso/TAMAR/LECAP."""
+    if tea is None or tea <= -1.0 or not freq or freq <= 0:
+        return None
+    try:
+        return freq * ((1.0 + tea) ** (1.0 / freq) - 1.0)
+    except (ValueError, OverflowError, ZeroDivisionError):
+        return None
+
+
 def tea_to_tem_m12(tea: Optional[float]) -> Optional[float]:
     """TEA → TEM mensual m=12 (30/360 Secretaría de Finanzas): (1+TEA)^(1/12) − 1."""
     if tea is None or tea <= -1.0:
@@ -76,8 +93,8 @@ def tea_to_tem_m12(tea: Optional[float]) -> Optional[float]:
 
 # --------------------------------------------------------------------------- #
 # Settlement BYMA (cache diaria) + fecha de referencia CER.
-# Cache: settlement_byma() toma ~2ms (holiday lookup). Sólo 2 valores posibles
-# por día (T+0/T+1); invalidación por día calendario.
+# El cómputo es date-native (~1µs, lookup O(1) en frozenset de feriados). La cache
+# diaria (T+0/T+1, invalidación por día calendario) queda como conveniencia barata.
 # --------------------------------------------------------------------------- #
 _SETTLE_CACHE: dict = {}     # {lag: settle_date}
 _SETTLE_CACHE_DAY: Optional[date] = None
@@ -97,8 +114,8 @@ def settlement_for(instrument_type: str) -> date:
         cached = _SETTLE_CACHE.get(lag)
         if cached is not None:
             return cached
-    # settlement_byma() toma ~2ms (holiday calendar lookup) — fuera del lock.
-    settle = settlement_byma(today.strftime("%Y-%m-%d"), lag=lag).date()
+    # date-native (sin round-trip de string) — fuera del lock.
+    settle = settlement_byma_date(today, lag=lag)
     with _SETTLE_CACHE_LOCK:
         _SETTLE_CACHE[lag] = settle
     return settle
@@ -111,11 +128,13 @@ def resolve_settle(instrument_type: str, override: Optional[date]) -> date:
 
 
 def cer_reference_date(settle: date, lag_business_days: int) -> date:
-    """Camina hacia atrás `lag_business_days` días hábiles desde `settle`."""
+    """Camina hacia atrás `lag_business_days` días hábiles desde `settle`.
+    Usa `es_habil` date-native (O(1) por día) — antes el `is_habil(strftime)`
+    hacía un round-trip date→str→Timestamp por cada uno de los ~10 días."""
     target = settle
     count = 0
     while count < lag_business_days:
         target -= timedelta(days=1)
-        if is_habil(target.strftime("%Y-%m-%d")):
+        if es_habil(target):
             count += 1
     return target

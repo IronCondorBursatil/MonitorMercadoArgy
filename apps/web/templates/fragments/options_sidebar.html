@@ -1,0 +1,14 @@
+{# Watchlist de subyacentes con opciones cotizadas — sidebar del tab /options. #}
+<div class="opt-ph">WATCHLIST <span class="right">{{ summary|length }}</span></div>
+<div class="opt-side-list">
+  {% for s in summary %}
+  <div class="opt-side-row {% if s.underlying == current %}on{% endif %}"
+       onclick="optSetUnderlying('{{ s.underlying }}')">
+    <div>
+      <div class="u">{{ s.underlying }}</div>
+      <div class="vol">{% if s.vol_total > 0 %}{{ "{:,.0f}".format(s.vol_total).replace(",", ".") }} vol{% else %}—{% endif %}</div>
+    </div>
+    <div class="s">{{ "{:,.2f}".format(s.spot).replace(",", "·").replace(".", ",").replace("·", ".") }}</div>
+  </div>
+  {% endfor %}
+</div>

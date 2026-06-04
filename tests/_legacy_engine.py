@@ -43,23 +43,16 @@ def _is_30_360(instrument) -> bool:
     return _is_bopreal_type(getattr(instrument, "instrument_type", ""))
 
 
-def _xirr_from_years(flows: np.ndarray, years: np.ndarray) -> float:
-    """XIRR con fracciones de año pre-calculadas (cualquier day-count)."""
-    def npv(rate):
-        if rate <= -1.0:
-            return 1e12
-        return np.sum(flows / (1 + rate) ** years)
-    for guess in _XIRR_GUESSES:
-        try:
-            res = newton(npv, guess, maxiter=50)
-            if not np.isnan(res) and abs(npv(res)) < _XIRR_TOLERANCE:
-                return res
-        except (RuntimeError, ValueError, OverflowError):
-            continue
-    try:
-        return brentq(npv, -0.999, 10.0)
-    except (RuntimeError, ValueError):
-        return np.nan
+# Espejo del refactor day-count: el legacy comparte el solver de producción
+# (Brent + auto-bracket robusto) para que la equivalencia verifique el plumbing
+# de descuento (que cada rama pase la convención correcta), no diferencias de
+# solver. Antes era una copia con brentq fijo [-0.999, 10] que además crasheaba
+# por overflow en CUAP.
+from core.domain.xirr import _xirr_from_years  # noqa: E402
+# Espejo: mismas year-fractions de descuento que producción, incl. extensión del
+# stub final (convención ISMA/Balanz). Sin esto, los bonos con período final corto
+# (ej. AO28D) divergirían entre new y legacy.
+from core.domain.pricing import metrics as _metrics  # noqa: E402
 
 
 def _is_dolar_linked_type(instrument_type: str) -> bool:
@@ -321,11 +314,15 @@ def _cer_reference_date(settle: date, lag_business_days: int) -> date:
 
 class FinancialEngine:
     @staticmethod
-    def xirr(flows: List[float], dates: List[date]) -> float:
+    def xirr(flows: List[float], dates: List[date], day_count=None) -> float:
         if not flows or len(flows) < 2:
             return np.nan
         d0 = dates[0]
-        years = np.array([(d - d0).days / _JULIAN_YEAR for d in dates])
+        if day_count is None:
+            years = np.array([(d - d0).days / _JULIAN_YEAR for d in dates])
+        else:
+            from core.domain.daycount import year_fraction
+            years = np.array([year_fraction(d0, d, day_count) for d in dates])
         return _xirr_from_years(np.array(flows), years)
 
     @staticmethod
@@ -358,14 +355,19 @@ class FinancialEngine:
         # DOLAR LINKED: par face = 100 USD. V.Téc in pesos = residual_USD × FX.
         # Residual = sum(future amortizations) (per-100 convention); falls back
         # to 100 for pure zero-coupon DL bonds that have no Excel cashflows.
-        if _is_dolar_linked_type(inst.instrument_type) and fx_provider:
-            fx = fx_provider.get_mayorista_venta()
-            if fx and fx > 0:
-                future_cfs = [cf for cf in (inst.cashflows or []) if cf.date >= ref]
-                residual_usd = sum(cf.amortization for cf in future_cfs)
-                if residual_usd <= 0:
-                    residual_usd = 100.0
-                return residual_usd * fx
+        if _is_dolar_linked_type(inst.instrument_type):
+            future_cfs = [cf for cf in (inst.cashflows or []) if cf.date > ref]  # ex-cupón
+            residual_usd = sum(cf.amortization for cf in future_cfs)
+            if residual_usd <= 0:
+                residual_usd = 100.0
+            vt_usd = residual_usd + (_metrics.accrued_interest(inst, ref) or 0.0)
+            _t = (inst.ticker or "").upper()
+            if _t.endswith("D") or _t.endswith("C"):
+                return vt_usd                             # MEP/CABLE → V.Téc en USD
+            if fx_provider:
+                fx = fx_provider.get_mayorista_venta()
+                if fx and fx > 0:
+                    return vt_usd * fx
             return 100.0
 
         # TAMAR PURO/DUAL: V.Téc(t) computado vía fórmula oficial BONTE TAMAR.
@@ -387,8 +389,8 @@ class FinancialEngine:
             return 100.0
 
         all_cfs = sorted(inst.cashflows or [], key=lambda cf: cf.date)
-        past_cfs = [cf for cf in all_cfs if cf.date < ref]
-        future_cfs = [cf for cf in all_cfs if cf.date >= ref]
+        past_cfs = [cf for cf in all_cfs if cf.date <= ref]      # ex-cupón (espejo del nuevo motor)
+        future_cfs = [cf for cf in all_cfs if cf.date > ref]
 
         # Single-flow capitalizable bond (LECAP, BONCAP, etc.): V.Téc grows
         # geometrically from 100 at emission to the payoff at maturity. Today's
@@ -491,7 +493,7 @@ class FinancialEngine:
             )
             if expected_payback is None or expected_payback <= 0:
                 return None
-            years = (inst.maturity_date - settle_date).days / _JULIAN_YEAR
+            years = inst.year_fraction_to(inst.maturity_date, settle_date)
             if years <= 0 or snapshot.price <= 0:
                 return None
             try:
@@ -507,7 +509,7 @@ class FinancialEngine:
                 cer_s = indices_provider.get_cer(target_s)
                 if cer_s:
                     real_price = snapshot.price / (cer_s / inst.cer_base)
-                    years = (inst.maturity_date - settle_date).days / _JULIAN_YEAR
+                    years = inst.year_fraction_to(inst.maturity_date, settle_date)
                     if years > 0 and real_price > 0:
                         try:
                             return (100.0 / real_price) ** (1.0 / years) - 1.0
@@ -515,16 +517,25 @@ class FinancialEngine:
                             pass
             return None
 
-        # USD TIR for DOLAR LINKED bonds
-        if _is_dolar_linked_type(inst.instrument_type) and fx_provider:
-            fx = fx_provider.get_mayorista_venta()
-            if fx and fx > 0 and inst.maturity_date and inst.maturity_date > settle_date:
-                real_price_usd = snapshot.price / fx
-                flows = [-real_price_usd, 100.0]
-                dates = [settle_date, inst.maturity_date]
-                tir = FinancialEngine.xirr(flows, dates)
-                return float(tir) if not np.isnan(tir) else None
-            return None
+        # USD TIR for DOLAR LINKED bonds — espejo de DolarLinkedStrategy:
+        # pata pesos (…O / mono-ticker) /FX oficial; …D/…C ya en USD. Flujos USD REALES.
+        if _is_dolar_linked_type(inst.instrument_type):
+            _t = (inst.ticker or "").upper()
+            if _t.endswith("D") or _t.endswith("C"):
+                usd_price = snapshot.price
+            elif fx_provider:
+                fx = fx_provider.get_mayorista_venta()
+                usd_price = (snapshot.price / fx) if (fx and fx > 0) else None
+            else:
+                usd_price = None
+            if usd_price is None or usd_price <= 0:
+                return None
+            fut, yfs = _metrics.discount_year_fractions(inst, settle_date)
+            if not fut:
+                return None
+            flows_arr = np.array([-usd_price] + [cf.total for cf in fut])
+            tir = _xirr_from_years(flows_arr, np.array([0.0] + yfs))
+            return float(tir) if not np.isnan(tir) else None
 
         future_cfs = inst.get_future_cashflows(settle_date)
         if not future_cfs:
@@ -536,24 +547,17 @@ class FinancialEngine:
             cer_s = indices_provider.get_cer(target_s)
             if cer_s:
                 real_price = snapshot.price / (cer_s / inst.cer_base)
-                flows = [-real_price] + [cf.total for cf in future_cfs]
-                dates = [settle_date] + [cf.date for cf in future_cfs]
-                tir = FinancialEngine.xirr(flows, dates)
+                # Espejo: year-fractions de descuento (incl. stub final) de producción.
+                fut, yfs = _metrics.discount_year_fractions(inst, settle_date)
+                flows_arr = np.array([-real_price] + [cf.total for cf in fut])
+                tir = _xirr_from_years(flows_arr, np.array([0.0] + yfs))
                 return float(tir) if not np.isnan(tir) else None
 
-        # Bonos con base 30/360 (BOPREAL y cualquier instrumento marcado en Excel).
-        # El XIRR se resuelve con fracciones de año 30/360 en lugar de Act/365.25.
-        if _is_30_360(inst):
-            flows_arr = np.array([-snapshot.price] + [cf.total for cf in future_cfs])
-            years_arr = np.array(
-                [0.0] + [_days_30_360(settle_date, cf.date) / 360.0 for cf in future_cfs]
-            )
-            tir = _xirr_from_years(flows_arr, years_arr)
-            return float(tir) if not np.isnan(tir) else None
-
-        flows = [-snapshot.price] + [cf.total for cf in future_cfs]
-        dates = [settle_date] + [cf.date for cf in future_cfs]
-        tir = FinancialEngine.xirr(flows, dates)
+        # Camino general: XIRR descontando con la convención declarada del
+        # instrumento + extensión de stub (espeja base.VanillaStrategy.tir).
+        fut, yfs = _metrics.discount_year_fractions(inst, settle_date)
+        flows_arr = np.array([-snapshot.price] + [cf.total for cf in fut])
+        tir = _xirr_from_years(flows_arr, np.array([0.0] + yfs))
         return float(tir) if not np.isnan(tir) else None
 
     @staticmethod
@@ -575,14 +579,15 @@ class FinancialEngine:
         # Bullet bonds (single payment at maturity): DL, TAMAR PURO, DUAL TAMAR,
         # DUAL CER/TAMAR. TAMAR-family bonds capitalize monthly → m=12;
         # DL is an annual single payment → m=1.
+        # DL ya NO es bullet acá: usa el camino general de Macaulay (m=freq) sobre
+        # sus flujos reales (espeja DolarLinkedStrategy que hereda VanillaStrategy.duration).
         is_bullet = (
-            _is_dolar_linked_type(inst.instrument_type)
-            or _is_tamar_puro_type(inst.instrument_type)
+            _is_tamar_puro_type(inst.instrument_type)
             or _is_dual_tamar_type(inst.instrument_type)
             or _is_dual_cer_tamar_type(inst.instrument_type)
         )
         if is_bullet and inst.maturity_date and inst.maturity_date > settle_date:
-            years = (inst.maturity_date - settle_date).days / _JULIAN_YEAR
+            years = inst.year_fraction_to(inst.maturity_date, settle_date)
             # TAMAR: monthly compounding → m=12. DL and DUAL_CER_TAMAR: annual → m=1.
             m_bullet = 12 if (
                 _is_tamar_puro_type(inst.instrument_type)
@@ -590,39 +595,28 @@ class FinancialEngine:
             ) else 1
             return years / (1 + tir) ** (1.0 / m_bullet)
 
-        future_cfs = inst.get_future_cashflows(settle_date)
+        future_cfs, yfs = _metrics.discount_year_fractions(inst, settle_date)
         if not future_cfs:
             return None
 
-        # Bonos base 30/360: devuelve Duración Macaulay con day-count 30/360.
-        # La referencia del mercado (Data912 / Balanz) reporta MacaulayD para
-        # BOPREAL, no Modified Duration — lo que coincide con la convención de
-        # compounding continuo (MacaulayD = MD bajo compounding continuo).
-        if _is_30_360(inst):
-            total_pv, weighted_pv = 0.0, 0.0
-            for cf in future_cfs:
-                t = _days_30_360(settle_date, cf.date) / 360.0
+        # Espejo: MD = Macaulay/(1+tir)^(1/m), con year-fractions de descuento (incl.
+        # stub final) de producción. Guard de overflow ante TIR degenerada (CUAP).
+        try:
+            total_pv = 0.0
+            weighted_pv = 0.0
+            for cf, t in zip(future_cfs, yfs):
                 pv = cf.total / (1 + tir) ** t
                 total_pv += pv
                 weighted_pv += pv * t
-            return (weighted_pv / total_pv) if total_pv > 0 else None
-
-        total_pv = 0.0
-        weighted_pv = 0.0
-        for cf in future_cfs:
-            t = (cf.date - settle_date).days / _JULIAN_YEAR
-            pv = cf.total / (1 + tir) ** t
-            total_pv += pv
-            weighted_pv += pv * t
-
-        if total_pv <= 0:
+            if total_pv <= 0:
+                return None
+            macaulay = weighted_pv / total_pv
+            freq = getattr(inst, "payment_frequency", 1) or 1
+            if len(future_cfs) <= 1:
+                freq = 1
+            return macaulay / (1 + tir) ** (1.0 / freq)
+        except (OverflowError, ZeroDivisionError, ValueError):
             return None
-        macaulay = weighted_pv / total_pv
-        # Use bond's payment frequency. Single-flow / unknown freq → m=1 (TEA-based).
-        freq = getattr(inst, "payment_frequency", 1) or 1
-        if len(future_cfs) <= 1:
-            freq = 1
-        return macaulay / (1 + tir) ** (1.0 / freq)
 
     @staticmethod
     def calculate_theoretical_price(
@@ -631,15 +625,17 @@ class FinancialEngine:
         """Price implied by discounting future cashflows at the given TIR (decimal fraction)."""
         if instrument is None or tir is None:
             return None
-        future = instrument.get_future_cashflows(reference_date)
+        future, yfs = _metrics.discount_year_fractions(instrument, reference_date)
         if not future:
             return None
-        price = 0.0
-        for cf in future:
-            years = (cf.date - reference_date).days / _JULIAN_YEAR
-            if years <= 0:
-                continue
-            price += cf.total / (1 + tir) ** years
+        try:
+            price = 0.0
+            for cf, years in zip(future, yfs):
+                if years <= 0:
+                    continue
+                price += cf.total / (1 + tir) ** years
+        except (OverflowError, ZeroDivisionError, ValueError):
+            return None
         return price if price > 0 else None
 
     @staticmethod
@@ -737,8 +733,8 @@ class FinancialEngine:
         if not instrument or not instrument.cashflows:
             return None
         cfs = sorted(instrument.cashflows, key=lambda c: c.date)
-        past = [c for c in cfs if c.date < ref_date]
-        future = [c for c in cfs if c.date >= ref_date]
+        past = [c for c in cfs if c.date <= ref_date]    # ex-cupón (espejo del nuevo motor)
+        future = [c for c in cfs if c.date > ref_date]
         if not future or future[0].interest <= 0:
             return None
         next_cf = future[0]
@@ -756,20 +752,12 @@ class FinancialEngine:
 
     @staticmethod
     def accrued_interest(instrument, ref_date: date) -> float:
-        """Intereses corridos per-100-VN, accrual lineal sobre el cupón corriente.
-        0 para zero-coupon / capitalizables (LECER, LECAP, BONCER ZC, PURO, DUAL)."""
-        bounds = FinancialEngine._period_bounds(instrument, ref_date)
-        if not bounds:
-            return 0.0
-        period_start, next_cf = bounds
-        period_days = (next_cf.date - period_start).days
-        if period_days <= 0:
-            return 0.0
-        elapsed = (ref_date - period_start).days
-        if elapsed <= 0:
-            return 0.0
-        elapsed = min(elapsed, period_days)
-        return next_cf.interest * elapsed / period_days
+        """Intereses corridos per-100-VN. Espejo del refactor: delega en el helper
+        de producción (`metrics.accrued_interest`), que es day-count-aware (30/360
+        vs ACT) y maneja el long-last-coupon. El accrual no es 'plumbing' de
+        descuento; se valida aparte en test_daycount_pricing."""
+        from core.domain.pricing import metrics as _metrics
+        return _metrics.accrued_interest(instrument, ref_date)
 
     @staticmethod
     def days_since_last_coupon(instrument, ref_date: date) -> Optional[int]:
@@ -785,8 +773,8 @@ class FinancialEngine:
         Fallback a 100 − amortizado para schedules incompletos."""
         if not instrument or not instrument.cashflows:
             return 100.0
-        past = [c for c in instrument.cashflows if c.date < ref_date]
-        future = [c for c in instrument.cashflows if c.date >= ref_date]
+        past = [c for c in instrument.cashflows if c.date <= ref_date]    # ex-cupón
+        future = [c for c in instrument.cashflows if c.date > ref_date]
         residual = sum(c.amortization for c in future)
         if residual <= 0:
             amortized = sum(c.amortization for c in past)
@@ -813,15 +801,17 @@ class FinancialEngine:
         """PV de los flujos futuros descontados al tir. None si no hay flujos."""
         if not instrument or tir is None or tir <= -1.0:
             return None
-        future = [c for c in (instrument.cashflows or []) if c.date >= ref_date]
+        future, yfs = _metrics.discount_year_fractions(instrument, ref_date)
         if not future:
             return None
-        pv = 0.0
-        for cf in future:
-            t = (cf.date - ref_date).days / _JULIAN_YEAR
-            if t <= 0:
-                continue
-            pv += cf.total / (1.0 + tir) ** t
+        try:
+            pv = 0.0
+            for cf, t in zip(future, yfs):
+                if t <= 0:
+                    continue
+                pv += cf.total / (1.0 + tir) ** t
+        except (OverflowError, ZeroDivisionError, ValueError):
+            return None
         return pv if pv > 0 else None
 
     @staticmethod
@@ -842,13 +832,12 @@ class FinancialEngine:
         Pareja con MD para aproximar ΔP/P ≈ -MD×Δy + 0.5×C×(Δy)²."""
         if instrument is None or tir is None or tir <= -1.0:
             return None
-        future = [c for c in (instrument.cashflows or []) if c.date >= ref_date]
+        future, yfs = _metrics.discount_year_fractions(instrument, ref_date)
         if not future:
             return None
         pv = 0.0
         weighted = 0.0
-        for cf in future:
-            t = (cf.date - ref_date).days / _JULIAN_YEAR
+        for cf, t in zip(future, yfs):
             if t <= 0:
                 continue
             df = (1.0 + tir) ** t
@@ -894,13 +883,19 @@ class FinancialEngine:
             return None
         settle_date = _resolve_settle(inst.instrument_type, settle_date)
 
-        # DOLAR LINKED: TIR en USD; precio_pesos = 100/(1+tir)^t × FX.
-        if _is_dolar_linked_type(inst.instrument_type) and fx_provider:
-            fx = fx_provider.get_mayorista_venta()
-            if not (fx and fx > 0 and inst.maturity_date and inst.maturity_date > settle_date):
+        # DOLAR LINKED: TIR en USD sobre flujos REALES; pata pesos × FX, …D/…C en USD.
+        # Espejo de DolarLinkedStrategy.price_from_tir (PV USD de flujos reales).
+        if _is_dolar_linked_type(inst.instrument_type):
+            pv_usd = _metrics.vanilla_pv(inst, tir, settle_date)
+            if pv_usd is None:
                 return None
-            years = (inst.maturity_date - settle_date).days / _JULIAN_YEAR
-            return 100.0 / (1.0 + tir) ** years * fx
+            _t = (inst.ticker or "").upper()
+            if _t.endswith("D") or _t.endswith("C"):
+                return pv_usd
+            if not fx_provider:
+                return None
+            fx = fx_provider.get_mayorista_venta()
+            return (pv_usd * fx) if (fx and fx > 0) else None
 
         # TAMAR PURO/DUAL/DUAL_CER_TAMAR: precio = payback / (1+tir)^years.
         # Payback con fórmula oficial BONTE (monthly capitalization).
@@ -915,7 +910,7 @@ class FinancialEngine:
             )
             if payback is None:
                 return None
-            years = (inst.maturity_date - settle_date).days / _JULIAN_YEAR
+            years = inst.year_fraction_to(inst.maturity_date, settle_date)
             return payback / (1.0 + tir) ** years
 
         # CER: precio real → multiplicar por CER_LIQ/CER_BASE.

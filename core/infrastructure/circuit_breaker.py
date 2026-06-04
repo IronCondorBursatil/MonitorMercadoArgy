@@ -49,7 +49,8 @@ class CircuitBreaker:
     async def __aenter__(self) -> "CircuitBreaker":
         async with self._lock:
             if self._state is _State.OPEN:
-                assert self._opened_at is not None
+                if self._opened_at is None:  # invariante interno (no depende de -O)
+                    raise RuntimeError(f"{self.name}: state=OPEN pero _opened_at is None")
                 if (time.monotonic() - self._opened_at) >= self._reset_timeout:
                     self._state = _State.HALF_OPEN  # dejar pasar una prueba
                 else:

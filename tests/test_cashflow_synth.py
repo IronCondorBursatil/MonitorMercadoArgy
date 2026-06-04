@@ -168,6 +168,56 @@ class TestAmortizingCoupon:
         amort_count = sum(1 for cf in cfs if cf.amortization > 0)
         assert amort_count == 13
 
+    def test_long_first_coupon_via_prox_cupon_anchor(self):
+        """Grilla de cupones desfasada de la emisión + 1er cupón LARGO. CS50 (Cresud L):
+        emis 10/12/2025, grilla 10/03 y 10/09, 1er cupón 10/09/2026 cubre 9 meses (274
+        días) → 7.25%×274/365 = 5.44. El campo `prox_cupon` ancla la grilla; sin él, el
+        synth anclaba a emisión (10/06, 10/12) → fechas/cupones equivocados."""
+        row = {
+            "tipo": "HARD DOLLAR",
+            "fecha_emision": date(2025, 12, 10),
+            "fecha_vencimiento": date(2029, 3, 10),
+            "cupon anual %": "7.25",
+            "frecuencia pagos": 2,
+            "base calculo": "ACT/365",
+            "tipo amortizacion": "bullet",
+            "prox_cupon": date(2026, 9, 10),
+        }
+        cfs = synth_cashflows(row)
+        dates = [cf.date for cf in cfs]
+        assert dates == [date(2026, 9, 10), date(2027, 3, 10), date(2027, 9, 10),
+                         date(2028, 3, 10), date(2028, 9, 10), date(2029, 3, 10)]
+        # 1er cupón largo (emisión → 10/09/2026 = 274 días)
+        assert cfs[0].interest == pytest.approx(7.25 / 100 * 274 / 365 * 100, abs=0.01)  # 5.44
+        # cupones regulares (181/184 días) ≈ 3.60/3.65
+        assert cfs[1].interest == pytest.approx(3.60, abs=0.01)
+        assert cfs[-1].amortization == 100.0
+        assert cfs[-1].date == date(2029, 3, 10)  # vto
+
+    def test_installments_round_to_cents_last_absorbs_remainder(self):
+        """Cuotas iguales se redondean a CENTAVOS; el remanente cae en la ÚLTIMA
+        cuota (convención del broker / Balanz). 100/3 → 33.33 / 33.33 / 33.34
+        (suma exacta 100), NO 33.3333 cada una. Esto hace que la TIR matchee
+        Balanz para amortizers con factor no-redondo (ej. CGC Clase 28, CP28)."""
+        row = {
+            "tipo": "DOLLAR LINKED",
+            "fecha_emision": date(2022, 9, 7),
+            "fecha_vencimiento": date(2026, 9, 7),
+            "cupon anual %": "0",            # cupón cero → solo amortiza
+            "frecuencia pagos": 4,
+            "base calculo": "ACT/365",
+            "tipo amortizacion": "amortizing",
+            "amort inicio": date(2026, 3, 7),
+            "amort cantidad": 3,
+        }
+        cfs = synth_cashflows(row)
+        amorts = sorted(cf.amortization for cf in cfs if cf.amortization > 0)
+        assert amorts == pytest.approx([33.33, 33.33, 33.34], abs=1e-9)
+        assert sum(cf.amortization for cf in cfs) == pytest.approx(100.0, abs=1e-9)
+        # Cada cuota está redondeada a 2 decimales (sin colas de float)
+        for a in amorts:
+            assert round(a, 2) == a
+
 
 # --------------------------------------------------------------------------- #
 # Edge cases — robustez

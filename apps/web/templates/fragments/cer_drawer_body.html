@@ -1,0 +1,70 @@
+{% macro pct(v, d=2) %}{% if v is none %}—{% else %}{{ ('%.' ~ d ~ 'f')|format(v * 100) }}%{% endif %}{% endmacro %}
+{% macro idx(v) %}{% if v is none %}—{% else %}{{ '%.1f'|format(v) }}{% endif %}{% endmacro %}
+{% if not d.is_cer %}
+  <p class="mut" style="padding:10px">Este instrumento no es CER.</p>
+{% else %}
+<form id="cer-form" hx-post="/bond/{{ ticker }}/cer" hx-target="#cer-drawer-body" hx-swap="innerHTML"
+      hx-trigger="submit, change delay:500ms">
+  <input type="hidden" name="lag" value="{{ lag }}">
+  <input type="hidden" name="mode" value="{{ mode }}" class="cer-mode-val">
+
+  <div class="cer-toprow">
+    <label>Precio <input class="px" name="price" type="text" inputmode="decimal"
+                         value="{{ '%.2f'|format(price) if price is not none else '' }}"></label>
+    <button class="btn" type="submit">Recalcular</button>
+  </div>
+
+  <div class="cer-grid">
+    <div class="cer-col">
+      <h4>Retorno por escenario</h4>
+      <table class="scen">
+        <thead><tr><th>Escenario</th><th>Infl/mes</th><th>Ret. total</th><th>TEA nom.</th></tr></thead>
+        <tbody>
+          {% for r in d.scenarios %}
+          <tr class="{{ 'mine' if r.label == 'Mi escenario' else '' }}">
+            <td>{{ r.label }}</td>
+            <td>{{ pct(r.infl_monthly) }}</td>
+            <td>{{ pct(r.total_return, 1) }}</td>
+            <td>{{ pct(r.tea_nominal, 1) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="help">Sin datos suficientes (REM/CER no disponibles).</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="scen-mode">
+        <span class="lbl">Mi escenario</span>
+        <span class="seg">
+          <button type="button" class="cer-mode-btn {{ 'on' if mode != 'custom' else '' }}"
+                  onclick="cerMode(this,'uniforme')">Uniforme</button>
+          <button type="button" class="cer-mode-btn {{ 'on' if mode == 'custom' else '' }}"
+                  onclick="cerMode(this,'custom')">Custom</button>
+        </span>
+        <span class="unif" {% if mode == 'custom' %}style="display:none"{% endif %}>%/mes
+          <input name="unif" type="text" inputmode="decimal" value="{{ unif if unif is not none else '' }}"></span>
+      </div>
+
+      <p class="help">CER proy. = índice estimado bajo senda REM (lag ~2m, prorrateo 10º día hábil).
+        En <b>Custom</b> tu valor por mes alimenta "Mi escenario"; REM/BEI quedan de referencia.</p>
+    </div>
+
+    <div class="cer-col cer-col-months">
+      <h4>Valor CER por mes → vencimiento</h4>
+      <div class="cer-mhdr"><span>Mes</span><span>CER proy.</span><span>Infl%</span><span>REM·BEI</span></div>
+      <div class="cer-months {{ 'editable' if mode == 'custom' else '' }}">
+        {% for m in d.months %}
+        <div class="cer-mrow">
+          <span class="mes">{{ m.label }}</span>
+          <span class="cerv">{{ idx(m.cer_proj) }}</span>
+          <input name="infl_{{ m.ym }}" type="text" inputmode="decimal"
+                 placeholder="{{ '%.2f'|format(m.rem * 100) if m.rem is not none else '' }}"
+                 value="{{ raw_inputs.get(m.ym, '') }}">
+          <span class="ref">{{ '%.2f'|format(m.rem * 100) if m.rem is not none else '—' }} · {{ '%.2f'|format(m.bei * 100) if m.bei is not none else '—' }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</form>
+{% endif %}

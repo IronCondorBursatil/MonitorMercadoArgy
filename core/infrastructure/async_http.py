@@ -15,11 +15,10 @@ from typing import Dict, Optional
 
 import httpx
 
+from core.infrastructure._http_constants import TRANSIENT_HTTP_CODES as _TRANSIENT
 from core.infrastructure.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
-
-_TRANSIENT = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
 class ResilientClient:
@@ -61,28 +60,24 @@ class ResilientClient:
         breaker, sem = self._host_guard(url)
         async with breaker:
             async with sem:
-                last_exc: Optional[Exception] = None
                 for attempt in range(retries + 1):
                     try:
                         resp = await self._client.get(url, headers=headers, timeout=timeout)
                         resp.raise_for_status()
                         return resp.json()
                     except httpx.HTTPStatusError as e:
-                        last_exc = e
                         status = e.response.status_code
                         if attempt < retries and status in _TRANSIENT:
                             await asyncio.sleep(0.3 * (attempt + 1))
                             continue
                         raise
-                    except httpx.HTTPError as e:
+                    except httpx.HTTPError:
                         # error de conexión/timeout → retry
-                        last_exc = e
                         if attempt < retries:
                             await asyncio.sleep(0.3 * (attempt + 1))
                             continue
                         raise
-                assert last_exc is not None
-                raise last_exc
+                # inalcanzable: el for (retries>=0) siempre sale por return o raise.
 
     async def aclose(self) -> None:
         await self._client.aclose()

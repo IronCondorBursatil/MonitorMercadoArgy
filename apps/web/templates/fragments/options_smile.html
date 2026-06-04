@@ -1,0 +1,31 @@
+{# IV smile (scatter): IV(strike) para calls (verde) y puts (rojo). #}
+<div class="opt-ph">IV SMILE <span class="right">{{ underlying }} · {{ month }}</span></div>
+<div class="opt-canvas-wrap"><canvas id="smile-canvas-{{ underlying }}-{{ month }}"></canvas></div>
+<script id="smile-data-{{ underlying }}-{{ month }}" type="application/json">{
+  "calls": {{ pts_call_json|safe }},
+  "puts": {{ pts_put_json|safe }}
+}</script>
+<script>
+  (function () {
+    var cv = document.getElementById("smile-canvas-{{ underlying }}-{{ month }}");
+    var data = JSON.parse(document.getElementById("smile-data-{{ underlying }}-{{ month }}").textContent || "{}");
+    if (!cv || typeof Chart === "undefined") return;
+    var dark = document.documentElement.getAttribute("data-theme") === "dark";
+    var txt = dark ? "#aab4d4" : "#4a5780";
+    var grid = dark ? "rgba(255,255,255,.08)" : "rgba(10,29,74,.08)";
+    if (window["_smile_{{ underlying }}_{{ month }}"]) window["_smile_{{ underlying }}_{{ month }}"].destroy();
+    window["_smile_{{ underlying }}_{{ month }}"] = new Chart(cv.getContext("2d"), {
+      type: "scatter",
+      data: { datasets: [
+        { label: "Calls", data: data.calls || [], backgroundColor: "#2dd17a", pointRadius: 4 },
+        { label: "Puts",  data: data.puts  || [], backgroundColor: "#ff5e6c", pointRadius: 4 },
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { title: { display: true, text: "Strike", color: txt }, ticks: { color: txt, font: { size: 9 } }, grid: { color: grid } },
+                  y: { title: { display: true, text: "IV %", color: txt }, ticks: { color: txt, font: { size: 9 } }, grid: { color: grid } } },
+        plugins: { legend: { labels: { color: txt, font: { size: 10 } } } },
+      },
+    });
+  })();
+</script>

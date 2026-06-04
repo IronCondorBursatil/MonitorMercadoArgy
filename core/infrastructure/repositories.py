@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 from core.domain.models import Instrument, Cashflow, MarketSnapshot
 from core.domain.interfaces import IInstrumentsRepository, IMarketDataProvider
 from core.infrastructure._http import http_get_json
+from core.infrastructure.price_history import get_price_history_store
 
 # Silence unnecessary pandas warnings for cleaner console
 warnings.filterwarnings("ignore", category=UserWarning, module="pandas")
@@ -107,6 +108,65 @@ def _resolve_ticker(row) -> Optional[str]:
     return raw
 
 
+# Multi-ticker: un instrumento puede cotizar en hasta 3 monedas con tickers
+# distintos (mismo bono, mismos flujos): pesos (ARS) / MEP (sufijo D) / CABLE (C).
+_CCY_TICKER_COLS = ("ticker_ars", "ticker_mep", "ticker_ccl")
+
+
+def _currency_tickers(row) -> List[str]:
+    """Tickers de un instrumento (1-3), en orden de slot de moneda. Soporta el
+    esquema nuevo (ticker_ars/ticker_mep/ticker_ccl) y el viejo (`ticker` único).
+    El primero es el primario (PK / clave de cashflows)."""
+    out: List[str] = []
+    for col in _CCY_TICKER_COLS:
+        if col in row:
+            v = row.get(col)
+            if v is not None and not _isna(v):
+                t = str(v).upper().strip()
+                if t and t not in ("NAN", "NONE") and t not in out:
+                    out.append(t)
+    if out:
+        return out
+    t = _resolve_ticker(row)
+    return [t] if t else []
+
+
+def expand_currency_legs(primary: Instrument, secondary_tickers) -> List[Instrument]:
+    """Una especie (Instrument) por ticker: primario + secundarios, compartiendo
+    términos y flujos. Cada especie linkea con su precio de Data912 por su propio
+    ticker; la moneda la deriva el motor del sufijo (D=MEP, C=CABLE)."""
+    legs = [primary]
+    seen = {primary.ticker}
+    for t in secondary_tickers or ():
+        tu = str(t).upper().strip()
+        if tu and tu not in seen:
+            legs.append(primary.model_copy(update={"ticker": tu}))
+            seen.add(tu)
+    return legs
+
+
+def split_currency_tickers(tickers: List[str]):
+    """[primario, *secundarios] → (primario, ticker_mep, ticker_ccl) para storage.
+    Los secundarios se asignan por sufijo (D→mep, C→ccl); sin sufijo van a la
+    primera ranura libre. Solo para que las columnas queden semánticas; la
+    expansión y el pricing usan el sufijo, no la columna."""
+    primary = tickers[0]
+    mep = ccl = None
+    for t in tickers[1:]:
+        tu = str(t).upper().strip()
+        if not tu:
+            continue
+        if tu.endswith("D") and not mep:
+            mep = tu
+        elif tu.endswith("C") and not ccl:
+            ccl = tu
+        elif not mep:
+            mep = tu
+        elif not ccl:
+            ccl = tu
+    return primary, mep, ccl
+
+
 def _first_present(row, keys):
     """Valor de la primera clave que EXISTE (aunque su valor sea None/NaN) —
     replica la semántica de `row.get(a, row.get(b, ...))`."""
@@ -126,11 +186,13 @@ def _first_date(row, candidates) -> Optional[date]:
 
 
 def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Instrument]:
-    """Construye un `Instrument` desde una fila (mapping de columnas en minúscula)
-    + nombre de hoja + cashflows ya resueltos. Devuelve None si no hay ticker."""
-    raw_ticker = _resolve_ticker(row)
-    if not raw_ticker:
+    """Construye el `Instrument` PRIMARIO desde una fila (mapping de columnas en
+    minúscula) + hoja + cashflows. Devuelve None si no hay ticker. Las patas de
+    moneda secundarias se expanden aparte (`expand_currency_legs`)."""
+    tickers = _currency_tickers(row)
+    if not tickers:
         return None
+    raw_ticker = tickers[0]
     short = str(row.get("short_name", row.get("short name", raw_ticker)))
     itype = str(row.get("tipo", row.get("clase", sheet))).upper().strip()
     m_date = _first_date(row, ("fecha_vencimiento", "fecha vencimiento", "fecha_pago", "maturity"))
@@ -142,6 +204,8 @@ def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Ins
 
     cat_raw = row.get("categoria")
     category = str(cat_raw).strip() if (cat_raw is not None and not _isna(cat_raw)) else None
+    if category is None and itype in ("HARD DOLLAR", "DOLLAR LINKED"):  # categoría fija de las ONs
+        category = "Obligaciones Negociables"
 
     floor_raw = row.get("tasa_fija_mensual") or row.get("tem_licit")
     floor = float(floor_raw) if (floor_raw is not None and not _isna(floor_raw)) else None
@@ -159,16 +223,21 @@ def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Ins
 
     dc_raw = _first_present(row, ("base calculo", "base_calculo"))
     dc_str = str(dc_raw).strip() if (dc_raw is not None and not _isna(dc_raw)) else ""
-    if not dc_str and itype == "BOPREAL":  # 30/360 por prospecto BCRA
+    if not dc_str and itype == "BOPREAL":          # 30/360 por prospecto BCRA
         dc_str = "30/360"
+    elif not dc_str and itype in ("HARD DOLLAR", "DOLLAR LINKED"):  # ON: real/365 (informe)
+        dc_str = "ACT/365"
     day_count = dc_str or "ACT/365.25"
+
+    ley_raw = _first_present(row, ("ley_aplicable", "ley aplicable", "ley"))
+    ley = str(ley_raw).strip() if (ley_raw is not None and not _isna(ley_raw)) else None
 
     return Instrument(
         ticker=raw_ticker, short_name=short, instrument_type=itype,
         maturity_date=m_date, emission_date=e_date, cashflows=cashflows,
         cer_base=cer_b, cer_lag=lag_val, category=category,
         floor_rate_monthly=floor, spread_rate=spread, cer_spread=cer_spread_val,
-        payment_frequency=freq, day_count=day_count,
+        payment_frequency=freq, day_count=day_count, ley_aplicable=ley or None,
     )
 
 
@@ -279,8 +348,9 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
             if skipped:
                 logger.warning(f"Skipped {skipped} cashflow rows with invalid fecha_pago.")
 
-            self._cache_instruments = []
-            self._meta = {}
+            # bonos[primary_ticker] = (primary_inst, sheet, raw_fields, secondary_tickers)
+            # Una entrada por BONO (no por pata de moneda); hojas posteriores pisan.
+            bonos: Dict[str, tuple] = {}
             xl = pd.ExcelFile(self.excel_path)
             sheet_names = [s for s in xl.sheet_names if s not in self.NON_INSTRUMENT_SHEETS]
 
@@ -290,42 +360,44 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
                     df.columns = [str(c).lower().strip() for c in df.columns]
 
                     for _, row in df.iterrows():
-                        raw_ticker = _resolve_ticker(row)
-                        if not raw_ticker:
+                        tickers = _currency_tickers(row)
+                        if not tickers:
                             continue
-                        short = str(row.get("short_name", row.get("short name", raw_ticker)))
+                        primary, secondaries = tickers[0], tickers[1:]
+                        short = str(row.get("short_name", row.get("short name", primary)))
                         m_date = _first_date(row, ("fecha_vencimiento", "fecha vencimiento",
                                                    "fecha_pago", "maturity"))
 
-                        # Link cashflows (hoja Cashflows por ticker/short) o synth fallback.
-                        cfs = cf_map.get(short.upper(), cf_map.get(raw_ticker, []))
+                        # Cashflows (hoja Cashflows por short/primario) o synth fallback.
+                        cfs = cf_map.get(short.upper(), cf_map.get(primary, []))
                         if not cfs and m_date:
                             cfs = self._generate_bond_cashflows(row)
 
                         inst = build_instrument(row, sheet, cfs)
                         if inst is None:
                             continue
-                        self._cache_instruments.append(inst)
-                        # Meta para el ABM: dedupe coherente con los Instruments
-                        # (hojas posteriores pisan a las anteriores).
-                        self._meta[inst.ticker] = (sheet, row_to_raw_fields(row))
+                        bonos[primary] = (inst, sheet, row_to_raw_fields(row), secondaries)
                 except Exception as e:
                     logger.warning(f"Could not load sheet {sheet}: {e}")
 
-            # Dedupe by ticker — later sheets override earlier ones. Prevents
-            # double-counting when a bond appears in both Tasa_Fija and TAMAR.
-            seen: Dict[str, Instrument] = {}
-            for inst in self._cache_instruments:
-                seen[inst.ticker] = inst
-            self._cache_instruments = list(seen.values())
-            self._by_ticker = seen
+            # Expandir cada bono a una especie por ticker (pricing/paneles las ven
+            # como instrumentos independientes, c/u con su precio de Data912).
+            self._bonos = list(bonos.values())
+            self._cache_instruments = []
+            self._meta = {}
+            for inst, sheet, raw, secondaries in self._bonos:
+                for leg in expand_currency_legs(inst, secondaries):
+                    self._cache_instruments.append(leg)
+                    self._meta[leg.ticker] = (sheet, raw)
 
+            self._by_ticker = {i.ticker: i for i in self._cache_instruments}
             by_type: Dict[str, List[Instrument]] = {}
             for inst in self._cache_instruments:
                 by_type.setdefault(inst.instrument_type, []).append(inst)
             self._by_type = by_type
 
-            logger.info(f"Repository loaded {len(self._cache_instruments)} unique instruments.")
+            logger.info(f"Repository loaded {len(self._cache_instruments)} unique instruments "
+                        f"({len(self._bonos)} bonos).")
         except Exception as e:
             logger.error(f"Error loading Excel repository: {e}")
 
@@ -339,12 +411,9 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
         return self._by_ticker.get(ticker)
 
     def get_all_with_meta(self):
-        """[(Instrument, sheet, raw_fields), ...] — para el seeding del ABM."""
-        out = []
-        for inst in self._cache_instruments:
-            sheet, raw = self._meta.get(inst.ticker, (None, None))
-            out.append((inst, sheet, raw))
-        return out
+        """[(primary_inst, sheet, raw_fields, secondary_tickers), ...] — UNA entrada
+        por bono (no por pata) para el seeding 1-fila-por-instrumento de SQLite."""
+        return list(getattr(self, "_bonos", []))
 
 class Data912MarketDataProvider(IMarketDataProvider):
     ENDPOINTS = {
@@ -360,6 +429,11 @@ class Data912MarketDataProvider(IMarketDataProvider):
     # 120 req/min; with 20 Panel Líder tickers refreshed once per cache
     # window we stay well under.
     _STOCK_HISTORY_URL = "https://data912.com/historical/stocks/{ticker}"
+    # Data912 SÍ expone histórico de bonos (OHLC diario, fresco a T-1): cubre
+    # soberanos (todas las patas) + CER viejos (DICP/TX26). Devuelve {} (no 404)
+    # para lo que no tiene: LECAP/tasa/TAMAR/DL/bopreales/ON/CER nuevos — esos los
+    # cubre la acumulación del feed vivo (ver price_history.py).
+    _BOND_HISTORY_URL = "https://data912.com/historical/bonds/{ticker}"
     _STOCK_HISTORY_TTL_S = 6 * 3600
 
     # Cache lives until explicit invalidation. The refresh loop calls
@@ -371,8 +445,9 @@ class Data912MarketDataProvider(IMarketDataProvider):
     # other one-off callers that never invalidate.
     _CACHE_TTL_SEC = 60.0
 
-    # Historical prices live on disk (CSV). Data912 has no historical endpoint;
-    # the CSV is refreshed out-of-band. Tab-separated with one ticker per column.
+    # CSV legacy (TSV, una columna por ticker): piso ESTÁTICO del read-path, debajo
+    # del store vivo (price_history.py). Útil como seed/offline para los 17 tickers
+    # que trae (soberanos D + bopreales). Ya NO es la fuente principal.
     _HISTORY_CSV = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         "data", "history", "precio_historico.csv",
@@ -381,6 +456,7 @@ class Data912MarketDataProvider(IMarketDataProvider):
     # Class-level so multiple provider instances share the historical cache
     # (the heavy startup cost is paid once per process).
     _stock_history_cache: Dict[str, "tuple[float, list]"] = {}
+    _bond_history_cache: Dict[str, "tuple[float, list]"] = {}
     _stock_history_lock = threading.Lock()
 
     # Timeout corto (4s): el ciclo de refresh es de ~5s; esperar más a un
@@ -580,10 +656,43 @@ class Data912MarketDataProvider(IMarketDataProvider):
             logger.warning(f"Stock history fetch {t} failed: {e}")
             return cached[1] if cached else []
 
+    def fetch_bond_history(self, ticker: str) -> List[dict]:
+        """Daily OHLC de un bono vía Data912 `/historical/bonds/{ticker}` (mismo
+        contrato que `fetch_stock_history`). Lista `{date,o,h,l,c,v,...}` asc, o []
+        si el ticker no está cubierto (el endpoint devuelve {} para letras/bopreales/
+        ON). Usado por el priming del store (price_history.prime_from_data912)."""
+        t = str(ticker).upper().strip()
+        cached = self._bond_history_cache.get(t)
+        if cached and (time.monotonic() - cached[0]) < self._STOCK_HISTORY_TTL_S:
+            return cached[1]
+        url = self._BOND_HISTORY_URL.format(ticker=t)
+        try:
+            data = http_get_json(url, timeout=10, user_agent=self.UA,
+                                 source=f"Data912/histbond/{t}")
+            if not isinstance(data, list):  # {} (no cubierto) → tratar como vacío
+                data = []
+            with self._stock_history_lock:
+                self._bond_history_cache[t] = (time.monotonic(), data)
+            return data
+        except Exception as e:
+            logger.warning(f"Bond history fetch {t} failed: {e}")
+            return cached[1] if cached else []
+
     def fetch_historical_prices(self, ticker: str, days: int) -> Dict[date, float]:
-        history = self._load_history()
-        series = history.get(str(ticker).upper().strip())
-        if not series or days <= 0:
-            return series or {}
+        """`{date: close}` mergeando el CSV legacy (piso estático) con el store vivo
+        (price_history.py, que gana en fechas solapadas por ser más fresco/profundo).
+        El read-path es 100% local: el store/priming los mantiene una task de fondo."""
+        t = str(ticker).upper().strip()
+        # Mismo alias que fetch_snapshots: el sufijo `_CER` (pata CER de un dual,
+        # ej. TXMJ8_CER) cotiza/se acumula bajo el símbolo de mercado (TXMJ8).
+        if t.endswith("_CER"):
+            t = t[:-4]
+        csv_series = self._load_history().get(t, {})
+        store_series = get_price_history_store().get_series(t)
+        if not csv_series and not store_series:
+            return {}
+        merged = {**csv_series, **store_series}
+        if days <= 0:
+            return merged
         cutoff = date.today() - timedelta(days=days)
-        return {d: p for d, p in series.items() if d >= cutoff}
+        return {d: p for d, p in merged.items() if d >= cutoff}

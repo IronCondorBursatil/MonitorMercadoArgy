@@ -1,0 +1,15 @@
+{# Heatmap horizontal de Open Interest por strike — top 14 strikes. #}
+<div class="opt-ph">OI HEATMAP <span class="right">{{ underlying }} · {{ month }}</span></div>
+<div class="opt-oi-list">
+  {% if entries %}
+    {% for K, oi in entries %}
+    <div class="opt-oi-row">
+      <span class="k">K {{ "%.2f"|format(K) }}</span>
+      <span class="bar"><span style="width:{{ (oi / max_oi * 100)|round(1) }}%"></span></span>
+      <span class="v">{{ "{:,.0f}".format(oi).replace(",", ".") }}</span>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="opt-empty-mini">Sin OI para este vto.</div>
+  {% endif %}
+</div>

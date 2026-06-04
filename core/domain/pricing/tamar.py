@@ -22,9 +22,9 @@ from core.domain.xirr import _JULIAN_YEAR
 
 
 def project_cer_at(target_date: date, indices_provider) -> Optional[float]:
-    """Extrapolación lineal del índice CER a una fecha futura usando los últimos
-    30 días de crecimiento observado. Coarse para duals TXMJ* (vencen 2-3 años),
-    pero su TIR queda acotada por el rail TAMAR de todas formas."""
+    """Extrapolación COMPUESTA del índice CER a una fecha futura: toma el
+    crecimiento de los últimos 30 días y lo capitaliza `(1+g)^meses`. Coarse para
+    duals TXMJ* (vencen 2-3 años), pero su TIR queda acotada por el rail TAMAR."""
     today = date.today()
     cer_today = indices_provider.get_cer(today)
     cer_30_ago = indices_provider.get_cer(today - timedelta(days=30))

@@ -1,0 +1,375 @@
+{# Popup "compartir" (foto apaisada para WhatsApp, formato Midnight): header con
+   bajada + badge, curva TIR×MD con tickers callout, tabla y footer. En la moneda
+   elegida en el panel (ej. MEP) y con todas las columnas. Read-only: no toca el
+   dashboard. Chart.js + html2canvas se cargan en el <head> de index.html; htmx
+   ejecuta este <script> al hacer el swap. #}
+<div class="modal-overlay" onclick="if(event.target===this)document.getElementById('modal').innerHTML=''">
+  <div class="share-wrap">
+    <div class="share-card" id="shareCard">
+      <div class="share-head">
+        <div class="share-head-l">
+          <b>{{ title }}{% if ccy_label %} · {{ ccy_label }}{% endif %}</b>
+          {% if desc or asof %}<div class="share-sub">{{ desc }}{% if desc and asof %} · {% endif %}{% if asof %}al {{ asof }}{% if settle %} · liq. {{ settle }}{% endif %}{% endif %}</div>{% endif %}
+        </div>
+        <span class="share-head-r">
+          {% if has_chart %}<span class="share-badge">{{ badge }}</span>{% endif %}
+          {# Botones sobre el título; se ocultan en el clon de html2canvas (no salen en el PNG). #}
+          <span class="share-head-tools" id="shareTools">
+            {% if has_chart %}<button type="button" class="ph-btn" id="shareRestore" title="Restaurar puntos quitados" style="display:none">↺ ver todos</button>{% endif %}
+            <button type="button" class="ph-btn ph-cam" id="shareSave" title="Guardar imagen (WhatsApp)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <span style="margin-left:6px">guardar</span>
+            </button>
+            <button type="button" class="ph-btn ph-x" onclick="document.getElementById('modal').innerHTML=''">✕</button>
+          </span>
+        </span>
+      </div>
+      <div class="share-body{% if not has_chart %} no-chart{% endif %}">
+        <div class="share-table-col">
+          <div class="share-table-wrap">
+            <table class="share-tbl">
+              <thead><tr>{% for c in columns %}<th class="{{ 'tircol' if tir_hl and c['key'] == 'tir' else '' }}">{{ c.label }}</th>{% endfor %}</tr></thead>
+              <tbody>
+                {% for r in rows %}
+                <tr>{% for c in r.cells %}<td class="{{ c.cls }}">{{ c.text }}</td>{% endfor %}</tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% if has_chart %}
+        <div class="share-chart-col">
+          <div class="share-chart-box"><canvas id="shareChart"></canvas></div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <script id="shareData" type="application/json">{{ datasets_json|safe }}</script>
+  <script>
+    (function () {
+      var card = document.getElementById("shareCard");
+      if (!card) return;
+      var dark = document.documentElement.getAttribute("data-theme") === "dark";
+      var txt = dark ? "#aab4d4" : "#4a5780";
+      var grid = dark ? "rgba(255,255,255,.08)" : "rgba(10,29,74,.08)";
+      var data = [];
+      try { data = JSON.parse(document.getElementById("shareData").textContent || "[]"); } catch (e) {}
+      // En tema oscuro aclaramos los colores del panel hacia el azul claro del
+      // formato Midnight (puntos/curva más legibles sobre el fondo navy).
+      function lighten(hex, amt) {
+        var m = /^#?([0-9a-f]{6})$/i.exec(hex || ""); if (!m) return hex;
+        var n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+        r = Math.round(r + (255 - r) * amt); g = Math.round(g + (255 - g) * amt); b = Math.round(b + (255 - b) * amt);
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+
+      // ---- Curva TIR×MD al costado (mismo render que el popup de gráfico) ----
+      var chart = null;
+      var cv = document.getElementById("shareChart");
+      if (cv && typeof Chart !== "undefined" && data.length) {
+        // Quitar outliers: tocar un punto lo saca; la curva log se re-ajusta (refitCurve,
+        // = _chart_payload del server) y el eje re-escala. liveCurves lo lee el plugin.
+        var removed = {}, liveCurves = {};
+        data.forEach(function (g) { liveCurves[g.label] = g.curve || []; });
+        function refitCurve(points) {
+          var lx = [], ys = [];
+          points.forEach(function (p) { if (p.x > 0 && p.y != null) { lx.push(Math.log(p.x)); ys.push(p.y); } });
+          var n = lx.length; if (n < 3) return [];
+          var sx = 0, sy = 0, sxx = 0, sxy = 0;
+          for (var i = 0; i < n; i++) { sx += lx[i]; sy += ys[i]; sxx += lx[i] * lx[i]; sxy += lx[i] * ys[i]; }
+          var den = n * sxx - sx * sx; if (Math.abs(den) < 1e-12) return [];
+          var b = (n * sxy - sx * sy) / den, a = (sy - b * sx) / n;
+          var mds = points.map(function (p) { return p.x; }).filter(function (x) { return x > 0; }).sort(function (p, q) { return p - q; });
+          var lo = mds[0], hi = mds[mds.length - 1], curve = [];
+          if (!(hi > lo)) return [];
+          for (var k = 0; k < 24; k++) { var x = lo + (hi - lo) * k / 23; if (x > 0) curve.push({ x: x, y: a + b * Math.log(x) }); }
+          return curve;
+        }
+        var ds = [];
+        data.forEach(function (g) {
+          var col = dark ? lighten(g.color, 0.3) : g.color;
+          ds.push({ type: "scatter", label: g.label, _grp: g.label, data: g.points.slice(),
+                    backgroundColor: col, borderColor: col, pointRadius: 4, pointHoverRadius: 4 });
+          if (g.curve && g.curve.length)
+            ds.push({ type: "line", label: g.label + " (log)", _grp: g.label, data: g.curve.slice(),
+                      borderColor: col, borderWidth: 2, pointRadius: 0, fill: false,
+                      tension: 0.25, borderDash: [5, 4] });
+        });
+        function curveYAt(curve, x) {
+          if (!curve || !curve.length) return null;
+          if (x <= curve[0].x) return curve[0].y;
+          if (x >= curve[curve.length - 1].x) return curve[curve.length - 1].y;
+          for (var i = 1; i < curve.length; i++) {
+            if (curve[i].x >= x) { var a = curve[i - 1], b = curve[i], f = (x - a.x) / (b.x - a.x);
+              return a.y + (b.y - a.y) * f; }
+          }
+          return null;
+        }
+        // Dirección de tickers por GRUPO con ≥2 curvas (Bonares vs Globales): la de
+        // TIR media más alta → labels ARRIBA (-1), la más baja → ABAJO (+1). 1 curva → {}.
+        function curveGroupDirs(ch) {
+          var sc = ch.data.datasets.filter(function (s) { return s.type === "scatter" && s.data.length; });
+          if (sc.length < 2) return {};
+          var means = sc.map(function (s) {
+            var sum = 0; s.data.forEach(function (p) { sum += p.y; });
+            return { label: s.label, mean: sum / s.data.length };
+          });
+          means.sort(function (a, b) { return b.mean - a.mean; });
+          var mid = (means.length - 1) / 2, out = {};
+          means.forEach(function (m, idx) { out[m.label] = idx <= mid ? -1 : 1; });
+          return out;
+        }
+        var labelHalo = dark ? "#0f1b3a" : "#ffffff";   // halo p/ legibilidad (= fondo)
+        // Tickers tipo "callout" (como la curva CER de referencia): cerca del punto
+        // pero en el espacio libre, sin tocarse, y SIEMPRE una línea fina del label
+        // a su diamante. Repulsión empuja al vacío; resorte suave los ancla al punto.
+        var tickerLabels = { id: "tickerLabels", afterDatasetsDraw: function (ch) {
+          var ctx = ch.ctx, area = ch.chartArea, items = [];
+          var groupDir = curveGroupDirs(ch);
+          ch.data.datasets.forEach(function (dset, di) {
+            if (dset.type !== "scatter") return;
+            var meta = ch.getDatasetMeta(di);
+            var curve = liveCurves[dset.label] || null;
+            var gdir = groupDir[dset.label];
+            meta.data.forEach(function (pt, i) {
+              var d = dset.data[i]; if (!d || !d.t) return;
+              var cy = curveYAt(curve, d.x);
+              items.push({ t: d.t, px: pt.x, py: pt.y, color: dset.borderColor || txt,
+                           dir: gdir !== undefined ? gdir : (cy === null || d.y >= cy) ? -1 : 1 });
+            });
+          });
+          // Paneles con muchas especies (ej. ON ~57): los labels colapsan ilegibles.
+          // Adelgazamos a ~1 label por franja horizontal (el punto queda; sale el texto)
+          // para que la foto se lea. Bajo el umbral (CER 26, bonares 14) van todos.
+          if (items.length > 28) {
+            items.sort(function (a, b) { return a.px - b.px; });
+            var kept = [], lastLX = -1e9;
+            items.forEach(function (it) { if (it.px - lastLX >= 52) { kept.push(it); lastLX = it.px; } });
+            items = kept;
+          }
+          if (!items.length) return;
+          ctx.save();
+          ctx.font = "600 11px 'Inter Tight', -apple-system, sans-serif";
+          items.forEach(function (it) {
+            it.w = ctx.measureText(it.t).width; it.h = 13;
+            // del lado de afuera de la curva: arriba de la curva → ARRIBA; debajo → ABAJO
+            it.ax = it.px; it.ay = it.dir < 0 ? it.py - 42 : it.py + 30;
+            it.lx = it.ax; it.ly = it.ay;
+          });
+          function ov(a, b) {                              // +GAP = más separación entre labels
+            return Math.abs(a.lx - b.lx) * 2 < (a.w + b.w + 10) &&
+                   Math.abs(a.ly - b.ly) * 2 < (a.h + b.h + 5);
+          }
+          for (var pass = 0; pass < 500; pass++) {
+            for (var a = 0; a < items.length; a++)
+              for (var b = a + 1; b < items.length; b++) {       // repulsión → espacio libre
+                var A = items[a], B = items[b];
+                if (!ov(A, B)) continue;
+                var dx = A.lx - B.lx, dy = A.ly - B.ly, dist = Math.hypot(dx, dy);
+                if (dist < 0.5) { dx = (a % 2 ? 1 : -1); dy = 1; dist = 1; }
+                A.lx += dx / dist; A.ly += dy / dist; B.lx -= dx / dist; B.ly -= dy / dist;
+              }
+            for (var c = 0; c < items.length; c++) {             // resorte SUAVE hacia el punto
+              var it = items[c];
+              it.lx += (it.ax - it.lx) * 0.015; it.ly += (it.ay - it.ly) * 0.015;
+              it.lx = Math.max(area.left + it.w / 2 + 2, Math.min(area.right - it.w / 2 - 2, it.lx));
+              it.ly = Math.max(area.top + it.h / 2 + 1, Math.min(area.bottom - it.h / 2 - 1, it.ly));
+            }
+          }
+          ctx.lineWidth = 1;                                     // línea: borde del label → punto
+          items.forEach(function (it) {
+            var ddx = it.px - it.lx, ddy = it.py - it.ly, hw = it.w / 2 + 3, hh = it.h / 2 + 2;
+            var k = Math.min(ddx ? hw / Math.abs(ddx) : 1e9, ddy ? hh / Math.abs(ddy) : 1e9);
+            ctx.globalAlpha = 0.6; ctx.strokeStyle = it.color;
+            ctx.beginPath(); ctx.moveTo(it.lx + ddx * k, it.ly + ddy * k); ctx.lineTo(it.px, it.py); ctx.stroke();
+            ctx.globalAlpha = 1;
+          });
+          ctx.textAlign = "center"; ctx.textBaseline = "middle"; // texto con halo (sin cajita)
+          ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = labelHalo;
+          items.forEach(function (it) {
+            ctx.strokeText(it.t, it.lx, it.ly);
+            ctx.fillStyle = it.color; ctx.fillText(it.t, it.lx, it.ly);
+          });
+          ctx.restore();
+        } };
+        chart = new Chart(cv.getContext("2d"), {
+          data: { datasets: ds }, plugins: [tickerLabels],
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            // dpr alto → el toBase64Image sale nítido al componer la imagen final.
+            devicePixelRatio: Math.max(2.5, window.devicePixelRatio || 1),
+            // Sin título de eje Y + padding chico → el ploteo se ensancha y queda
+            // (casi) tan ancho como la tabla. El badge ya dice "{{ y_label }} vs Duración".
+            layout: { padding: { top: 4, right: 8, bottom: 2, left: 2 } },
+            scales: {
+              x: { type: "linear", title: { display: true, text: "MD (años)", color: txt },
+                   ticks: { color: txt, font: { size: 10 } }, grid: { color: grid } },
+              y: { title: { display: false },
+                   ticks: { color: txt, font: { size: 10 }, padding: 2 }, grid: { color: grid } }
+            },
+            onHover: function (e, els) { if (e.native) e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+            plugins: { legend: { labels: { color: txt, boxWidth: 12, font: { size: 11 },
+                       filter: function (it) { return it.text.indexOf("(log)") < 0; } } } }
+          }
+        });
+
+        // Tocar un punto lo saca de la curva (outliers); "↺ ver todos" restaura. El
+        // PNG (html2canvas) captura el canvas vivo → la foto sale con los puntos quitados.
+        var restoreBtn = document.getElementById("shareRestore");
+        function applyRemovals() {
+          data.forEach(function (g) {
+            var active = g.points.filter(function (p) { return !removed[p.t]; });
+            var curve = refitCurve(active);
+            liveCurves[g.label] = curve;
+            ds.forEach(function (dset) {
+              if (dset._grp !== g.label) return;
+              dset.data = dset.type === "scatter" ? active : curve;
+            });
+          });
+          if (restoreBtn) restoreBtn.style.display = Object.keys(removed).length ? "" : "none";
+          chart.update();
+        }
+        cv.addEventListener("click", function (ev) {
+          var items = chart.getElementsAtEventForMode(ev, "nearest", { intersect: true }, true);
+          if (!items.length) return;
+          var dset = chart.data.datasets[items[0].datasetIndex];
+          if (dset.type !== "scatter") return;
+          var pt = dset.data[items[0].index];
+          if (pt && pt.t) { removed[pt.t] = true; applyRemovals(); }
+        });
+        if (restoreBtn) restoreBtn.addEventListener("click", function () { removed = {}; applyRemovals(); });
+      }
+
+      // ---- Acomodar la tabla en su zona: si es muy larga la parte en columnas
+      //      lado a lado (estilo diario) y escala el font para que TODA entre. ---
+      function layoutTable() {
+        var col = card.querySelector(".share-table-col");
+        var wrap = card.querySelector(".share-table-wrap");
+        if (!col || !wrap) return;
+        // 1) consolidar todo en la 1ª tabla (deshace un split previo de un re-fit)
+        var tables = wrap.querySelectorAll("table.share-tbl");
+        var main = tables[0]; if (!main) return;
+        var body = main.querySelector("tbody");
+        for (var i = 1; i < tables.length; i++) {
+          var rs = tables[i].querySelectorAll("tbody tr");
+          for (var j = 0; j < rs.length; j++) body.appendChild(rs[j]);
+          tables[i].remove();
+        }
+        main.style.width = ""; main.style.height = "";   // limpia estirados previos (re-fit)
+        wrap.style.fontSize = "13px";
+        var availW = col.clientWidth - 28, availH = col.clientHeight - 24;
+        var natW = main.offsetWidth, natH = main.offsetHeight;
+        if (natW <= 0 || natH <= 0) return;
+        // 2) Elegimos el MAYOR nº de columnas (1-4) cuyo listado, escalado para LLENAR
+        //    el ALTO, todavía entra en el ancho. Así la fuente la limita el alto (renglones
+        //    llenos, letra grande) y NO el ancho (renglones estirados con letra chica).
+        //    Pocos renglones (soberanos, 14) → 1 columna; CER (26) → 2; ON → 3-4.
+        var totalRows = body.querySelectorAll("tr").length, gap0 = 20, n = 1;
+        for (var cn = 4; cn >= 1; cn--) {
+          var rpc = Math.ceil(totalRows / cn);
+          var wN = cn * natW + (cn - 1) * gap0;
+          var hN = natH * (rpc + 1) / (totalRows + 1);          // alto del sub-listado (+header)
+          if (wN / hN <= availW / availH) { n = cn; break; }
+        }
+        // 3) repartir las filas en n tablas lado a lado
+        if (n > 1) {
+          var allRows = Array.prototype.slice.call(body.querySelectorAll("tr"));
+          var per = Math.ceil(allRows.length / n);
+          for (var g = 1; g < n; g++) {
+            var t = document.createElement("table");
+            t.className = "share-tbl";
+            t.appendChild(main.querySelector("thead").cloneNode(true));
+            t.appendChild(document.createElement("tbody"));
+            wrap.appendChild(t);
+          }
+          var groups = wrap.querySelectorAll("table.share-tbl");
+          for (var gi = 0; gi < groups.length; gi++) groups[gi].querySelector("tbody").innerHTML = "";
+          for (var r = 0; r < allRows.length; r++)
+            groups[Math.min(n - 1, Math.floor(r / per))].querySelector("tbody").appendChild(allRows[r]);
+        }
+        // 4) escalar el font (tablas a ancho natural) para que entre todo en el hueco
+        wrap.style.fontSize = "13px";
+        var w = wrap.scrollWidth, h = wrap.scrollHeight;
+        if (w <= 0 || h <= 0) return;
+        var k = Math.min(availW / w, availH / h);
+        wrap.style.fontSize = Math.max(5, Math.min(40, 13 * k * 0.99)).toFixed(2) + "px";
+        // 5) estirar cada tabla para llenar el ancho (mismo ancho que el chart)
+        var gap = 20, groupsF = wrap.querySelectorAll("table.share-tbl");
+        var groupW = (availW - gap * (groupsF.length - 1)) / groupsF.length;
+        for (var gf = 0; gf < groupsF.length; gf++) groupsF[gf].style.width = groupW.toFixed(1) + "px";
+        // 6) estirar cada tabla a TODO el alto disponible → filas más altas (misma
+        //    fuente, ya fijada arriba) y el listado llega hasta el fondo de la imagen.
+        for (var gh = 0; gh < groupsF.length; gh++) groupsF[gh].style.height = availH + "px";
+      }
+      requestAnimationFrame(function () { requestAnimationFrame(layoutTable); });
+      setTimeout(layoutTable, 80);
+
+      // ---- Guardar PNG (html2canvas; en el clon pasamos a layout en bloque con
+      //      alturas explícitas y dejamos el canvas del chart tal cual — cross-browser).
+      var saveBtn = document.getElementById("shareSave");
+      if (saveBtn) saveBtn.addEventListener("click", function () {
+        if (typeof html2canvas === "undefined") { alert("html2canvas no cargó"); return; }
+        saveBtn.disabled = true;
+        layoutTable();
+        var bg = getComputedStyle(card).backgroundColor || (dark ? "#0f1b3a" : "#ffffff");
+        var side = card.offsetWidth || 1120;
+        var scale = Math.max(2, Math.min(6, Math.round(3000 / side)));   // ~3000px de lado
+        html2canvas(card, {
+          scale: scale, backgroundColor: bg, useCORS: true, logging: false,
+          // En el clon (no en el vivo) reemplazo el <canvas> del gráfico por un
+          // <img>: html2canvas dibuja imágenes con más fidelidad que un canvas.
+          onclone: function (doc) {
+            var tools = doc.getElementById("shareTools");   // botones fuera de la foto
+            if (tools) tools.style.display = "none";
+            // html2canvas puede renderizar mal el flex (order + height:100%) → el chart
+            // queda chico con aire. Pasamos el cuerpo a BLOQUE APILADO con alturas
+            // EXPLÍCITAS en px (medidas en vivo): layout determinístico en cualquier navegador.
+            function liveH(cls) { var e = card.querySelector("." + cls); return e ? Math.round(e.getBoundingClientRect().height) + "px" : null; }
+            var body = doc.querySelector(".share-body"),
+                cCol = doc.querySelector(".share-chart-col"),
+                tCol = doc.querySelector(".share-table-col"),
+                cBox = doc.querySelector(".share-chart-box");
+            if (body) body.style.display = "block";
+            if (body && cCol && tCol) body.insertBefore(cCol, tCol);     // chart arriba (sin depender de `order`)
+            if (cCol) { cCol.style.display = "block"; var h = liveH("share-chart-col"); if (h) cCol.style.height = h; }
+            if (tCol) { var th = liveH("share-table-col"); if (th) tCol.style.height = th; }
+            // Fijamos también el tamaño explícito del canvas del chart (CSS px en vivo)
+            // y lo dejamos tal cual: html2canvas captura el canvas directo (más confiable
+            // entre navegadores que reemplazarlo por una <img> con data-URL, que en
+            // Firefox sale en blanco). cBox con alto explícito → sin aire.
+            var liveCv = card.querySelector("#shareChart"), c = doc.getElementById("shareChart");
+            if (cBox) { var bh = liveH("share-chart-box"); if (bh) cBox.style.height = bh; }
+            if (c && liveCv) {
+              var cr = liveCv.getBoundingClientRect();
+              c.style.width = Math.round(cr.width) + "px";
+              c.style.height = Math.round(cr.height) + "px";
+              c.style.display = "block";
+            }
+          }
+        }).then(function (canvas) {
+          canvas.toBlob(function (blob) {
+            if (!blob) { saveBtn.disabled = false; return; }
+            var d = new Date();
+            var ts = d.getFullYear().toString() +
+                     String(d.getMonth() + 1).padStart(2, "0") +
+                     String(d.getDate()).padStart(2, "0") + "-" +
+                     String(d.getHours()).padStart(2, "0") +
+                     String(d.getMinutes()).padStart(2, "0");
+            var name = ({{ title|tojson }}).replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = (name || "panel") + "_" + ts + "_wsp.png";
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+          }, "image/png");
+        }).catch(function (err) { console.error("share", err); alert("Error generando la imagen: " + err); })
+          .finally(function () { saveBtn.disabled = false; });
+      });
+    })();
+  </script>
+</div>

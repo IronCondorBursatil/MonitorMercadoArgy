@@ -1,12 +1,24 @@
 """Router de paneles HTMX (Fase 4 web): formato de celdas, build de filas y rutas."""
 
+import re
 from datetime import date, timedelta
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from apps.web.app import app
 from apps.web.routers import panels
 from core.domain.models import Cashflow, Instrument, MarketSnapshot, InstrumentMetrics
+
+
+def test_hcol_css_covers_every_column():
+    """Las clases hcol-N (ocultar columna del Config) deben llegar al menos hasta el
+    panel más ancho, sino el toggle de las últimas columnas 'no opera' (ej. 1A en
+    soberanos = col 14). Ata la CSS al nº real de columnas para que no se desincronice."""
+    max_cols = max(len(cols) for (_t, _types, cols) in panels.PANELS.values())
+    css = (Path(panels.__file__).resolve().parents[1] / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    max_hcol = max(int(n) for n in re.findall(r"hcol-(\d+)", css))
+    assert max_hcol >= max_cols, f"hcol-N llega a {max_hcol} pero hay paneles de {max_cols} columnas"
 
 
 def test_fmt_kinds():
@@ -51,6 +63,29 @@ def test_build_rows_for_cer_panel():
     # TIR 0.10 -> 10.00%
     tir_cell = next(c for c in rows[0]["cells"] if c["text"] == "10.00%")
     assert tir_cell is not None
+
+
+def test_bonares_panel_has_return_columns_colored():
+    # Soberanos USD/Bopreales llevan las ventanas de rendimiento (Sem/1M/3M/YTD/1A).
+    labels = [c["label"] for c in panels._SOBERANO_USD_COLS]
+    assert labels[labels.index("%Día") + 1: labels.index("Vol $")] == \
+        ["Sem", "1M", "3M", "YTD", "1A"]
+
+    m = _metric("AL30D", "BONAR", 63.5, 0.12, 3.0, 70.0, 0.9)
+    m.variance_7d, m.variance_30d = 0.0012, -0.0234   # +0.12% / -2.34%
+    m.variance_90d, m.variance_ytd = 0.05, None
+    m.variance_1y = 0.0929                             # +9.29% (GD46 a 1 año)
+    rows = panels._build_rows("bonares", _StubState([m]))
+    cells = {c["text"]: c["cls"] for c in rows[0]["cells"]}
+    assert cells["+0.12%"] == "pos"
+    assert cells["-2.34%"] == "neg"
+    assert cells["+5.00%"] == "pos"
+    assert cells["+9.29%"] == "pos"
+    assert "—" in cells                                # YTD sin dato → "—" sin color
+
+    # Dólar Linked NO las lleva (sin histórico): mismas columnas que _BONARES_COLS.
+    assert panels.PANELS["dolar_linked"][2] is panels._BONARES_COLS
+    assert "Sem" not in [c["label"] for c in panels._BONARES_COLS]
 
 
 def test_valor_relativo_rich_cheap():
@@ -101,6 +136,113 @@ def test_futuros_rows_resilient():
             raise RuntimeError("ws down")
 
     assert panels._build_futuros_rows(_Boom(), None, None) == []
+
+
+def test_implied_rates_matches_a3_report():
+    # jun-26 del informe A3: fut 1457.5, spot 1438.5, 27 días → TNA 17.9 / TEA 19.4 / crawl 1.5.
+    tna, tea, crawl = panels._implied_rates(1457.5, 1438.5, 27)
+    assert round(tna * 100, 1) == 17.9
+    assert round(tea * 100, 1) == 19.4
+    assert round(crawl * 100, 1) == 1.5
+    # inputs faltantes / inválidos → (None, None, None) sin romper.
+    assert panels._implied_rates(None, 1438.5, 27) == (None, None, None)
+    assert panels._implied_rates(1457.5, 0, 27) == (None, None, None)
+    assert panels._implied_rates(1457.5, 1438.5, 0) == (None, None, None)
+
+
+def test_futuros_label():
+    assert panels._futuros_label("DLR/JUN26") == "jun-26"
+    assert panels._futuros_label("DLR/ABR27") == "abr-27"
+
+
+def _lecap(ticker, days, tir):
+    today = date.today()
+    inst = Instrument(ticker=ticker, short_name=ticker, instrument_type="LECAP",
+                      maturity_date=today + timedelta(days=days),
+                      cashflows=[Cashflow(today + timedelta(days=days), 100.0, 0.0)])
+    snap = MarketSnapshot(instrument=inst, price=100.0, last_update=today,
+                          change_pct=0.0, volume=1_000.0)
+    return InstrumentMetrics(snapshot=snap, tir=tir, duration=days / 365.0,
+                             technical_value=100.0, parity=1.0)
+
+
+def test_peso_tea_curve_interpolates():
+    today = date.today()
+    curve = panels._peso_tea_curve(_StubState([_lecap("S1", 30, 0.40), _lecap("S2", 120, 0.30)]), today)
+    assert curve is not None
+    assert abs(curve(30) - 0.40) < 1e-9        # extremo bajo
+    assert abs(curve(75) - 0.35) < 1e-9        # interpolación lineal en el medio
+    assert abs(curve(400) - 0.30) < 1e-9       # extrapolación plana al extremo alto
+    # <2 puntos → None (la columna Carry queda en "—")
+    assert panels._peso_tea_curve(_StubState([_lecap("S1", 30, 0.40)]), today) is None
+    # tipos que no son tasa fija no entran a la curva peso
+    assert panels._peso_tea_curve(
+        _StubState([_metric("AL30", "BONAR", 70, 0.1, 3, 80, 0.9)]), today) is None
+
+
+class _FixedDate(date):
+    @classmethod
+    def today(cls):
+        return date(2026, 6, 4)
+
+
+class _RofexStub:
+    def get_quotes(self, syms):
+        return {"DLR/JUN26": {"last": 1457.5, "settle": 1458.0, "prev_settle": 1454.0,
+                              "open_interest": 1383665, "volume": 1.04e11},
+                "DLR/DIC26": {"last": 1632.5, "settle": 1630.0, "prev_settle": 1628.0,
+                              "open_interest": 165007, "volume": 3.3e8}}
+
+
+class _FxStub:
+    def get_mayorista_mid(self):
+        return 1438.5
+
+
+class _IdxStub:
+    def get_a3500(self):
+        return 1438.5
+
+
+def test_build_futuros_share_resilient_and_shape(monkeypatch):
+    # Sin rofex / rofex que rompe → {} (degrada solo, nunca tira el popup).
+    assert panels._build_futuros_share(None, None, None, None) == {}
+
+    class _Boom:
+        def get_quotes(self, syms):
+            raise RuntimeError("ws down")
+
+    assert panels._build_futuros_share(_Boom(), None, None, None) == {}
+
+    monkeypatch.setattr(panels, "date", _FixedDate)   # fija "hoy" → días al vto estables
+    data = panels._build_futuros_share(_RofexStub(), _FxStub(), _IdxStub(), _StubState([]))
+    assert data["spot"] == 1438.5
+    assert data["has_peso_curve"] is False
+    jun = next(c for c in data["contracts"] if c["label"] == "jun-26")
+    # valor exacto de TEA depende de los días al vto (cubierto por test_implied_rates);
+    # acá chequeamos forma: TEA en rango razonable y TNA lineal < TEA compuesta.
+    assert jun["tea"] is not None and 18.0 < jun["tea"] < 22.0
+    assert jun["tna"] < jun["tea"]
+    assert jun["var1d"] is not None and jun["carry"] is None   # sin curva peso → carry None
+    assert round(jun["basis"], 1) == 19.0                      # 1457.5 − 1438.5
+
+
+def test_futuros_share_route(monkeypatch):
+    from apps.web.deps import get_rofex, get_fx, get_indices, get_state
+
+    monkeypatch.setattr(panels, "date", _FixedDate)
+    app.dependency_overrides[get_rofex] = lambda: _RofexStub()
+    app.dependency_overrides[get_fx] = lambda: _FxStub()
+    app.dependency_overrides[get_indices] = lambda: _IdxStub()
+    app.dependency_overrides[get_state] = lambda: _StubState([])
+    try:
+        with TestClient(app) as c:
+            r = c.get("/panels/futuros/share")
+            assert r.status_code == 200
+            for s in ("Curva Rofex", "Carry", "Cobertura", "futCv-v1", "jun-26"):
+                assert s in r.text
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_bei_rows_scaling_and_empty():

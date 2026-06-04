@@ -4,7 +4,7 @@
    ===================================================================== */
 :root {
   --navy: #0a1d4a; --navy-dark: #06143b; --navy-band: #142a66;
-  --accent: #3a5fcf; --accent-light: #dde5fb;
+  --accent: #3a5fcf; --accent-light: #dde5fb; --tir-hl: rgba(58,95,207,.14);
   --page-bg: #f3f5fa; --panel-bg: #ffffff; --panel-border: #d2d8e6;
   --row-alt: #f6f8fc; --row-hover: #eef2fb; --head-bg: #0a1d4a;
   --text: #0e1834; --text-dim: #4a5780; --text-faint: #8993b8; --text-white: #fff;
@@ -18,7 +18,7 @@
 }
 [data-theme="dark"] {
   --navy: #102452; --navy-dark: #0a1738; --navy-band: #1c3170;
-  --accent: #6486e6; --accent-light: #17264c;
+  --accent: #6486e6; --accent-light: #17264c; --tir-hl: rgba(100,134,230,.22);
   --page-bg: #070f24; --panel-bg: #0f1b3a; --panel-border: #26345a;
   --row-alt: #13203f; --row-hover: #1b2b50; --head-bg: #102452;
   --text: #e9edf7; --text-dim: #aab4d4; --text-faint: #8893bb;
@@ -106,6 +106,9 @@ main { padding: 14px; display: grid; gap: 14px;
 .ccy-btn.on { background: rgba(255,255,255,.12); color: #fff; }
 .ph-x { color: #c7d0ee; padding: 4px 8px; }
 .ph-x:hover { background: rgba(242,138,143,.22); color: #fff; }
+.ph-cam { display: inline-flex; align-items: center; padding: 4px 7px; }
+.ph-cam svg { display: block; }
+.ph-cam:disabled { opacity: .5; cursor: progress; }
 .ccy-filter { display: inline-flex; gap: 3px; flex: 0 0 auto; margin: 0 2px; }
 
 /* desplegable de columnas del Config — mismo look que el CONFIG global (.cfg-item).
@@ -123,13 +126,16 @@ main { padding: 14px; display: grid; gap: 14px;
 .panel[data-flt~="MEP"]   tbody tr[data-ccy="MEP"],
 .panel[data-flt~="CABLE"] tbody tr[data-ccy="CABLE"] { display: table-row; }
 
-/* ocultar columnas vía clases hcol-N en el .panel (Config de columnas) */
+/* ocultar columnas vía clases hcol-N en el .panel (Config de columnas).
+   Hasta 16: soberanos/bopreales tienen 15 cols (con Sem/1M/3M/YTD/1A) + headroom. */
 .panel.hcol-1 tr > :nth-child(1), .panel.hcol-2 tr > :nth-child(2),
 .panel.hcol-3 tr > :nth-child(3), .panel.hcol-4 tr > :nth-child(4),
 .panel.hcol-5 tr > :nth-child(5), .panel.hcol-6 tr > :nth-child(6),
 .panel.hcol-7 tr > :nth-child(7), .panel.hcol-8 tr > :nth-child(8),
 .panel.hcol-9 tr > :nth-child(9), .panel.hcol-10 tr > :nth-child(10),
-.panel.hcol-11 tr > :nth-child(11), .panel.hcol-12 tr > :nth-child(12) { display: none; }
+.panel.hcol-11 tr > :nth-child(11), .panel.hcol-12 tr > :nth-child(12),
+.panel.hcol-13 tr > :nth-child(13), .panel.hcol-14 tr > :nth-child(14),
+.panel.hcol-15 tr > :nth-child(15), .panel.hcol-16 tr > :nth-child(16) { display: none; }
 
 /* ---- CONFIG global (nav): desplegable de paneles disponibles ---- */
 .nav-cfg-wrap { position: relative; display: inline-flex; }
@@ -167,6 +173,12 @@ td.tk a { color: var(--accent); cursor: pointer; text-decoration: none; font-wei
 td.tk a:hover { text-decoration: underline; }
 tr.empty td { color: var(--text-faint); text-align: center; padding: 16px; font-style: italic; }
 
+/* Paneles del dashboard: encabezados y valores centrados (pisa los text-align:
+   right/left de arriba por orden de cascada; acotado a .panel-body para no tocar
+   el modal de detalle ni la tabla de cashflows). */
+.panel-body thead th,
+.panel-body tbody td { text-align: center; }
+
 /* ---- cards (cartera / bcra) ---- */
 .cards { display: flex; gap: 12px; flex-wrap: wrap; padding: 14px; }
 .card { background: var(--panel-bg); border: 1px solid var(--panel-border);
@@ -191,30 +203,177 @@ button[type="submit"]:hover, .btn:hover { filter: brightness(1.08); }
 /* ---- modal (popup detalle) ---- */
 #modal:empty { display: none; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(6,20,59,.55); display: flex;
-                 align-items: flex-start; justify-content: center; z-index: 500; padding: 38px 16px; overflow: auto; }
+                 align-items: flex-start; justify-content: center; z-index: 500; padding: 26px 18px; overflow: auto; }
 .modal-card { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 10px;
-              width: min(940px, 96vw); box-shadow: 0 25px 50px -12px rgba(6,20,59,.5); }
+              width: min(1280px, 94vw); box-shadow: 0 25px 50px -12px rgba(6,20,59,.5); }
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 11px 16px;
               background: var(--navy-band); color: #fff; border-radius: 10px 10px 0 0; }
 .modal-head b { font-size: 15px; } .modal-head .mut { color: #c7d0ee; font-size: 12px; }
-.modal-body { padding: 14px 16px; max-height: 78vh; overflow: auto; }
+.modal-body { padding: 16px 20px; max-height: 86vh; overflow: auto; }
 .modal-body.err, .err { color: var(--neg); padding: 20px; text-align: center; }
 .toggle button { background: rgba(255,255,255,.14); color: #fff; border: 1px solid transparent;
                  border-radius: 6px; padding: 3px 11px; cursor: pointer; margin-left: 4px; }
 .toggle button.on { background: #fff; color: var(--navy); font-weight: 700; }
 .toggle button.x { border: none; background: none; color: #c7d0ee; font-size: 16px; }
-.md-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.md-cols { display: grid; grid-template-columns: 1.1fr 1.1fr 1fr; gap: 14px 32px; align-items: start; }
 .modal-body h4 { margin: 12px 0 6px; font-size: 11px; color: var(--accent); letter-spacing: .5px; text-transform: uppercase; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; }
 dl dt { color: var(--text-dim); } dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 dl.metrics dd { font-family: var(--font-mono); }
-.calc form { display: inline-flex; gap: 8px; align-items: center; margin: 4px 12px 8px 0; }
+.calc form { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; flex-wrap: wrap; }
 .calc input { width: 120px; }
+.calc label { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; }
+.calc label input { flex: 1 1 auto; width: auto; min-width: 90px; }
 #calc-result { margin-top: 6px; }
-table.cf th { font-size: 10px; } table.cf td { padding: 3px 9px; }
+table.cf { width: 100%; }
+table.cf th { font-size: 10px; } table.cf td { padding: 4px 9px; }
 table.cf td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
 table.cf tr.past { opacity: .5; } table.cf tr.next { background: var(--accent-light); font-weight: 600; }
+@media (max-width: 1024px) { .md-cols { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 640px) { .md-cols { grid-template-columns: 1fr; } main { grid-template-columns: 1fr; } }
+
+/* ---- Popup "compartir" (cuadrado 1:1 p/ WhatsApp): tabla completa + curva ---- */
+.share-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.share-card { width: min(94vw, 1320px); height: min(96vh, 1040px);
+              background: var(--panel-bg); border: 1px solid var(--panel-border);
+              border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+              box-shadow: 0 25px 50px -12px rgba(6,20,59,.5); }
+.share-head { flex: 0 0 auto; padding: 16px 26px; color: #fff; gap: 14px;
+              background: linear-gradient(180deg, #1c3170, #13234e);
+              display: flex; align-items: center; justify-content: space-between; }
+.share-head-l { min-width: 0; }
+.share-head b { display: block; font-size: 22px; font-weight: 800; letter-spacing: .3px;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-sub { font-size: 12.5px; color: #bcc6e8; margin-top: 3px;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-head-r { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.share-badge { font-size: 12px; font-weight: 700; padding: 6px 13px; border-radius: 999px;
+               background: rgba(122,160,255,.16); color: #9db6ff; white-space: nowrap; }
+.share-head-tools { display: flex; gap: 4px; align-items: center; flex: 0 0 auto; }
+.share-head-tools .ph-cam { display: inline-flex; align-items: center; padding: 5px 9px; font-size: 12px; }
+/* Apilado: gráfico arriba (apaisado, full-width) + tabla abajo (full-width).
+   Una tabla ancha (muchas columnas) + scatter no entran legibles lado a lado en
+   un cuadrado; apilados ambos usan todo el ancho y se leen bien. */
+.share-body { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.share-table-col { flex: 1 1 0; min-width: 0; min-height: 0; padding: 6px 14px 10px;
+                   display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.share-body.no-chart .share-table-col { flex: 1 1 0; }
+.share-chart-col { order: -1; flex: 1 1 0; min-width: 0; min-height: 0; padding: 10px 14px 2px;
+                   border-bottom: 1px solid var(--panel-border); display: flex; }
+.share-chart-box { position: relative; width: 100%; height: 100%; }
+.share-table-wrap { display: flex; gap: 20px; align-items: center; justify-content: center;
+                    font-size: 13px; width: 100%; }
+.share-tbl { width: auto; border-collapse: collapse; font-size: 1em; }
+.share-tbl th, .share-tbl td { text-align: center; white-space: nowrap; }
+.share-tbl th { padding: .24em .45em; font-size: .82em; font-weight: 700; color: var(--text);
+                text-transform: uppercase; letter-spacing: .3px; background: var(--panel-bg);
+                border-bottom: 2px solid var(--panel-border); }
+.share-tbl td { padding: .16em .45em; font-size: .96em; color: var(--text);
+                border-bottom: 1px solid var(--panel-border); }
+/* Variaciones con signo (ej. %Día): rojo/verde como en los paneles. Más específico
+   que `.share-tbl td` para ganarle al color base (mismo efecto que `td.pos`/`td.neg`). */
+.share-tbl td.pos { color: var(--pos); } .share-tbl td.neg { color: var(--neg); }
+.share-tbl td:first-child { font-weight: 600; }
+.share-tbl td.num { font-size: .96em; text-align: center; font-variant-numeric: tabular-nums;
+                    font-family: var(--font-mono); }
+.share-tbl tbody tr:nth-child(even) { background: var(--row-alt); }
+
+/* Columna TIR resaltada (soberanos / ON) — mismo efecto que la `sortcol` del FCI.
+   El fondo de la celda pinta sobre el striping de la fila, así se distingue rápido
+   tanto en el panel del dashboard como en el popup de compartir (la foto). */
+th.tircol, td.tircol { background: var(--tir-hl); }
+
+/* ---- Popup Futuros: foto con pestañas (Curva Rofex / Carry / Cobertura) ---- */
+/* La card crece con el contenido (sin tope de alto) para que entren las ~12 filas
+   con renglones ALTOS y letra GRANDE — legible desde el celular a distancia normal
+   sin zoom — y para que la foto (html2canvas) las capture completas. Algo más
+   angosta que la foto genérica → la imagen queda casi cuadrada (no se achica tanto
+   en un celular). Si excede la pantalla, el overlay scrollea (la foto sale entera). */
+.share-card.futuros { width: min(96vw, 1040px); height: auto; }
+.share-card.futuros .share-body { display: flex; flex-direction: column; }
+.ftabs { display: flex; gap: 4px; padding: 8px 18px 0; background: var(--panel-bg);
+         border-bottom: 1px solid var(--panel-border); flex: 0 0 auto; }
+.ftab-btn { background: transparent; border: none; border-bottom: 2px solid transparent;
+            color: var(--text-dim); font: inherit; font-weight: 600; font-size: 14px;
+            padding: 7px 14px; cursor: pointer; border-radius: 6px 6px 0 0; }
+.ftab-btn:hover { background: var(--row-hover); color: var(--text); }
+.ftab-btn.on { color: var(--accent); border-bottom-color: var(--accent);
+               background: var(--accent-light); }
+.fpane { display: none; }
+.fpane.on { display: block; }
+.fchart-col { padding: 12px 18px 4px; border-bottom: 1px solid var(--panel-border); }
+.fchart-box { position: relative; width: 100%; height: 280px; }
+.ftable-col { padding: 14px 22px 18px; overflow: auto; }
+.ftable-col .share-tbl { width: 100%; }
+/* Letra 15px (tamaño elegido) + renglones cómodos: el listado es lo que el operador
+   lee en el celu. El primer .num gana en especificidad a `.share-tbl td.num` (.96em). */
+.share-card.futuros .share-tbl th { font-size: 12px; padding: 7px 10px; letter-spacing: .4px; }
+.share-card.futuros .share-tbl td,
+.share-card.futuros .share-tbl td.num,
+.share-card.futuros .share-tbl td:first-child { font-size: 15px; padding: 7px 10px; }
+.fnote { padding: 0 22px 10px; color: var(--text-faint); font-size: 13px; font-style: italic; }
+
+/* ---- Cajón "Proyección CER" (popup detalle de bonos CER) ---- */
+.modal-card { position: relative; overflow: hidden; }
+.cer-open { background: rgba(255,255,255,.14); color: #fff; border: 1px solid transparent;
+            border-radius: 6px; padding: 3px 11px; cursor: pointer; margin-right: 10px; font: inherit;
+            font-weight: 600; }
+.cer-open:hover { background: rgba(255,255,255,.26); }
+.cer-scrim { position: absolute; inset: 0; background: rgba(4,9,26,.45); opacity: 0; pointer-events: none;
+             transition: opacity .25s ease; z-index: 5; border-radius: 10px; }
+.cer-scrim.on { opacity: 1; pointer-events: auto; }
+.cer-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(1120px, 94%);
+              background: var(--panel-bg); border-left: 1px solid var(--panel-border);
+              box-shadow: -18px 0 40px -20px rgba(0,0,0,.6); transform: translateX(100%);
+              transition: transform .26s ease; z-index: 6; display: flex; flex-direction: column;
+              border-radius: 0 10px 10px 0; }
+.cer-drawer.open { transform: translateX(0); }
+.cer-drawer > header { display: flex; align-items: center; gap: 8px; padding: 11px 14px;
+                       background: var(--navy-band); color: #fff; }
+.cer-drawer > header h4 { margin: 0; color: #fff; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; }
+.cer-drawer > header .x { margin-left: auto; background: none; border: none; color: #c7d0ee; font-size: 16px; cursor: pointer; }
+.cer-drawer-body { padding: 14px 18px 18px; overflow: auto; }
+.cer-drawer-body h4 { margin: 0 0 8px; font-size: 11px; color: var(--accent); letter-spacing: .5px; text-transform: uppercase; }
+.cer-drawer-body .help { font-size: 10.5px; color: var(--text-faint); margin: 10px 0 0; }
+/* Layout a 2 columnas dentro del cajón ancho: escenarios | meses. */
+.cer-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(300px, 1.05fr);
+            gap: 4px 28px; align-items: start; margin-top: 10px; }
+.cer-grid > .cer-col { min-width: 0; }
+@media (max-width: 700px) { .cer-grid { grid-template-columns: 1fr; gap: 4px; } }
+.cer-toprow { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.cer-toprow label { font-size: 11px; color: var(--text-dim); }
+.cer-toprow .px { width: 110px; }
+
+table.scen { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+table.scen th { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .3px;
+                text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--panel-border); }
+table.scen th:first-child, table.scen td:first-child { text-align: left; }
+table.scen td { padding: 4px 8px; font-variant-numeric: tabular-nums; font-family: var(--font-mono);
+                text-align: right; border-bottom: 1px dashed var(--panel-border); }
+table.scen tr.mine td { color: var(--accent); font-weight: 600; }
+
+.scen-mode { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; flex-wrap: wrap; }
+.scen-mode .lbl { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .4px; }
+.seg { display: inline-flex; border: 1px solid var(--panel-border); border-radius: 6px; overflow: hidden; }
+.seg button { background: transparent; color: var(--text-dim); border: none; padding: 3px 10px; cursor: pointer; font: inherit; }
+.seg button.on { background: var(--accent); color: #fff; font-weight: 600; }
+.unif { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
+.unif input { width: 64px; text-align: right; }
+
+.cer-mhdr { display: grid; grid-template-columns: 50px 1fr 58px 96px; gap: 7px; padding: 2px;
+            font-size: 9.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .3px;
+            border-bottom: 1px solid var(--panel-border); }
+.cer-mhdr span:not(:first-child) { text-align: right; }
+.cer-months { max-height: 64vh; overflow: auto; padding-right: 4px; }
+.cer-mrow { display: grid; grid-template-columns: 50px 1fr 58px 96px; align-items: center; gap: 7px;
+            padding: 3px 2px; border-bottom: 1px dashed var(--panel-border); }
+.cer-mrow .mes { font-weight: 600; font-size: 12px; }
+.cer-mrow .cerv { font-family: var(--font-mono); text-align: right; color: var(--text-dim); font-size: 12px; }
+.cer-mrow input { width: 100%; text-align: right; font: 12px var(--font-mono); padding: 3px 5px; }
+.cer-mrow .ref { font-size: 10px; color: var(--text-faint); font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+/* En modo Uniforme los inputs por mes quedan como referencia (no editables). */
+.cer-months:not(.editable) .cer-mrow input { opacity: .4; pointer-events: none; background: transparent; border-color: transparent; }
+.modal-body .help { font-size: 10.5px; color: var(--text-faint); margin: 6px 0 0; }
 
 /* ---- Gridstack (paneles draggables/resizables en la home) ---- */
 .grid-stack { margin: 8px; }

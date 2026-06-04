@@ -15,7 +15,7 @@ schedule de amortización, etc. quedan horneados en los cashflows materializados
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
@@ -24,7 +24,9 @@ from core.domain.models import Cashflow
 from core.infrastructure.db.catalog_repository import init_db, instrument_to_orm
 from core.infrastructure.db.engine import SessionLocal
 from core.infrastructure.db.models import CashflowORM, InstrumentORM
-from core.infrastructure.repositories import build_instrument
+from core.infrastructure.repositories import (
+    build_instrument, _currency_tickers, split_currency_tickers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,12 @@ logger = logging.getLogger(__name__)
 _SOBERANOS_SHEET = "Soberanos"
 # slot del form ↔ campo. El orden define la presentación (ARS, MEP, CABLE).
 _SOB_SLOTS = ("ticker_ars", "ticker_mep", "ticker_ccl")
+
+# Acciones: equities de Data912. Se registran solo con el ticker (sin términos
+# ni flujos) bajo la categoría "Acciones" — no se editan como bonos ni aparecen
+# en la lista de alta/edición; solo dejan de figurar en "sin cargar".
+_ACCIONES_SHEET = "Acciones"
+_ACCION_TYPE = "ACCION"
 
 
 def _sob_group(ticker: str) -> str:
@@ -275,60 +283,136 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
              "step": "0.0001", "help": "Solo DUAL_CER_TAMAR"},
         ],
     },
+    "Obligaciones_Negociables": {
+        "label": "Obligaciones Negociables (ON USD · ley NY/ARG)",
+        "fields": [
+            {"key": "short_name",       "label": "Emisor",                "type": "text",   "required": True},
+            {"key": "serie_clase",      "label": "Serie / Clase",         "type": "text",
+             "help": "Etiqueta del informe IAMC/BYMA, ej. 'Clase XXXI' / 'Serie 13 Clase A'"},
+            {"key": "ley_aplicable",    "label": "Ley Aplicable",         "type": "select",
+             "options": ["", "Argentina", "Extranjera"],
+             "help": "Ley de emisión: Argentina (ley local) o Extranjera (ley NY)"},
+            {"key": "tipo",             "label": "Tipo",                  "type": "select", "required": True,
+             "options": ["HARD DOLLAR", "DOLLAR LINKED"],
+             "help": "Hard-dollar paga USD (pata …D); dollar-linked paga pesos × FX"},
+            {"key": "fecha_emision",    "label": "Fecha emisión",         "type": "date",   "required": True},
+            {"key": "fecha_vencimiento","label": "Vencimiento",           "type": "date",   "required": True},
+            {"key": "cupon anual %",    "label": "Cupón anual %",         "type": "text",
+             "help": "Tasa de cupón vigente, ej. 7.9. Vacío = cupón cero"},
+            {"key": "frecuencia pagos", "label": "Frecuencia pagos /año", "type": "number", "step": "1",
+             "help": "2 = semestral, 4 = trimestral, 1 = anual"},
+            {"key": "prox_cupon",       "label": "Próximo / 1er cupón",   "type": "date",
+             "help": "Solo si la grilla de cupones está desfasada de la emisión o hay 1er cupón largo/corto (ej. CS50)"},
+            {"key": "base calculo",     "label": "Base cálculo",          "type": "select",
+             "options": _BASE_CALCULO_OPTIONS, "help": "ON USD: real/365 = ACT/365 (default si se deja vacío)"},
+            {"key": "tipo amortizacion","label": "Tipo amortización",     "type": "select",
+             "options": _TIPO_AMORT_OPTIONS},
+            {"key": "amort inicio",     "label": "Amort inicio (próx. pago capital)", "type": "date",
+             "help": "Solo amortizing"},
+            {"key": "amort cantidad",   "label": "Cuotas capital remanentes", "type": "number", "step": "1",
+             "help": "Solo amortizing"},
+            {"key": "capital factor",   "label": "Capital factor (VR/100)", "type": "number", "step": "0.0001",
+             "help": "VR < 100 → ej. 0.40 si el valor residual es 40"},
+        ],
+    },
 }
+
+
+# Multi-ticker para TODAS las hojas: hasta 3 tickers por moneda (≥1). La hoja
+# Soberanos ya trae los slots; al resto les anteponemos estos y quitamos el campo
+# `ticker` único. La moneda se deriva del sufijo (D=MEP, C=CABLE).
+_CCY_TICKER_FIELDS = [
+    {"key": "ticker_ars", "label": "Ticker $ (pesos)", "type": "text",
+     "help": "Ticker en pesos / principal. Al menos 1 de los 3 es obligatorio"},
+    {"key": "ticker_mep", "label": "Ticker MEP (D)", "type": "text",
+     "help": "Sufijo D — opcional"},
+    {"key": "ticker_ccl", "label": "Ticker CABLE (C)", "type": "text",
+     "help": "Sufijo C — opcional"},
+]
+for _schema in SHEET_SCHEMAS.values():
+    _flds = _schema["fields"]
+    if not any(f["key"] == "ticker_ars" for f in _flds):
+        _schema["fields"] = _CCY_TICKER_FIELDS + [f for f in _flds if f["key"] != "ticker"]
 
 
 # --------------------------------------------------------------------------- #
 # Lectura
 # --------------------------------------------------------------------------- #
 
-def list_instruments() -> List[Dict[str, Any]]:
-    """Entradas para la lista del ABM, 1 por instrumento. Los Soberanos se
-    consolidan en 1 entrada por bono (sus especies por moneda agrupadas).
+def _row_tickers(orm: InstrumentORM) -> List[str]:
+    """Tickers no vacíos de una fila-bono: primario + patas de moneda."""
+    return [t for t in (orm.ticker, orm.ticker_mep, orm.ticker_ccl) if t]
 
-    Cada entrada: {"sheet", "key", "display", "tickers": [...]}.
-      - Soberanos: `key`=grupo (ej. 'AL30'), `display`='AL30 / AL30D / AL30C'.
-      - Resto: `key`=`display`=ticker, `tickers`=[ticker].
-    """
+
+def list_instruments() -> List[Dict[str, Any]]:
+    """Entradas para la lista del ABM, 1 por bono (cada fila ya es un instrumento
+    con hasta 3 tickers). {"sheet", "key"=primario, "display"='T / TD / TC', "tickers"}.
+    Excluye las Acciones (solo-ticker, no se editan como bonos)."""
     init_db()
     with SessionLocal() as s:
-        rows = s.execute(
-            select(InstrumentORM.ticker, InstrumentORM.sheet).order_by(InstrumentORM.ticker)
-        ).all()
-
-    groups: Dict[str, Dict[str, str]] = {}  # group -> {slot: ticker}
-    others: List[Dict[str, Any]] = []
-    for t, sh in rows:
-        if sh == _SOBERANOS_SHEET:
-            groups.setdefault(_sob_group(t), {})[_sob_slot(t)] = t
-        else:
-            others.append({"sheet": sh or "", "key": t, "display": t, "tickers": [t]})
-
-    sob: List[Dict[str, Any]] = []
-    for g, slots in groups.items():
-        tickers = [slots[k] for k in _SOB_SLOTS if k in slots]
-        sob.append({"sheet": _SOBERANOS_SHEET, "key": g,
-                    "display": " / ".join(tickers), "tickers": tickers})
-
-    out = sob + others
+        rows = s.execute(select(InstrumentORM).order_by(InstrumentORM.ticker)).scalars().all()
+        out = [{"sheet": o.sheet or "", "key": o.ticker,
+                "display": " / ".join(_row_tickers(o)), "tickers": _row_tickers(o)}
+               for o in rows if o.sheet != _ACCIONES_SHEET]
     out.sort(key=lambda e: e["key"])
     return out
 
 
-def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
-    """{"sheet", "fields", "cashflows", "cashflows_source"} para un ticker, o None.
+def register_stocks(tickers) -> List[str]:
+    """Da de alta acciones (equities) con SOLO el ticker (sin términos ni flujos),
+    bajo la categoría 'Acciones'. Idempotente — no toca las ya presentes (ni las
+    que ya son tickers de otro instrumento). Devuelve los tickers agregados.
 
-    `fields` son los params crudos del form (raw_fields). `cashflows_source` es
-    "sheet" si hay cashflows materializados; si no, sintetiza desde los params y
-    marca "synth" (o "empty" si tampoco se puede sintetizar)."""
+    Escribe SQLite directo (no el Excel) → se re-aplica al arranque. Al quedar en
+    el catálogo, dejan de figurar en el listado 'sin cargar' de Data912."""
+    syms = {str(t).upper().strip() for t in tickers if t and str(t).strip()}
+    init_db()
+    added: List[str] = []
+    with SessionLocal.begin() as s:
+        rows = s.execute(select(InstrumentORM)).scalars().all()
+        present = {t.upper() for o in rows for t in _row_tickers(o)}
+        for sym in sorted(syms):
+            if sym in present:
+                continue
+            s.add(InstrumentORM(ticker=sym, short_name=sym,
+                                instrument_type=_ACCION_TYPE, sheet=_ACCIONES_SHEET))
+            present.add(sym)
+            added.append(sym)
+    if added:
+        logger.info("Acciones: +%d dadas de alta (%s%s)", len(added),
+                    ", ".join(added[:8]), "…" if len(added) > 8 else "")
+    return added
+
+
+def _find_bond_row(s, ticker_u: str) -> Optional[InstrumentORM]:
+    """Fila-bono que contiene `ticker_u` en cualquier slot (primario/mep/ccl)."""
+    orm = s.get(InstrumentORM, ticker_u)
+    if orm is not None:
+        return orm
+    rows = s.execute(select(InstrumentORM)).scalars().all()
+    return next((o for o in rows
+                 if (o.ticker_mep and o.ticker_mep.upper() == ticker_u)
+                 or (o.ticker_ccl and o.ticker_ccl.upper() == ticker_u)), None)
+
+
+def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
+    """{"sheet", "fields", "cashflows", "cashflows_source"} para CUALQUIER ticker
+    del bono (primario o pata), o None. `fields` trae los slots ticker_ars/mep/ccl
+    reconstruidos desde la fila (autoritativo)."""
     ticker_u = ticker.upper().strip()
     init_db()
     with SessionLocal() as s:
-        orm = s.get(InstrumentORM, ticker_u)
+        orm = _find_bond_row(s, ticker_u)
         if orm is None:
             return None
         sheet = orm.sheet or ""
         fields = dict(orm.raw_fields or {})
+        # los slots de ticker reflejan la fila (no los raw_fields, que pueden
+        # estar viejos): clasificar cada ticker por sufijo.
+        for k in ("ticker", *_SOB_SLOTS):
+            fields.pop(k, None)
+        for tk in _row_tickers(orm):
+            fields[_sob_slot(tk)] = tk
         cf_rows = [
             {
                 "date": cf.fecha_pago.isoformat(),
@@ -348,245 +432,222 @@ def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def get_soberano_form_values(group: str) -> Optional[Dict[str, Any]]:
-    """Valores para prefill del form de un bono soberano (todas sus especies).
-
-    Devuelve los términos compartidos (de los raw_fields de cualquier especie)
-    + los 3 slots de ticker derivados de las especies que existen. None si el
-    grupo no tiene especies."""
-    g = _sob_group(group)
-    init_db()
-    with SessionLocal() as s:
-        rows = s.execute(
-            select(InstrumentORM).where(InstrumentORM.sheet == _SOBERANOS_SHEET)
-        ).scalars().all()
-        legs = [o for o in rows if _sob_group(o.ticker) == g]
-        if not legs:
-            return None
-        # Términos compartidos: del primer leg con raw_fields no vacío.
-        base: Dict[str, Any] = {}
-        for o in legs:
-            if o.raw_fields:
-                base = dict(o.raw_fields)
-                break
-        # los campos de ticker se derivan de las especies reales (autoritativo)
-        for k in ("ticker", *_SOB_SLOTS):
-            base.pop(k, None)
-        for o in legs:
-            base[_sob_slot(o.ticker)] = o.ticker
-    return base
-
-
 # --------------------------------------------------------------------------- #
 # Escritura (transaccional: SessionLocal.begin → COMMIT/ROLLBACK auto)
 # --------------------------------------------------------------------------- #
 
+def _find_bond_rows(s, tickers) -> List[InstrumentORM]:
+    """Filas cuyo ticker primario o pata (mep/ccl) esté en `tickers`. Incluye
+    filas-por-pata pre-migración (para consolidarlas al guardar)."""
+    ts = {str(t).upper().strip() for t in tickers if t}
+    if not ts:
+        return []
+    rows = s.execute(select(InstrumentORM)).scalars().all()
+    return [o for o in rows
+            if o.ticker.upper() in ts
+            or (o.ticker_mep and o.ticker_mep.upper() in ts)
+            or (o.ticker_ccl and o.ticker_ccl.upper() in ts)]
+
+
 def save_instrument(sheet: str, fields: Dict[str, Any],
                     cashflows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """Alta/edición por ticker. Devuelve {"action": "created"|"updated", ...}.
+    """Alta/edición de un instrumento (1 fila por bono, hasta 3 tickers por moneda).
 
-    Cashflows:
-    - `cashflows` provisto  → reemplaza los del ticker (source pasa a "sheet").
-    - `cashflows=None`      → preserva los materializados existentes; si el ticker
-                              es nuevo (o no tiene), sintetiza desde los params.
-
-    Toda la operación (row + cashflows) ocurre en una sola transacción: si algo
-    falla (p.ej. cashflow con fecha inválida) no persiste nada."""
+    Lee los tickers del form (ticker_ars/ticker_mep/ticker_ccl, o `ticker` único)
+    → escribe UNA fila con primario + ticker_mep/ticker_ccl, consolidando cualquier
+    fila-por-pata pre-existente. Cashflows: explícitos > los del bono existente >
+    synth. Todo en una transacción (fail-fast)."""
     if sheet not in SHEET_SCHEMAS:
         raise ValueError(f"Unknown sheet '{sheet}'. Allowed: {list(SHEET_SCHEMAS)}")
-    if sheet == _SOBERANOS_SHEET:
-        return _save_soberano(fields, cashflows)
     normalized = _normalize_fields(fields)
-    ticker = str(normalized.get("ticker") or "").strip().upper()
-    if not ticker:
-        raise ValueError("ticker is required")
+    tickers = _currency_tickers(normalized)
+    if not tickers:
+        raise ValueError("se requiere al menos un ticker (pesos / MEP / CABLE)")
+    primary, mep, ccl = split_currency_tickers(tickers)
+    all_tickers = [t for t in (primary, mep, ccl) if t]
 
-    # Validar cashflows ANTES de tocar la DB (fail-fast).
     parsed_cfs = _parse_cashflows(cashflows) if cashflows is not None else None
 
     init_db()
     with SessionLocal.begin() as s:
-        existing = s.get(InstrumentORM, ticker)
-        action = "updated" if existing is not None else "created"
+        existing = _find_bond_rows(s, tickers + all_tickers)
+        action = "updated" if existing else "created"
 
         if parsed_cfs is not None:
             cfs = [Cashflow(date=d, amortization=a, interest=i) for d, a, i in parsed_cfs]
-        elif existing is not None and existing.cashflows:
-            cfs = [Cashflow(date=cf.fecha_pago, amortization=cf.amortizacion,
-                            interest=cf.cupon_interes) for cf in existing.cashflows]
         else:
-            cfs = _safe_synth(normalized)
+            old = next((o for o in existing if o.cashflows), None)
+            if old is not None:
+                cfs = [Cashflow(date=cf.fecha_pago, amortization=cf.amortizacion,
+                                interest=cf.cupon_interes) for cf in old.cashflows]
+            else:
+                cfs = _safe_synth(normalized)
 
-        inst = build_instrument(normalized, sheet, cfs)
+        for o in existing:
+            s.delete(o)
+        s.flush()  # libera las PK antes de re-insertar
+
+        inst = build_instrument(normalized, sheet, cfs)  # ticker = primario
         if inst is None:
             raise ValueError("ticker is required")
+        s.add(instrument_to_orm(inst, sheet=sheet, raw_fields=normalized,
+                                ticker_mep=mep, ticker_ccl=ccl))
 
-        if existing is not None:
-            s.delete(existing)
-            s.flush()  # libera la PK antes de re-insertar
-        s.add(instrument_to_orm(inst, sheet=sheet, raw_fields=normalized))
-
-    logger.info("ABM: %s %s in %s%s", action, ticker, sheet,
+    logger.info("ABM: %s %s [%s] in %s%s", action, primary, ",".join(all_tickers), sheet,
                 f" · {len(parsed_cfs)} cashflows" if parsed_cfs is not None else "")
-    out: Dict[str, Any] = {"action": action, "ticker": ticker, "sheet": sheet}
-    if parsed_cfs is not None:
-        out["cashflows"] = len(parsed_cfs)
-    return out
-
-
-def _save_soberano(fields: Dict[str, Any],
-                   cashflows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """Alta/edición de un bono soberano con sus especies por moneda (mismo flujo).
-
-    Modos según el input:
-    - Form nuevo (trae las claves `ticker_ars/mep/ccl`): SINCRONIZA el grupo —
-      escribe las especies cargadas y borra las que se vaciaron.
-    - Legacy/single (solo trae `ticker`): upsert de esa única especie, sin tocar
-      las hermanas (compat hacia atrás / callers viejos).
-
-    Todas las especies del bono comparten cashflows idénticos (mismo bono): se
-    resuelven una vez (explícitos del form, o los de una especie hermana, o synth)
-    y se aplican a cada especie. Una sola transacción para todo el grupo."""
-    normalized = _normalize_fields(fields)
-    full_form = any(k in normalized for k in _SOB_SLOTS)
-    if full_form:
-        legs = [str(normalized[k]).upper().strip()
-                for k in _SOB_SLOTS if normalized.get(k)]
-    else:
-        t = normalized.get("ticker")
-        legs = [str(t).upper().strip()] if t else []
-    if not legs:
-        raise ValueError("se requiere al menos un ticker (ARS / MEP / CABLE)")
-    group = _sob_group(legs[0])
-
-    parsed_cfs = _parse_cashflows(cashflows) if cashflows is not None else None
-
-    init_db()
-    with SessionLocal.begin() as s:
-        sob_rows = s.execute(
-            select(InstrumentORM).where(InstrumentORM.sheet == _SOBERANOS_SHEET)
-        ).scalars().all()
-        group_rows = {o.ticker: o for o in sob_rows if _sob_group(o.ticker) == group}
-
-        # Cashflows compartidos del bono: explícitos > hermana existente > synth.
-        if parsed_cfs is not None:
-            shared_cfs = [Cashflow(date=d, amortization=a, interest=i) for d, a, i in parsed_cfs]
-        else:
-            sib = next((o for o in group_rows.values() if o.cashflows), None)
-            if sib is not None:
-                shared_cfs = [Cashflow(date=cf.fecha_pago, amortization=cf.amortizacion,
-                                       interest=cf.cupon_interes) for cf in sib.cashflows]
-            else:
-                shared_cfs = _safe_synth(normalized)
-
-        existed = bool(group_rows) if full_form else (legs[0] in group_rows)
-
-        # Form completo: borrar las especies que ya no están (vaciadas).
-        if full_form:
-            for tk, o in list(group_rows.items()):
-                if tk not in legs:
-                    s.delete(o)
-            s.flush()
-
-        for tk in legs:
-            ex = s.get(InstrumentORM, tk)
-            if ex is not None:
-                s.delete(ex)
-                s.flush()  # libera la PK antes de re-insertar
-            leg_fields = dict(normalized)
-            leg_fields["ticker"] = tk
-            inst = build_instrument(leg_fields, _SOBERANOS_SHEET, shared_cfs)
-            if inst is None:
-                raise ValueError("ticker is required")
-            s.add(instrument_to_orm(inst, sheet=_SOBERANOS_SHEET, raw_fields=leg_fields))
-
-    action = "updated" if existed else "created"
-    logger.info("ABM: %s soberano %s [%s]%s", action, group, ",".join(legs),
-                f" · {len(parsed_cfs)} cashflows" if parsed_cfs is not None else "")
-    out: Dict[str, Any] = {
-        "action": action,
-        "ticker": group if len(legs) > 1 else legs[0],
-        "sheet": _SOBERANOS_SHEET,
-        "tickers": legs,
-    }
+    out: Dict[str, Any] = {"action": action, "ticker": primary, "sheet": sheet,
+                           "tickers": all_tickers}
     if parsed_cfs is not None:
         out["cashflows"] = len(parsed_cfs)
     return out
 
 
 def save_cashflows(ticker: str, cashflows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Reemplaza TODAS las filas de cashflows del ticker (delete + insert)."""
+    """Reemplaza los cashflows del BONO que contiene `ticker` (primario o pata).
+    Los flujos son del bono (compartidos por sus monedas) → se guardan bajo el
+    ticker primario. delete + insert."""
     ticker_u = ticker.upper().strip()
     if not ticker_u:
         raise ValueError("ticker is required")
     parsed = _parse_cashflows(cashflows)
     init_db()
     with SessionLocal.begin() as s:
-        orm = s.get(InstrumentORM, ticker_u)
+        orm = _find_bond_row(s, ticker_u)
         if orm is None:
             raise ValueError(f"{ticker_u} no existe")
         orm.cashflows = [
-            CashflowORM(ticker=ticker_u, fecha_pago=d, amortizacion=a, cupon_interes=i)
+            CashflowORM(ticker=orm.ticker, fecha_pago=d, amortizacion=a, cupon_interes=i)
             for d, a, i in parsed
         ]
-    logger.info("ABM: saved %d cashflows for %s", len(parsed), ticker_u)
+    logger.info("ABM: saved %d cashflows for %s (bono %s)", len(parsed), ticker_u, orm.ticker)
     return {"ticker": ticker_u, "count": len(parsed)}
 
 
 def delete_instrument(key: str) -> Dict[str, Any]:
-    """Baja por `key`. Si `key` es el grupo de un bono soberano, borra TODAS sus
-    especies por moneda; si no, baja la especie/ticker suelto. Cashflows en
-    cascade. 'deleted' | 'not_found'."""
+    """Baja del bono que contiene `key` en cualquier slot (primario o pata de
+    moneda). Borra la fila (todas sus patas) + cashflows en cascade. Devuelve los
+    tickers borrados. 'deleted' | 'not_found'."""
     k = key.upper().strip()
     if not k:
         raise ValueError("ticker is required")
     init_db()
-    deleted: List[str] = []
-    sheet: Optional[str] = None
     with SessionLocal.begin() as s:
-        sob_rows = s.execute(
-            select(InstrumentORM).where(InstrumentORM.sheet == _SOBERANOS_SHEET)
-        ).scalars().all()
-        group_legs = [o for o in sob_rows if _sob_group(o.ticker) == k]
-        if group_legs:
-            sheet = _SOBERANOS_SHEET
-            for o in group_legs:
-                deleted.append(o.ticker)
-                s.delete(o)
-        else:
-            orm = s.get(InstrumentORM, k)
-            if orm is not None:
-                sheet = orm.sheet
-                deleted.append(orm.ticker)
-                s.delete(orm)
-    if not deleted:
-        return {"action": "not_found", "ticker": k}
+        orm = _find_bond_row(s, k)
+        if orm is None:
+            return {"action": "not_found", "ticker": k}
+        deleted = _row_tickers(orm)
+        sheet = orm.sheet
+        s.delete(orm)
     logger.info("ABM: deleted %s (%s)", ",".join(deleted), sheet)
-    res: Dict[str, Any] = {"action": "deleted", "ticker": k, "sheet": sheet or ""}
-    if sheet == _SOBERANOS_SHEET:
-        res["tickers"] = deleted
-    return res
+    return {"action": "deleted", "ticker": k, "sheet": sheet or "", "tickers": deleted}
 
 
-def purge_matured_instruments() -> List[Dict[str, str]]:
-    """Elimina instrumentos con vencimiento anterior a hoy. Devuelve las bajas."""
-    today = date.today()
+def backfill_soberano_ccy_legs(market_symbols) -> List[str]:
+    """Completa las patas de moneda (D=MEP, C=CABLE, o ARS sin sufijo) de soberanos
+    YA cargados que cotizan en Data912 pero faltan: las setea en los slots
+    ticker_mep/ticker_ccl de la MISMA fila-bono (mismo instrumento, no filas nuevas).
+
+    NO inventa bonos nuevos: si el grupo base no está cargado, lo ignora (eso se da
+    de alta a mano). Idempotente. Devuelve los tickers agregados."""
+    syms = {str(s).upper().strip() for s in market_symbols}
     init_db()
-    deleted: List[Dict[str, str]] = []
+    added: List[str] = []
     with SessionLocal.begin() as s:
         rows = s.execute(
-            select(InstrumentORM).where(
-                InstrumentORM.maturity_date.is_not(None),
-                InstrumentORM.maturity_date < today,
-            )
+            select(InstrumentORM).where(InstrumentORM.sheet == _SOBERANOS_SHEET)
         ).scalars().all()
-        for orm in rows:
-            deleted.append({
-                "ticker": orm.ticker,
-                "sheet": orm.sheet or "",
-                "maturity": orm.maturity_date.isoformat(),
-            })
-            s.delete(orm)
-    for d in deleted:
-        logger.info("Purge: eliminado %s (%s, vto %s)", d["ticker"], d["sheet"], d["maturity"])
-    return deleted
+        present = {t.upper() for o in rows for t in _row_tickers(o)}
+        by_group: Dict[str, InstrumentORM] = {}
+        for o in rows:
+            by_group.setdefault(_sob_group(o.ticker), o)
+
+        for sym in sorted(syms):
+            if sym in present:
+                continue
+            o = by_group.get(_sob_group(sym))
+            if o is None:                       # bono base no cargado → no backfill
+                continue
+            # poné sym en su slot por sufijo si está libre, si no en cualquiera libre
+            for slot in (_sob_slot(sym), "ticker_mep", "ticker_ccl"):
+                if slot in ("ticker_mep", "ticker_ccl") and not getattr(o, slot):
+                    setattr(o, slot, sym)
+                    added.append(sym)
+                    present.add(sym)
+                    break
+    if added:
+        logger.info("Backfill soberanos: +%d patas de moneda %s", len(added), added)
+    return added
+
+
+def unknown_data912_tickers(
+    snapshot: Dict[str, Any],
+    sources: Dict[str, str],
+    catalog_tickers,
+    exclude=frozenset(),
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Símbolos que cotizan en Data912 (snapshot del hub) pero NO están en el
+    catálogo, agrupados por endpoint de origen. Es el listado de referencia del
+    sidebar del ABM: lo que falta dar de alta.
+
+    - `snapshot`: {symbol: Data912Row}  (del ProviderHub)
+    - `sources`:  {symbol: endpoint}     ('notes'/'bonds'/'corp'/'stocks')
+    - `catalog_tickers`: tickers ya cargados; se normaliza el alias `_CER` al
+      símbolo de mercado (TXMJ8_CER → TXMJ8) para no marcar duales como faltantes.
+    - `exclude`: símbolos a omitir (p.ej. PANEL_LIDER, ya mostrados en su panel).
+
+    Devuelve {endpoint: [{"ticker", "price"}, ...]} ordenado por ticker.
+    """
+    def _norm(t: str) -> str:
+        tu = str(t).upper().strip()
+        return tu[:-4] if tu.endswith("_CER") else tu
+
+    cat = {_norm(t) for t in catalog_tickers}
+    ex = {str(e).upper().strip() for e in exclude}
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for sym, row in snapshot.items():
+        symu = str(sym).upper().strip()
+        if symu in cat or symu in ex:
+            continue
+        src = sources.get(sym) or sources.get(symu) or "otros"
+        groups.setdefault(src, []).append(
+            {"ticker": symu, "price": getattr(row, "c", None)}
+        )
+    for rows in groups.values():
+        rows.sort(key=lambda r: r["ticker"])
+    return groups
+
+
+_CORP_SUFFIX_ORDER = {"O": 0, "D": 1, "C": 2}
+
+
+def group_corp_tickers(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Agrupa tickers de ONs por base (todo menos el último char) cuando el
+    sufijo es O (pesos) / D (MEP) / C (cable). Los que no siguen el patrón
+    se muestran solos al final.
+
+    Devuelve [{"base": str, "variants": [{"ticker", "price", "suffix"}, ...]}, ...]
+    """
+    bases: Dict[str, Dict[str, Dict]] = {}
+    unmatched: List[Dict] = []
+    for it in items:
+        tk = it["ticker"]
+        suffix = tk[-1] if tk else ""
+        if suffix in _CORP_SUFFIX_ORDER and len(tk) > 1:
+            base = tk[:-1]
+            bases.setdefault(base, {})[suffix] = {**it, "suffix": suffix}
+        else:
+            unmatched.append({**it, "suffix": ""})
+
+    result = []
+    for base in sorted(bases):
+        variants = [
+            bases[base][s]
+            for s in ("O", "D", "C")
+            if s in bases[base]
+        ]
+        result.append({"base": base, "variants": variants})
+
+    for it in sorted(unmatched, key=lambda x: x["ticker"]):
+        result.append({"base": it["ticker"], "variants": [it]})
+
+    return result

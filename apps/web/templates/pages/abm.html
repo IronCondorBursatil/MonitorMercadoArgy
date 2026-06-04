@@ -1,34 +1,254 @@
 {% extends "base.html" %}
 {% block content %}
-<main style="display:block">
-  <section class="panel" style="margin:14px">
-    <div class="panel-head">ABM · ALTA / EDICIÓN</div>
-    <div class="abm-new">
-      <label>Nueva tenencia en hoja:
-        <select hx-get="/abm/form" hx-target="#abm-form" hx-swap="innerHTML" name="sheet" hx-trigger="change">
-          <option value="">— elegí hoja —</option>
-          {% for s in sheets %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
-        </select>
-      </label>
-    </div>
-    <div id="abm-form"></div>
-  </section>
-  <section class="panel" style="margin:14px">
+<main class="abm-main">
+  <!-- IZQUIERDA: lista + filtros -->
+  <aside class="panel abm-col abm-listcol">
     <div class="panel-head">INSTRUMENTOS ({{ instruments|length }})</div>
-    <div id="abm-list">{% include "fragments/abm_list.html" %}</div>
+    <div class="abm-tools">
+      <input id="abm-q" class="abm-input" placeholder="Buscar ticker / tipo / hoja…" oninput="abmFilter()">
+      <select id="abm-newsheet" class="abm-input" name="sheet"
+              hx-get="/abm/form" hx-target="#abm-editor" hx-swap="innerHTML"
+              hx-trigger="change" onchange="abmClearSel()">
+        <option value="">＋ Nuevo en hoja…</option>
+        {% for s in sheets %}<option value="{{ s }}">{{ s.replace('_',' ') }}</option>{% endfor %}
+      </select>
+      <div class="abm-chips" id="abm-chips">
+        <span class="abm-chip on" data-hoja="" onclick="abmChip(this)">Todas</span>
+        {% for s in sheets %}<span class="abm-chip" data-hoja="{{ s }}" onclick="abmChip(this)">{{ s.replace('_',' ') }}</span>{% endfor %}
+      </div>
+    </div>
+    <div id="abm-list" class="abm-list">{% include "fragments/abm_list.html" %}</div>
+  </aside>
+
+  <!-- CENTRO: editor + preview -->
+  <section class="panel abm-col abm-editcol">
+    <div class="panel-head">ALTA / EDICIÓN</div>
+    <div id="abm-editor" class="abm-editor">
+      <div class="abm-ph">Elegí un bono de la lista para ver y editar su info, o creá uno nuevo con el selector de arriba.</div>
+    </div>
   </section>
+
+  <!-- DERECHA: Data912 sin cargar -->
+  <aside class="panel abm-col abm-d912col">
+    <div class="panel-head">EN DATA912 · SIN CARGAR</div>
+    <div id="abm-d912" hx-get="/abm/data912" hx-trigger="load, every 30s" hx-swap="innerHTML" hx-on::after-swap="d912Apply()">
+      <div class="d912-empty">Cargando…</div>
+    </div>
+  </aside>
 </main>
+
 <style>
-  .abm-new { padding:10px 12px; }
-  .abm-new select, .abm-fields select, .abm-fields input {
-    background:var(--bg); border:1px solid var(--line); color:var(--txt); padding:5px 7px; border-radius:4px; }
-  .abm-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; padding:10px 12px; }
+  .abm-main { display:grid; grid-template-columns:330px minmax(0,1fr) 300px; gap:14px;
+              align-items:start; margin:14px; height:calc(100vh - 90px); }
+  .abm-col { display:flex; flex-direction:column; min-height:0; max-height:100%; }
+  .abm-col .panel-head { flex:0 0 auto; }
+  /* ---- izquierda: tools + lista ---- */
+  .abm-tools { padding:8px 10px; display:flex; flex-direction:column; gap:7px; flex:0 0 auto;
+               border-bottom:1px solid var(--panel-border); }
+  .abm-input { background:var(--page-bg); border:1px solid var(--panel-border); color:var(--text);
+               padding:6px 9px; border-radius:6px; width:100%; font:inherit; }
+  .abm-chips { display:flex; flex-wrap:wrap; gap:4px; }
+  .abm-chip { background:var(--page-bg); border:1px solid var(--panel-border); border-radius:20px;
+              padding:2px 9px; font-size:11px; cursor:pointer; color:var(--text-dim); }
+  .abm-chip.on { background:var(--accent); color:#07223f; border-color:var(--accent); font-weight:700; }
+  .abm-list { overflow:auto; flex:1 1 auto; min-height:0; }
+  .abm-item { display:flex; align-items:center; border-bottom:1px solid var(--panel-border); }
+  .abm-item.hide { display:none; }
+  .abm-item-main { flex:1 1 auto; display:flex; align-items:center; justify-content:space-between;
+                   gap:8px; padding:9px 11px; cursor:pointer; min-width:0; }
+  .abm-item:hover { background:var(--row-hover); }
+  .abm-item.sel { background:var(--accent-light); box-shadow:inset 3px 0 0 var(--accent); }
+  .abm-item-tks { display:flex; flex-wrap:wrap; gap:5px; min-width:0; }
+  .abm-item-tks b { font:600 12px var(--font-mono); background:var(--navy); padding:1px 6px; border-radius:4px; color:var(--text); }
+  .abm-item-tks b.main { color:var(--accent); }
+  .abm-badge { font-size:10px; background:var(--head-bg); color:var(--text-dim); padding:1px 7px;
+               border-radius:5px; white-space:nowrap; flex:0 0 auto; }
+  .abm-item .delx { background:none; border:none; color:var(--neg); cursor:pointer; padding:6px 10px; opacity:.6; }
+  .abm-item .delx:hover { opacity:1; }
+  /* ---- centro: editor ---- */
+  .abm-editcol .panel-head { display:flex; }
+  #abm-editor { overflow:auto; flex:1 1 auto; min-height:0; padding:4px 4px 18px; }
+  .abm-ph { color:var(--text-faint); font-style:italic; padding:40px 20px; text-align:center; }
+  #abm-editor h4 { margin:12px 14px 2px; color:var(--accent); }
+  #abm-editor h4 b { color:var(--text); }
+  .abm-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; padding:10px 14px; }
   .abm-fields .fld { display:flex; flex-direction:column; gap:3px; }
-  .abm-fields .fld span { font-size:11px; color:var(--mut); }
-  .abm-fields .fld small { font-size:10px; color:#6b7280; }
-  #abm-form form > button, .abm-new + #abm-form button { background:var(--accent); color:#07223f; border:none; border-radius:5px; padding:7px 16px; margin:8px 12px; cursor:pointer; font-weight:600; }
-  #abm-form h4 { margin:10px 12px 0; color:var(--accent); }
-  #abm-list table td button { background:var(--head); border:1px solid var(--line); color:var(--txt); border-radius:4px; padding:3px 8px; cursor:pointer; margin-right:4px; }
-  #abm-list table td button.delx { color:var(--neg); border:none; background:none; }
+  .abm-fields .fld span { font-size:11px; color:var(--text-dim); }
+  .abm-fields .fld small { font-size:10px; color:var(--text-faint); }
+  .abm-fields select, .abm-fields input { background:var(--page-bg); border:1px solid var(--panel-border);
+              color:var(--text); padding:6px 8px; border-radius:5px; font:inherit; }
+  .abm-actions { display:flex; align-items:center; gap:10px; padding:2px 14px; }
+  #abm-editor button[type=submit] { background:var(--accent); color:#07223f; border:none; border-radius:5px;
+              padding:7px 18px; cursor:pointer; font-weight:700; }
+  .abm-flash { color:var(--pos); font-weight:700; }
+  /* preview */
+  .abm-preview { padding:6px 14px 0; }
+  .abm-sec { font-size:11px; font-weight:700; color:var(--accent); letter-spacing:.4px; text-transform:uppercase;
+             margin:18px 0 9px; border-bottom:1px solid var(--panel-border); padding-bottom:5px; }
+  .abm-sec .abm-faint { text-transform:none; letter-spacing:0; }
+  .abm-faint { color:var(--text-faint); font-weight:400; font-size:12px; }
+  .abm-tiles { display:grid; grid-template-columns:repeat(5,1fr); gap:9px; }
+  .abm-tile { background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:9px; padding:10px 8px; text-align:center; }
+  .abm-tile .v { font:700 17px var(--font-mono); }
+  .abm-tile .k { font-size:10px; color:var(--text-faint); text-transform:uppercase; margin-top:2px; }
+  .abm-tile.pos .v { color:var(--pos); }
+  table.abm-cf { width:100%; border-collapse:collapse; }
+  table.abm-cf th { font-size:10px; color:var(--text-faint); text-transform:uppercase; text-align:right;
+                    padding:5px 9px; border-bottom:1px solid var(--panel-border); }
+  table.abm-cf th:first-child { text-align:left; }
+  table.abm-cf td { padding:4px 9px; border-bottom:1px solid var(--panel-border); }
+  table.abm-cf td.num { text-align:right; font:12px var(--font-mono); }
+  /* calculadora precio ↔ TIR */
+  .abm-calc { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .abm-calc-tk { background:var(--page-bg); border:1px solid var(--panel-border); color:var(--text);
+                 padding:6px 9px; border-radius:6px; font:600 12px var(--font-mono); }
+  .abm-calc-f { display:flex; gap:6px; align-items:center; }
+  .abm-calc-f input { background:var(--page-bg); border:1px solid var(--panel-border); color:var(--text);
+                      padding:6px 9px; border-radius:6px; width:130px; font:inherit; }
+  .abm-calc-f button { background:transparent; color:var(--accent); border:1px solid var(--accent);
+                       border-radius:6px; padding:6px 11px; cursor:pointer; font-weight:600; }
+  .abm-calc-f button:hover { background:var(--accent); color:#07223f; }
+  .abm-calc-sep { color:var(--text-faint); font-size:11px; }
+  #abm-calc-out { margin-top:10px; }
+  #abm-calc-out dl.metrics { display:grid; grid-template-columns:max-content 1fr max-content 1fr;
+                gap:5px 12px; margin:0; background:var(--panel-bg); border:1px solid var(--panel-border);
+                border-radius:9px; padding:11px 14px; }
+  #abm-calc-out dl.metrics dt { color:var(--text-dim); font-size:12px; }
+  #abm-calc-out dl.metrics dd { margin:0; text-align:right; font:600 12px var(--font-mono); }
+  #abm-calc-out .err { color:var(--neg); padding:8px; }
+  /* ---- derecha: Data912 (reusa estilos del sidebar) ---- */
+  #abm-d912 { overflow:auto; flex:1 1 auto; min-height:0; padding:8px 10px; }
+  .d912-empty { color:var(--text-dim); font-size:12px; padding:6px 2px; }
+  .d912-grp { margin-bottom:10px; }
+  .d912-grp-h { font-size:11px; font-weight:700; color:var(--accent); letter-spacing:.4px; margin:4px 0;
+                cursor:pointer; user-select:none; display:flex; align-items:center; gap:5px; }
+  .d912-grp-h:hover { color:var(--text); }
+  .d912-grp-h span { color:var(--text-dim); font-weight:400; }
+  .d912-caret { font-size:9px; color:var(--text-faint); display:inline-block; transition:transform .12s; }
+  .d912-grp.collapsed .d912-caret { transform:rotate(-90deg); }
+  .d912-grp.collapsed .d912-chips { display:none; }
+  .d912-chips { display:flex; flex-wrap:wrap; gap:4px; }
+  .d912-tk { background:var(--head-bg); border:1px solid var(--panel-border); color:var(--text);
+             border-radius:4px; padding:3px 7px; font:600 11px var(--font-mono); cursor:pointer; }
+  .d912-tk:hover { background:var(--accent); color:#07223f; }
+  .d912-tk--skip { border-color:#c97a1a; color:#c97a1a; }
+  .d912-tk--skip:hover { background:#c97a1a; color:#07223f; }
+  /* ONs corp: layout base + O/D/C */
+  .d912-corp-list { display:flex; flex-direction:column; gap:2px; }
+  .d912-corp-row { display:flex; align-items:center; gap:5px; padding:1px 0; }
+  .d912-corp-nm { font:600 11px var(--font-mono); color:var(--text-dim); min-width:58px; flex:0 0 auto; }
+  .d912-corp-vars { display:flex; gap:3px; }
+  /* O = pesos: color base; D = MEP: dorado; C = cable: verde */
+  .d912-tk--d { border-color:#b8972a; color:#b8972a; }
+  .d912-tk--d:hover { background:#b8972a; color:#07223f; }
+  .d912-tk--c { border-color:#2a9e6a; color:#2a9e6a; }
+  .d912-tk--c:hover { background:#2a9e6a; color:#07223f; }
+  /* Filtros O/D/C del header corp */
+  .d912-corp-filters { display:flex; gap:3px; margin-left:auto; }
+  .d912-cf { background:transparent; border:1px solid var(--panel-border); color:var(--text-faint);
+             border-radius:3px; padding:1px 5px; font:700 10px var(--font-mono); cursor:pointer; transition:all .1s; }
+  .d912-cf.on[data-suf="o"] { border-color:var(--accent); color:var(--accent); }
+  .d912-cf.on[data-suf="d"] { border-color:#b8972a; color:#b8972a; }
+  .d912-cf.on[data-suf="c"] { border-color:#2a9e6a; color:#2a9e6a; }
+  @media (max-width:1100px){ .abm-main{ grid-template-columns:1fr; height:auto; } }
 </style>
+
+<script>
+  // --- filtro de la lista (hoja + texto) ---
+  function abmActiveHoja(){ var c=document.querySelector('#abm-chips .abm-chip.on'); return c?c.dataset.hoja:''; }
+  function abmFilter(){
+    var hoja=abmActiveHoja(), q=(document.getElementById('abm-q').value||'').toLowerCase().trim();
+    document.querySelectorAll('#abm-list .abm-item').forEach(function(it){
+      var okH=!hoja || it.dataset.hoja===hoja;
+      var okQ=!q || (it.dataset.tk||'').indexOf(q)>=0;
+      it.classList.toggle('hide', !(okH&&okQ));
+    });
+  }
+  function abmChip(el){
+    document.querySelectorAll('#abm-chips .abm-chip').forEach(c=>c.classList.remove('on'));
+    el.classList.add('on'); abmFilter();
+  }
+  // --- selección master-detail ---
+  function abmSelect(a){
+    document.querySelectorAll('#abm-list .abm-item.sel').forEach(i=>i.classList.remove('sel'));
+    a.closest('.abm-item').classList.add('sel');
+  }
+  function abmClearSel(){ document.querySelectorAll('#abm-list .abm-item.sel').forEach(i=>i.classList.remove('sel')); }
+  // --- feedback de guardado (la lista ya se refrescó en #abm-list) ---
+  function abmFlash(form){
+    var f=form.querySelector('.abm-flash'); if(!f) return;
+    f.hidden=false; setTimeout(()=>{f.hidden=true;}, 2200);
+  }
+  // --- click en ticker de Data912 → rellena el 1er campo de ticker vacío del editor ---
+  function abmPickTicker(t){
+    var ed=document.getElementById('abm-editor');
+    var inputs=ed?ed.querySelectorAll('input[name^="ticker"]'):[];
+    var target=null;
+    inputs.forEach(function(i){ if(!target && !i.value) target=i; });
+    if(!target && inputs.length) target=inputs[0];
+    if(target){ target.value=t; target.focus(); }
+    else if(navigator.clipboard){ navigator.clipboard.writeText(t); }
+  }
+  // --- Data912: filtro O/D/C en corp ---
+  function _d912CorpApply(grp) {
+    var active = new Set([...grp.querySelectorAll('.d912-cf.on')].map(b => b.dataset.suf));
+    var visible = 0;
+    grp.querySelectorAll('.d912-corp-row').forEach(function(row) {
+      var rowSufs = new Set();
+      row.querySelectorAll('.d912-tk').forEach(function(tk) {
+        var sufCls = [...tk.classList].find(function(c) {
+          return c.startsWith('d912-tk--') && c !== 'd912-tk--skip';
+        });
+        if (sufCls) rowSufs.add(sufCls.replace('d912-tk--', ''));
+      });
+      // AND: la fila debe tener TODOS los sufijos seleccionados
+      var rowShow = active.size === 0 || [...active].every(function(s) { return rowSufs.has(s); });
+      // Los chips individuales se muestran solo si están en el filtro activo
+      row.querySelectorAll('.d912-tk').forEach(function(tk) {
+        var sufCls = [...tk.classList].find(function(c) {
+          return c.startsWith('d912-tk--') && c !== 'd912-tk--skip';
+        });
+        var suf = sufCls ? sufCls.replace('d912-tk--', '') : '';
+        tk.style.display = (active.size === 0 || active.has(suf)) ? '' : 'none';
+      });
+      row.style.display = rowShow ? '' : 'none';
+      if (rowShow) visible++;
+    });
+    var countSpan = grp.querySelector('.d912-grp-h > span');
+    if (countSpan) countSpan.textContent = '(' + visible + ')';
+  }
+  function d912CorpFilter(btn) {
+    btn.classList.toggle('on');
+    var grp = btn.closest('.d912-grp');
+    _d912CorpApply(grp);
+    localStorage.setItem('abm-corp-filter', JSON.stringify([...grp.querySelectorAll('.d912-cf.on')].map(b => b.dataset.suf)));
+  }
+  // --- Data912: categorías colapsables (estado persistido en localStorage) ---
+  function d912Collapsed(){ try{ return new Set(JSON.parse(localStorage.getItem('abm-d912-collapsed')||'[]')); }catch(e){ return new Set(); } }
+  function d912Save(s){ localStorage.setItem('abm-d912-collapsed', JSON.stringify([...s])); }
+  function d912Toggle(h){
+    var g=h.closest('.d912-grp'); g.classList.toggle('collapsed');
+    var s=d912Collapsed(), k=g.dataset.src;
+    g.classList.contains('collapsed') ? s.add(k) : s.delete(k);
+    d912Save(s);
+  }
+  function d912Apply(){
+    var s=d912Collapsed();
+    document.querySelectorAll('#abm-d912 .d912-grp').forEach(function(g){
+      g.classList.toggle('collapsed', s.has(g.dataset.src));
+    });
+    var corpGrp = document.querySelector('#abm-d912 .d912-grp[data-src="corp"]');
+    if (corpGrp) {
+      try {
+        var saved = new Set(JSON.parse(localStorage.getItem('abm-corp-filter') || '["o","d","c"]'));
+        corpGrp.querySelectorAll('.d912-cf').forEach(function(b){ b.classList.toggle('on', saved.has(b.dataset.suf)); });
+      } catch(e) {}
+      _d912CorpApply(corpGrp);
+    }
+  }
+  // re-aplicar filtro/estado cuando HTMX refresca la lista o el sidebar Data912
+  document.body.addEventListener('htmx:afterSwap', function(e){
+    if(e.target.id==='abm-list') abmFilter();
+  });
+</script>
 {% endblock %}

@@ -32,8 +32,8 @@ def init_db() -> None:
     insp = inspect(eng)
     if insp.has_table("instruments"):
         cols = {c["name"] for c in insp.get_columns("instruments")}
-        if not {"sheet", "raw_fields"} <= cols:
-            logger.info("catalog schema drift: recreando tablas (faltan sheet/raw_fields).")
+        if not {"sheet", "raw_fields", "ticker_mep", "ticker_ccl"} <= cols:
+            logger.info("catalog schema drift: recreando tablas (faltan columnas nuevas).")
             Base.metadata.drop_all(eng)
             Base.metadata.create_all(eng)
 
@@ -53,10 +53,14 @@ def _num(x: Optional[float]) -> float:
 
 
 def instrument_to_orm(inst: Instrument, sheet: Optional[str] = None,
-                      raw_fields: Optional[dict] = None) -> InstrumentORM:
-    """Domain Instrument (+ meta del ABM) → InstrumentORM con cashflows materializados."""
+                      raw_fields: Optional[dict] = None,
+                      ticker_mep: Optional[str] = None,
+                      ticker_ccl: Optional[str] = None) -> InstrumentORM:
+    """Domain Instrument (+ meta del ABM + patas de moneda) → InstrumentORM (1 fila
+    por bono) con cashflows materializados (bajo el ticker primario)."""
     orm = InstrumentORM(
-        ticker=inst.ticker, short_name=inst.short_name,
+        ticker=inst.ticker, ticker_mep=ticker_mep, ticker_ccl=ticker_ccl,
+        short_name=inst.short_name,
         instrument_type=inst.instrument_type,
         maturity_date=inst.maturity_date, emission_date=inst.emission_date,
         cer_base=inst.cer_base, cer_lag=inst.cer_lag, category=inst.category,
@@ -72,21 +76,23 @@ def instrument_to_orm(inst: Instrument, sheet: Optional[str] = None,
     return orm
 
 
-def reseed(instruments: List[Instrument]) -> int:
-    """Wipe + reseed SQLite desde domain Instruments (sin meta del ABM)."""
-    return reseed_with_meta([(i, None, None) for i in instruments])
+def reseed_with_meta(rows) -> int:
+    """Wipe + reseed — transaccional, idempotente. Cada fila es UN bono:
+    (Instrument, sheet, raw_fields[, secondary_tickers]). Las patas de moneda
+    secundarias se guardan en ticker_mep/ticker_ccl (1 fila por bono)."""
+    from core.infrastructure.repositories import split_currency_tickers
 
-
-def reseed_with_meta(triples) -> int:
-    """Wipe + reseed desde (Instrument, sheet, raw_fields) — transaccional, idempotente."""
     init_db()
-    triples = list(triples)
+    rows = [tuple(r) for r in rows]
     with SessionLocal.begin() as s:
         s.execute(delete(CashflowORM))
         s.execute(delete(InstrumentORM))
-        for inst, sheet, raw in triples:
-            s.add(instrument_to_orm(inst, sheet, raw))
-    return len(triples)
+        for r in rows:
+            inst, sheet, raw = r[0], r[1], r[2]
+            secondaries = r[3] if len(r) > 3 else []
+            _, mep, ccl = split_currency_tickers([inst.ticker, *(secondaries or [])])
+            s.add(instrument_to_orm(inst, sheet, raw, ticker_mep=mep, ticker_ccl=ccl))
+    return len(rows)
 
 
 def ingest_from_excel(xlsx_path: str) -> int:
@@ -111,6 +117,9 @@ def _orm_to_domain(orm: InstrumentORM) -> Instrument:
         floor_rate_monthly=orm.floor_rate_monthly, spread_rate=orm.spread_rate,
         cer_spread=orm.cer_spread, payment_frequency=orm.payment_frequency,
         day_count=orm.day_count,
+        # ley_aplicable vive en raw_fields (no es columna ORM) — la lee el motor para
+        # elegir MEP (ley AR) vs CCL (Extranjera) en la pata pesos de ONs hard-dollar.
+        ley_aplicable=(orm.raw_fields or {}).get("ley_aplicable") or None,
     )
 
 
@@ -131,16 +140,25 @@ class CatalogRepository(IInstrumentsRepository):
             return s.execute(select(InstrumentORM.ticker).limit(1)).first() is None
 
     def _load(self) -> None:
+        from core.infrastructure.repositories import expand_currency_legs
+
         with SessionLocal() as s:
             orms = s.execute(select(InstrumentORM)).scalars().all()
-            insts = [_orm_to_domain(o) for o in orms]
+            # 1 fila por bono → expandir a una especie por ticker (primario + mep/ccl).
+            insts: List[Instrument] = []
+            for o in orms:
+                primary = _orm_to_domain(o)
+                secondaries = [t for t in (o.ticker_mep, o.ticker_ccl) if t]
+                insts.extend(expand_currency_legs(primary, secondaries))
+        n_bonos = len(orms)
         self._cache = insts
         self._by_ticker = {i.ticker: i for i in insts}
         by_type: Dict[str, List[Instrument]] = {}
         for i in insts:
             by_type.setdefault(i.instrument_type, []).append(i)
         self._by_type = by_type
-        logger.info("CatalogRepository loaded %d instruments from SQLite.", len(insts))
+        logger.info("CatalogRepository loaded %d instruments (%d bonos) from SQLite.",
+                    len(insts), n_bonos)
 
     def reload(self, reseed_from_excel: bool = True) -> None:
         if reseed_from_excel:

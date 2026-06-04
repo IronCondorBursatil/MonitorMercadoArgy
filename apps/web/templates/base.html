@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Monitor Renta Fija AR{% endblock %}</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
   <script src="https://unpkg.com/htmx.org@2.0.3" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="/static/css/app.css">
   <script>
@@ -18,6 +22,34 @@
       h.setAttribute("data-theme", t);
       localStorage.setItem("theme", t);
     }
+    // --- Cajón "Proyección CER" del popup de detalle (bonos CER) ---
+    function cerOpen() {
+      var m = document.getElementById("modal");
+      if (!m) return;
+      var d = m.querySelector(".cer-drawer"), s = m.querySelector(".cer-scrim");
+      if (d) d.classList.add("open");
+      if (s) s.classList.add("on");
+    }
+    function cerClose() {
+      var m = document.getElementById("modal");
+      if (!m) return;
+      var d = m.querySelector(".cer-drawer"), s = m.querySelector(".cer-scrim");
+      if (d) d.classList.remove("open");
+      if (s) s.classList.remove("on");
+    }
+    function cerMode(btn, mode) {
+      var box = btn.closest("form");
+      if (!box) return;
+      box.querySelectorAll(".cer-mode-btn").forEach(function (b) { b.classList.toggle("on", b === btn); });
+      var hidden = box.querySelector(".cer-mode-val");
+      if (hidden) hidden.value = mode;
+      var custom = mode === "custom";
+      var months = box.querySelector(".cer-months");
+      if (months) months.classList.toggle("editable", custom);
+      var uw = box.querySelector(".unif");
+      if (uw) uw.style.display = custom ? "none" : "";
+      if (window.htmx) htmx.trigger(box, "submit");  // recomputa al cambiar de modo
+    }
   </script>
   {% block head %}{% endblock %}
 </head>
@@ -28,7 +60,7 @@
       <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
       <nav>
         <a href="/">Bonos</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
-        <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/abm">ABM</a>
+        <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/options">Opciones</a><a href="/abm">ABM</a>
         {# CONFIG de paneles: elegir qué cuadros ver / restaurar los cerrados con X.
            El menú lo arma el JS del dashboard (index.html); en otras páginas el
            link lleva al dashboard. #}

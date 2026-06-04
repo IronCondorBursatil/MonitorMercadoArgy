@@ -3,8 +3,18 @@
 <div class="modal-overlay" onclick="if(event.target===this)document.getElementById('modal').innerHTML=''">
   <div class="modal-card" style="width:min(880px,96vw)">
     <div class="modal-head">
-      <b>{{ title }} · curva TIR vs MD</b>
-      <button type="button" class="ph-btn ph-x" onclick="document.getElementById('modal').innerHTML=''">✕</button>
+      <b>{{ title }} · curva {{ y_label }} vs MD</b>
+      <span style="display:flex; gap:4px; align-items:center">
+        <span class="mut" id="curveHint" style="font-size:11px;margin-right:4px">tocá un punto para sacarlo</span>
+        <button type="button" class="ph-btn" id="curveRestore" title="Restaurar puntos quitados" style="display:none">↺ ver todos</button>
+        <button type="button" class="ph-btn ph-cam" id="curveDownload" title="Descargar imagen 8K" aria-label="Descargar imagen 8K">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </button>
+        <button type="button" class="ph-btn ph-x" onclick="document.getElementById('modal').innerHTML=''">✕</button>
+      </span>
     </div>
     <div class="modal-body">
       <div id="curve-wrap" style="height:62vh"><canvas id="curveChart"></canvas></div>
@@ -22,13 +32,33 @@
           var dark = document.documentElement.getAttribute("data-theme") === "dark";
           var txt = dark ? "#aab4d4" : "#4a5780";
           var grid = dark ? "rgba(255,255,255,.08)" : "rgba(10,29,74,.08)";
+          // Estado de puntos quitados (outliers): el usuario toca un punto y lo saca
+          // del chart → la curva log se re-ajusta y el eje re-escala sobre el resto.
+          // `liveCurves` (label→curva vigente) lo lee el plugin de labels y lo recalcula
+          // refitCurve, replicando _chart_payload del server (fit log + 24 muestras).
+          var removed = {}, liveCurves = {};
+          data.forEach(function (g) { liveCurves[g.label] = g.curve || []; });
+          function refitCurve(points) {
+            var lx = [], ys = [];
+            points.forEach(function (p) { if (p.x > 0 && p.y != null) { lx.push(Math.log(p.x)); ys.push(p.y); } });
+            var n = lx.length; if (n < 3) return [];
+            var sx = 0, sy = 0, sxx = 0, sxy = 0;
+            for (var i = 0; i < n; i++) { sx += lx[i]; sy += ys[i]; sxx += lx[i] * lx[i]; sxy += lx[i] * ys[i]; }
+            var den = n * sxx - sx * sx; if (Math.abs(den) < 1e-12) return [];
+            var b = (n * sxy - sx * sy) / den, a = (sy - b * sx) / n;
+            var mds = points.map(function (p) { return p.x; }).filter(function (x) { return x > 0; }).sort(function (p, q) { return p - q; });
+            var lo = mds[0], hi = mds[mds.length - 1], curve = [];
+            if (!(hi > lo)) return [];
+            for (var k = 0; k < 24; k++) { var x = lo + (hi - lo) * k / 23; if (x > 0) curve.push({ x: x, y: a + b * Math.log(x) }); }
+            return curve;
+          }
           var ds = [];
           data.forEach(function (g) {
-            ds.push({ type: "scatter", label: g.label, data: g.points,
+            ds.push({ type: "scatter", label: g.label, _grp: g.label, data: g.points.slice(),
                       backgroundColor: g.color, borderColor: g.color,
                       pointRadius: 4, pointHoverRadius: 6 });
             if (g.curve && g.curve.length)
-              ds.push({ type: "line", label: g.label + " (log)", data: g.curve,
+              ds.push({ type: "line", label: g.label + " (log)", _grp: g.label, data: g.curve.slice(),
                         borderColor: g.color, borderWidth: 2, pointRadius: 0,
                         fill: false, tension: 0.25, borderDash: [5, 4] });
           });
@@ -45,51 +75,168 @@
             }
             return null;
           }
-          // Plugin: ticker centrado arriba/abajo del punto (nunca sobre la curva).
+          // Dirección de los tickers por GRUPO cuando hay ≥2 curvas (ej. Bonares vs
+          // Globales): la de TIR media más alta lleva los labels ARRIBA (-1) y la más
+          // baja ABAJO (+1), así las dos nubes se distinguen. 1 sola curva → {} (cada
+          // label va del lado de afuera de su propia curva, lógica de abajo).
+          function curveGroupDirs(ch) {
+            var sc = ch.data.datasets.filter(function (s) { return s.type === "scatter" && s.data.length; });
+            if (sc.length < 2) return {};
+            var means = sc.map(function (s) {
+              var sum = 0; s.data.forEach(function (p) { sum += p.y; });
+              return { label: s.label, mean: sum / s.data.length };
+            });
+            means.sort(function (a, b) { return b.mean - a.mean; });
+            var mid = (means.length - 1) / 2, out = {};
+            means.forEach(function (m, idx) { out[m.label] = idx <= mid ? -1 : 1; });
+            return out;
+          }
+          var labelHalo = dark ? "#0f1b3a" : "#ffffff";   // halo p/ legibilidad (= fondo)
+          // Tickers tipo "callout" (como la curva CER de referencia): cerca del punto
+          // pero en el espacio libre, sin tocarse, y SIEMPRE una línea fina del label
+          // a su diamante. Repulsión empuja al vacío; resorte suave los ancla al punto.
           var tickerLabels = {
             id: "tickerLabels",
             afterDatasetsDraw: function (chart) {
-              var ctx = chart.ctx;
+              var ctx = chart.ctx, area = chart.chartArea, items = [];
+              var groupDir = curveGroupDirs(chart);
               chart.data.datasets.forEach(function (dset, di) {
                 if (dset.type !== "scatter") return;
                 var meta = chart.getDatasetMeta(di);
-                var grp = data.filter(function (g) { return g.label === dset.label; })[0];
-                var curve = grp ? grp.curve : null;
-                ctx.save();
-                ctx.font = "600 10px 'Inter Tight', -apple-system, sans-serif";
-                ctx.textAlign = "center";
-                ctx.fillStyle = dset.borderColor || txt;
+                var curve = liveCurves[dset.label] || null;
+                var gdir = groupDir[dset.label];
                 meta.data.forEach(function (pt, i) {
-                  var d = dset.data[i];
-                  if (!d || !d.t) return;
+                  var d = dset.data[i]; if (!d || !d.t) return;
                   var cy = curveYAt(curve, d.x);
-                  // punto sobre (o igual a) la curva → label arriba; debajo → label abajo
-                  if (cy === null || d.y >= cy) { ctx.textBaseline = "bottom"; ctx.fillText(d.t, pt.x, pt.y - 7); }
-                  else { ctx.textBaseline = "top"; ctx.fillText(d.t, pt.x, pt.y + 7); }
+                  items.push({ t: d.t, px: pt.x, py: pt.y, color: dset.borderColor || txt,
+                               dir: gdir !== undefined ? gdir : (cy === null || d.y >= cy) ? -1 : 1 });
                 });
-                ctx.restore();
               });
+              if (!items.length) return;
+              ctx.save();
+              ctx.font = "600 11px 'Inter Tight', -apple-system, sans-serif";
+              items.forEach(function (it) {
+                it.w = ctx.measureText(it.t).width; it.h = 13;
+                // del lado de afuera de la curva: arriba de la curva → ARRIBA; debajo → ABAJO
+                it.ax = it.px; it.ay = it.dir < 0 ? it.py - 42 : it.py + 30;
+                it.lx = it.ax; it.ly = it.ay;
+              });
+              function ov(a, b) {                              // +GAP = más separación entre labels
+                return Math.abs(a.lx - b.lx) * 2 < (a.w + b.w + 10) &&
+                       Math.abs(a.ly - b.ly) * 2 < (a.h + b.h + 5);
+              }
+              for (var pass = 0; pass < 500; pass++) {
+                for (var a = 0; a < items.length; a++)
+                  for (var b = a + 1; b < items.length; b++) {       // repulsión → espacio libre
+                    var A = items[a], B = items[b];
+                    if (!ov(A, B)) continue;
+                    var dx = A.lx - B.lx, dy = A.ly - B.ly, dist = Math.hypot(dx, dy);
+                    if (dist < 0.5) { dx = (a % 2 ? 1 : -1); dy = 1; dist = 1; }
+                    A.lx += dx / dist; A.ly += dy / dist; B.lx -= dx / dist; B.ly -= dy / dist;
+                  }
+                for (var c = 0; c < items.length; c++) {             // resorte SUAVE hacia el punto
+                  var it = items[c];
+                  it.lx += (it.ax - it.lx) * 0.015; it.ly += (it.ay - it.ly) * 0.015;
+                  it.lx = Math.max(area.left + it.w / 2 + 2, Math.min(area.right - it.w / 2 - 2, it.lx));
+                  it.ly = Math.max(area.top + it.h / 2 + 1, Math.min(area.bottom - it.h / 2 - 1, it.ly));
+                }
+              }
+              ctx.lineWidth = 1;                                     // línea: borde del label → punto
+              items.forEach(function (it) {
+                var ddx = it.px - it.lx, ddy = it.py - it.ly, hw = it.w / 2 + 3, hh = it.h / 2 + 2;
+                var k = Math.min(ddx ? hw / Math.abs(ddx) : 1e9, ddy ? hh / Math.abs(ddy) : 1e9);
+                ctx.globalAlpha = 0.6; ctx.strokeStyle = it.color;
+                ctx.beginPath(); ctx.moveTo(it.lx + ddx * k, it.ly + ddy * k); ctx.lineTo(it.px, it.py); ctx.stroke();
+                ctx.globalAlpha = 1;
+              });
+              ctx.textAlign = "center"; ctx.textBaseline = "middle"; // texto con halo (sin cajita)
+              ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = labelHalo;
+              items.forEach(function (it) {
+                ctx.strokeText(it.t, it.lx, it.ly);
+                ctx.fillStyle = it.color; ctx.fillText(it.t, it.lx, it.ly);
+              });
+              ctx.restore();
             }
           };
-          new Chart(cv.getContext("2d"), {
-            data: { datasets: ds },
-            plugins: [tickerLabels],
-            options: {
-              responsive: true, maintainAspectRatio: false,
-              scales: {
-                x: { type: "linear", title: { display: true, text: "MD (años)", color: txt },
-                     ticks: { color: txt }, grid: { color: grid } },
-                y: { title: { display: true, text: "TIR %", color: txt },
-                     ticks: { color: txt }, grid: { color: grid } }
-              },
-              plugins: {
-                legend: { labels: { color: txt,
-                          filter: function (it) { return it.text.indexOf("(log)") < 0; } } },
-                tooltip: { callbacks: { label: function (c) {
-                  var p = c.raw; return (p.t ? p.t + ": " : "") +
-                    "MD " + p.x.toFixed(2) + " · TIR " + p.y.toFixed(2) + "%"; } } }
-              }
+          var opts = {
+            responsive: true, maintainAspectRatio: false,
+            onHover: function (e, els) { if (e.native) e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+            scales: {
+              x: { type: "linear", title: { display: true, text: "MD (años)", color: txt },
+                   ticks: { color: txt }, grid: { color: grid } },
+              y: { title: { display: true, text: "{{ y_label }} %", color: txt },
+                   ticks: { color: txt }, grid: { color: grid } }
+            },
+            plugins: {
+              legend: { labels: { color: txt,
+                        filter: function (it) { return it.text.indexOf("(log)") < 0; } } },
+              tooltip: { callbacks: { label: function (c) {
+                var p = c.raw; return (p.t ? p.t + ": " : "") +
+                  "MD " + p.x.toFixed(2) + " · {{ y_label }} " + p.y.toFixed(2) + "%"; } } }
             }
+          };
+          var chart = new Chart(cv.getContext("2d"), {
+            data: { datasets: ds }, plugins: [tickerLabels], options: opts
+          });
+
+          // Quitar/restaurar puntos: tocar un punto lo saca; la curva log se re-ajusta
+          // (refitCurve) y el eje re-escala sobre lo que queda. "↺ ver todos" restaura.
+          var restoreBtn = document.getElementById("curveRestore");
+          var hint = document.getElementById("curveHint");
+          function applyRemovals() {
+            data.forEach(function (g) {
+              var active = g.points.filter(function (p) { return !removed[p.t]; });
+              var curve = refitCurve(active);
+              liveCurves[g.label] = curve;
+              ds.forEach(function (dset) {
+                if (dset._grp !== g.label) return;
+                dset.data = dset.type === "scatter" ? active : curve;
+              });
+            });
+            var any = Object.keys(removed).length > 0;
+            if (restoreBtn) restoreBtn.style.display = any ? "" : "none";
+            if (hint) hint.textContent = any ? (Object.keys(removed).length + " fuera de la curva") : "tocá un punto para sacarlo";
+            chart.update();
+          }
+          cv.addEventListener("click", function (ev) {
+            var items = chart.getElementsAtEventForMode(ev, "nearest", { intersect: true }, true);
+            if (!items.length) return;
+            var dset = chart.data.datasets[items[0].datasetIndex];
+            if (dset.type !== "scatter") return;
+            var pt = dset.data[items[0].index];
+            if (pt && pt.t) { removed[pt.t] = true; applyRemovals(); }
+          });
+          if (restoreBtn) restoreBtn.addEventListener("click", function () { removed = {}; applyRemovals(); });
+
+          // Descarga PNG ~8K: re-renderiza fuera de pantalla con devicePixelRatio alto
+          // (escala fuentes/puntos proporcionalmente → nítido) y exporta con fondo del tema.
+          var dlBtn = document.getElementById("curveDownload");
+          if (dlBtn) dlBtn.addEventListener("click", function () {
+            var baseW = chart.width || 880, baseH = chart.height || 480;
+            var dpr = Math.max(2, Math.min(12, 7680 / baseW));   // ancho objetivo 8K
+            var holder = document.createElement("div");
+            holder.style.cssText = "position:fixed;left:-99999px;top:0;width:" +
+              baseW + "px;height:" + baseH + "px;";
+            var ec = document.createElement("canvas");
+            holder.appendChild(ec);
+            document.body.appendChild(holder);
+            var bg = dark ? "#0f1b3a" : "#ffffff";
+            var bgFill = { id: "bgFill", beforeDraw: function (ch) {
+              var x = ch.ctx; x.save(); x.globalCompositeOperation = "destination-over";
+              x.fillStyle = bg; x.fillRect(0, 0, ch.width, ch.height); x.restore(); } };
+            var exp = new Chart(ec.getContext("2d"), {
+              data: { datasets: ds }, plugins: [tickerLabels, bgFill],
+              options: Object.assign({}, opts, { animation: false, devicePixelRatio: dpr })
+            });
+            requestAnimationFrame(function () { requestAnimationFrame(function () {
+              var a = document.createElement("a");
+              a.href = exp.toBase64Image("image/png", 1.0);
+              a.download = ({{ title|tojson }} + "_{{ y_label }}_vs_MD_8K")
+                .replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "") + ".png";
+              a.click();
+              exp.destroy();
+              document.body.removeChild(holder);
+            }); });
           });
         })();
       </script>

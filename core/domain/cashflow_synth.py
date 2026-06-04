@@ -162,6 +162,7 @@ def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
 
     Convención AR: para amortizing, los cupones se anclan a `amort_inicio`
     (no a `emision`) — AL29D paga cupones y amorts el mismo día (Jul-9 / Jan-9).
+    Day-count según `base calculo`: ACT/365, ACT/365.25, 30/360 o igual-período.
     """
     coupon_rate = _parse_coupon_rate(
         row.get("cupon anual %", row.get("cupon")), asof=date.today()
@@ -177,6 +178,8 @@ def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
     emision = _get_date(row, ("fecha_emision", "fecha emision")) \
         or (vto - relativedelta(years=2))
 
+    base = str(row.get("base calculo", row.get("base_calculo", "")) or "").strip().upper()
+
     capital_factor = _safe_float(row.get("capital factor"), default=1.0)
     if capital_factor <= 0:
         capital_factor = 1.0
@@ -190,44 +193,99 @@ def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
         and amort_count > 0
     )
 
+    # `prox_cupon` (próximo/1er cupón): ancla la grilla cuando está DESFASADA de la
+    # emisión y/o hay 1er cupón largo/corto (ej. CS50: emis 10/12 pero cupones 10/03 y
+    # 10/09, 1er pago 10/09/2026 cubre 9m). El 1er cupón acumula desde la emisión.
+    prox_cupon = _get_date(row, ("prox_cupon", "proximo cupon", "próximo cupón",
+                                 "primer_cupon", "primer cupon"))
+
     coupon_dates: List[date] = []
-    anchor = amort_inicio if is_amortizing else emision
-    cd = anchor
-    while cd > emision:
-        cd = cd - relativedelta(months=months_between)
-    cd = cd + relativedelta(months=months_between)
-    while cd <= vto:
-        if cd > emision:
+    if prox_cupon and prox_cupon > emision:
+        cd = prox_cupon
+        while cd <= vto:
             coupon_dates.append(cd)
+            cd = cd + relativedelta(months=months_between)
+    else:
+        anchor = amort_inicio if is_amortizing else emision
+        cd = anchor
+        while cd > emision:
+            cd = cd - relativedelta(months=months_between)
         cd = cd + relativedelta(months=months_between)
-    if not coupon_dates or coupon_dates[-1] != vto:
+        while cd <= vto:
+            if cd > emision:
+                coupon_dates.append(cd)
+            cd = cd + relativedelta(months=months_between)
+
+    # "Long last coupon": vto cae DESPUÉS del último cupón regular (ej. vto=31/08
+    # pero el schedule va 14/02 → 14/08). El último cupón se calcula hasta 14/08
+    # pero se paga en vto junto con la amortización — sin interés extra por el stub.
+    last_scheduled = coupon_dates[-1] if coupon_dates else emision
+    long_last_coupon = bool(coupon_dates) and last_scheduled < vto
+
+    if not long_last_coupon and (not coupon_dates or coupon_dates[-1] != vto):
         coupon_dates.append(vto)
 
     amort_map: Dict[date, float] = {}
     if is_amortizing:
-        per_installment = nominal_initial / amort_count
+        # Convención del broker: cuotas redondeadas a CENTAVOS, con el remanente
+        # de redondeo en la ÚLTIMA cuota (así Σ = nominal exacto). Para factores
+        # no-redondos (100/3 → 33.33/33.33/33.34, 100/13 → 7.69×12 + 7.72) esto
+        # matchea el cashflow de Balanz; para factores redondos (100/4=25) es no-op.
+        per_installment = round(nominal_initial / amort_count, 2)
         ad = amort_inicio
         remaining = nominal_initial
         placed = 0
         while placed < amort_count and ad <= vto and remaining > 1e-9:
-            amount = min(per_installment, remaining)
+            is_last = placed == amort_count - 1
+            amount = round(remaining, 2) if is_last else min(per_installment, remaining)
             amort_map[ad] = amort_map.get(ad, 0.0) + amount
-            remaining -= amount
+            remaining = round(remaining - amount, 6)
             placed += 1
             ad = ad + relativedelta(months=months_between)
         if remaining > 1e-9:
-            amort_map[vto] = amort_map.get(vto, 0.0) + remaining
+            amort_map[vto] = round(amort_map.get(vto, 0.0) + remaining, 2)
     else:
         amort_map[vto] = nominal_initial
+
+    def _interest(outstanding: float, prev_d: date, curr_d: date) -> float:
+        if "ACT/365.25" in base:
+            return outstanding * coupon_rate * (curr_d - prev_d).days / 365.25
+        if "ACT/365" in base:
+            return outstanding * coupon_rate * (curr_d - prev_d).days / 365.0
+        if "30/360" in base:
+            return outstanding * coupon_rate * days_30_360(prev_d, curr_d) / 360.0
+        return outstanding * coupon_rate / freq
 
     cfs: List[Cashflow] = []
     outstanding = nominal_initial
     all_dates = sorted(set(coupon_dates) | set(amort_map.keys()))
+    prev_coupon_date = emision
     for d in all_dates:
-        interest = outstanding * coupon_rate / freq if d in coupon_dates else 0.0
+        if d in coupon_dates:
+            interest = _interest(outstanding, prev_coupon_date, d)
+            prev_coupon_date = d
+        else:
+            interest = 0.0
         amort = amort_map.get(d, 0.0)
         outstanding = max(outstanding - amort, 0.0)
         cfs.append(Cashflow(date=d, amortization=amort, interest=interest))
+
+    # Post-proceso long last coupon: el último cupón regular (en last_scheduled) se
+    # mueve a vto junto con la amortización — el interés ya fue calculado hasta
+    # last_scheduled, no se agrega stub por el período extra hasta vto.
+    if long_last_coupon and len(cfs) >= 2:
+        vto_idx = next((i for i, cf in enumerate(cfs) if cf.date == vto), None)
+        reg_idx = next((i for i, cf in enumerate(cfs) if cf.date == last_scheduled), None)
+        if vto_idx is not None and reg_idx is not None and reg_idx < vto_idx:
+            vto_cf = cfs[vto_idx]
+            reg_cf = cfs[reg_idx]
+            cfs[vto_idx] = Cashflow(
+                date=vto,
+                amortization=vto_cf.amortization + reg_cf.amortization,
+                interest=reg_cf.interest,
+            )
+            cfs.pop(reg_idx)
+
     return cfs
 
 

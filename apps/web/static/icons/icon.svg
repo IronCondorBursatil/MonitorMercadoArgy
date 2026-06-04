@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="72" fill="#0f172a"/>
+  <rect x="72" y="300" width="56" height="140" rx="6" fill="#38bdf8" opacity=".9"/>
+  <rect x="152" y="228" width="56" height="212" rx="6" fill="#38bdf8" opacity=".9"/>
+  <rect x="232" y="168" width="56" height="272" rx="6" fill="#38bdf8" opacity=".9"/>
+  <rect x="312" y="204" width="56" height="236" rx="6" fill="#38bdf8" opacity=".9"/>
+  <rect x="392" y="148" width="56" height="292" rx="6" fill="#38bdf8" opacity=".9"/>
+  <polyline points="100,300 180,228 260,168 340,204 420,148"
+    stroke="#f59e0b" stroke-width="10" fill="none"
+    stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="100" cy="300" r="12" fill="#f59e0b"/>
+  <circle cx="180" cy="228" r="12" fill="#f59e0b"/>
+  <circle cx="260" cy="168" r="12" fill="#f59e0b"/>
+  <circle cx="340" cy="204" r="12" fill="#f59e0b"/>
+  <circle cx="420" cy="148" r="12" fill="#f59e0b"/>
+  <text x="256" y="490" font-family="system-ui,sans-serif" font-weight="700"
+    font-size="52" fill="#94a3b8" text-anchor="middle" letter-spacing="2">DATA912</text>
+</svg>

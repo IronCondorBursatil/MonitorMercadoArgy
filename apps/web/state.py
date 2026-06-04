@@ -17,6 +17,8 @@ class AppState:
         self._by_ticker: Dict[str, InstrumentMetrics] = {}
         self._last_refresh: Optional[datetime] = None
         self._bei: Optional[dict] = None  # tablas crudas de compute_bei_tables
+        self._options: list = []          # list[OptionItem] del último refresh (vacío hasta que arme)
+        self._options_by_ticker: Dict[str, object] = {}
         self._lock = asyncio.Lock()
         # Notificación para SSE (§7.4): cada update incrementa _revision y
         # despierta a los suscriptores de /stream (push event-driven vs polling).
@@ -69,3 +71,15 @@ class AppState:
 
     def bei_tables(self) -> Optional[dict]:
         return self._bei
+
+    def set_options(self, items: list) -> None:
+        """Setea la chain enriquecida de opciones (escrita por el refresh loop)."""
+        self._options = items or []
+        self._options_by_ticker = {it.ticker: it for it in self._options}
+
+    def options(self) -> list:
+        return self._options
+
+    def option(self, ticker: str):
+        """Devuelve el OptionItem del ticker dado o None."""
+        return self._options_by_ticker.get(ticker.upper())

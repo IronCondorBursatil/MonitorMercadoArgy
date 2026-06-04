@@ -12,6 +12,26 @@ from core.infrastructure.indices_provider import BCRAIndicesProvider
 logger = logging.getLogger(__name__)
 
 
+def _asof_price(series: dict, target: date, tol_days: Optional[int] = None) -> Optional[float]:
+    """Precio del último día con dato EN o ANTES de `target`. El histórico solo
+    tiene ruedas (sin fines de semana/feriados), así que un match exacto por fecha
+    devolvía None la mayoría de las veces; buscar el último ≤ target lo hace robusto
+    a los huecos del calendario.
+
+    `tol_days` (opcional): si el dato encontrado está MÁS de `tol_days` antes del
+    objetivo, se descarta (None). Evita el número engañoso de una fuente desfasada
+    — p.ej. una ventana de "7 días" cayendo a un cierre de hace un mes (que hacía
+    que "Sem" y "1M" dieran idénticos). Con dato fresco nunca se gatilla."""
+    if not series:
+        return None
+    best = max((d for d in series if d <= target), default=None)
+    if best is None:
+        return None
+    if tol_days is not None and (target - best).days > tol_days:
+        return None
+    return series[best]
+
+
 class GenerateMonitorReport:
     def __init__(self,
                  instruments_repo: IInstrumentsRepository,
@@ -79,12 +99,20 @@ class GenerateMonitorReport:
         # consolidated execute(). Return None on failure; execute() already
         # filters Nones out of the result list.
         try:
-            hist = self.provider.fetch_historical_prices(inst.ticker, 365)
+            # days=400 acota a ~13 meses (cubre 1A=365d + la tolerancia de 12d). La
+            # serie primada de Data912 puede tener AÑOS; sin esto el read-path (este
+            # enrich corre por instrumento cada 5s) escanearía toda la historia.
+            hist = self.provider.fetch_historical_prices(inst.ticker, 400)
 
             today = date.today()
-            px_7d = hist.get(today - timedelta(days=7))
-            px_30d = hist.get(today - timedelta(days=30))
-            px_1y = hist.get(today - timedelta(days=365))
+            # tol_days por ventana: tolera el hueco de calendario (findes/feriados)
+            # pero descarta bases demasiado viejas (fuente desfasada → engañoso).
+            px_7d = _asof_price(hist, today - timedelta(days=7), tol_days=5)
+            px_30d = _asof_price(hist, today - timedelta(days=30), tol_days=8)
+            px_90d = _asof_price(hist, today - timedelta(days=90), tol_days=12)
+            # YTD: cierre del año anterior (último día ≤ 31-dic) como base.
+            px_ytd = _asof_price(hist, date(today.year, 1, 1) - timedelta(days=1), tol_days=12)
+            px_1y = _asof_price(hist, today - timedelta(days=365), tol_days=12)
 
             # Pricing snapshot: para la pata ARS de un soberano usamos el precio
             # USD implícito (pesos ÷ MEP/CABLE) → TIR/V.Téc/MD/paridad correctas.
@@ -108,6 +136,8 @@ class GenerateMonitorReport:
 
             metrics.variance_7d = FinancialEngine.calculate_pct_change(snapshot.price, px_7d)
             metrics.variance_30d = FinancialEngine.calculate_pct_change(snapshot.price, px_30d)
+            metrics.variance_90d = FinancialEngine.calculate_pct_change(snapshot.price, px_90d)
+            metrics.variance_ytd = FinancialEngine.calculate_pct_change(snapshot.price, px_ytd)
             metrics.variance_1y = FinancialEngine.calculate_pct_change(snapshot.price, px_1y)
 
             return metrics

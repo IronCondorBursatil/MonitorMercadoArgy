@@ -98,7 +98,6 @@ def _log_dlr_spot_missing() -> None:
 
 def _reset_dlr_spot_warn() -> None:
     """Llamar cuando el spot DLR vuelve a estar disponible."""
-    import time as _time
     global _dlr_spot_fail_count, _dlr_spot_first_fail_ts, _dlr_spot_last_summary_ts
     with _DLR_SPOT_WARN_LOCK:
         if _dlr_spot_fail_count > 0:

@@ -4,6 +4,7 @@
 <script src="/static/vendor/gridstack/gridstack-all.js"></script>
 <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 {% endblock %}
 {% block content %}
 {# Resolución del grid: columnas y celdas chicas = resize de grano fino (se siente
@@ -29,6 +30,12 @@
         <span class="ph-title">{{ p.title }}</span>
         <span class="ph-tools">
           {% if p.chartable %}<button type="button" class="ph-btn" data-act="chart">Gráfico</button>{% endif %}
+          <button type="button" class="ph-btn ph-cam" data-act="shot" title="Compartir (imagen cuadrada p/ WhatsApp)" aria-label="Compartir imagen del panel">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </button>
           <span class="ph-cfg">
             <button type="button" class="ph-btn" data-act="cfg">Config</button>
             {# Desplegable: mostrar/ocultar columnas (mismo estilo que el CONFIG global). #}
@@ -52,7 +59,7 @@
       <div class="panel-body">
         <table>
           <thead>
-            <tr>{% for c in p.columns %}<th>{{ c.label }}</th>{% endfor %}</tr>
+            <tr>{% for c in p.columns %}<th class="{{ 'tircol' if p.tir_hl and c['key'] == 'tir' else '' }}">{{ c.label }}</th>{% endfor %}</tr>
           </thead>
           <tbody id="tbody-{{ p.id }}"
                  hx-get="/panels/{{ p.id }}/rows"
@@ -245,8 +252,15 @@
         var flt = panel.getAttribute("data-flt");
         var url = "/panels/" + id + "/chart" + (flt ? "?ccy=" + encodeURIComponent(flt.split(" ").join(",")) : "");
         if (window.htmx) htmx.ajax("GET", url, "#modal");
+      } else if (act === "shot") {
+        // Abre el popup "compartir" (cuadrado p/ WhatsApp): tabla completa + curva.
+        // El gráfico respeta el filtro de moneda actual (igual que "Gráfico").
+        var sflt = panel.getAttribute("data-flt");
+        var surl = "/panels/" + id + "/share" + (sflt ? "?ccy=" + encodeURIComponent(sflt.split(" ").join(",")) : "");
+        if (window.htmx) htmx.ajax("GET", surl, "#modal");
       }
     });
+
     // No arrastrar el panel al interactuar con la toolbar (el head es el handle).
     document.querySelectorAll(".ph-tools").forEach(function (t) {
       t.addEventListener("mousedown", function (e) { e.stopPropagation(); });

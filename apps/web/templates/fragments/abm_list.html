@@ -1,20 +1,17 @@
-<table>
-  <thead><tr><th>Ticker(s)</th><th>Hoja</th><th></th></tr></thead>
-  <tbody>
-    {% for i in instruments %}
-    <tr>
-      <td>{{ i.display }}</td>
-      <td>{{ i.sheet }}</td>
-      <td>
-        <button hx-get="/abm/form?sheet={{ i.sheet }}&key={{ i.key }}"
-                hx-target="#abm-form" hx-swap="innerHTML">editar</button>
-        <button class="delx" hx-delete="/abm/instrument/{{ i.key }}"
-                hx-target="#abm-list" hx-swap="innerHTML"
-                hx-confirm="¿Borrar {{ i.display }} del master?">✕</button>
-      </td>
-    </tr>
-    {% else %}
-    <tr class="empty"><td colspan="3">Sin instrumentos</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% for i in instruments %}
+<div class="abm-item" data-hoja="{{ i.sheet }}" data-tk="{{ i.tickers|join(' ')|lower }} {{ i.sheet|lower }}">
+  <a class="abm-item-main" hx-get="/abm/form?sheet={{ i.sheet }}&key={{ i.key }}"
+     hx-target="#abm-editor" hx-swap="innerHTML" onclick="abmSelect(this)">
+    <span class="abm-item-tks">
+      {% for t in i.tickers %}<b class="{{ 'main' if loop.first else '' }}">{{ t }}</b>{% endfor %}
+    </span>
+    <span class="abm-badge">{{ i.sheet.replace('_',' ') }}</span>
+  </a>
+  <button class="delx" hx-delete="/abm/instrument/{{ i.key }}"
+          hx-target="#abm-list" hx-swap="innerHTML"
+          hx-confirm="¿Borrar {{ i.display }} del master?"
+          onclick="event.stopPropagation()" title="Baja">✕</button>
+</div>
+{% else %}
+<div class="abm-faint" style="padding:16px">Sin instrumentos</div>
+{% endfor %}

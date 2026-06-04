@@ -1,0 +1,264 @@
+{# Popup "foto" del panel FUTUROS DLR — vista propia con pestañas (los futuros no
+   tienen scatter TIR×MD como la foto genérica). 3 pestañas perfiladas a derivados
+   de dólar; "Curva Rofex" es la default:
+     v1 Curva Rofex  → TNA implícita por contrato + grilla del informe A3.
+     v2 Carry        → tasa fija en pesos vs deval implícita (brecha = carry USD).
+     v9 Cobertura    → precio del dólar futuro + costo anualizado de cubrirse.
+   Chart.js + html2canvas se cargan en el <head> de index.html; htmx ejecuta este
+   <script> al hacer el swap. Read-only: vive en #modal, no toca el dashboard. #}
+<div class="modal-overlay" onclick="if(event.target===this)document.getElementById('modal').innerHTML=''">
+  <div class="share-wrap">
+    <div class="share-card futuros" id="futShareCard">
+      <div class="share-head">
+        <div class="share-head-l">
+          <b>FUTUROS DLR · <span style="color:#7aa0ff" id="futTabName">Curva Rofex</span></b>
+        </div>
+        <span class="share-head-r">
+          <span class="share-badge" id="futBadge">TNA implícita vs vencimiento</span>
+          <span class="share-head-tools" id="futTools">
+            <button type="button" class="ph-btn ph-cam" id="futSave" title="Guardar imagen (pestaña activa)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <span style="margin-left:6px">guardar</span>
+            </button>
+            <button type="button" class="ph-btn ph-x" onclick="document.getElementById('modal').innerHTML=''">✕</button>
+          </span>
+        </span>
+      </div>
+
+      <div class="ftabs" id="futTabs">
+        <button type="button" class="ftab-btn on" data-tab="v1">Curva Rofex</button>
+        <button type="button" class="ftab-btn" data-tab="v2">Carry</button>
+        <button type="button" class="ftab-btn" data-tab="v9">Cobertura</button>
+      </div>
+
+      <div class="share-body">
+        <div class="fpane on" data-tab="v1">
+          <div class="fchart-col"><div class="fchart-box"><canvas id="futCv-v1"></canvas></div></div>
+          <div class="ftable-col" id="futTbl-v1"></div>
+        </div>
+        <div class="fpane" data-tab="v2">
+          <div class="fchart-col"><div class="fchart-box"><canvas id="futCv-v2"></canvas></div></div>
+          <div class="ftable-col" id="futTbl-v2"></div>
+          {% if not has_peso_curve %}<div class="fnote">Sin curva de tasa fija en pesos disponible — la columna Carry queda en “—”.</div>{% endif %}
+        </div>
+        <div class="fpane" data-tab="v9">
+          <div class="fchart-col"><div class="fchart-box"><canvas id="futCv-v9"></canvas></div></div>
+          <div class="ftable-col" id="futTbl-v9"></div>
+        </div>
+      </div>
+
+      <div class="share-foot" style="display:flex;justify-content:flex-end;padding:8px 24px 14px;border-top:1px solid var(--panel-border);color:var(--text-faint);font-size:11.5px">
+        <span>Spot de cierre: <b style="color:var(--text-dim)">{{ spot_txt }}</b></span>
+      </div>
+    </div>
+  </div>
+
+  <script id="futData" type="application/json">{{ contracts_json|safe }}</script>
+  <script>
+  (function () {
+    var card = document.getElementById("futShareCard");
+    if (!card) return;
+    var C = [];
+    try { C = JSON.parse(document.getElementById("futData").textContent || "[]"); } catch (e) {}
+    if (!C.length) {
+      card.querySelector(".share-body").innerHTML =
+        '<div class="err" style="padding:30px;text-align:center;color:var(--neg)">Sin datos de futuros (el WebSocket de Matba está frío o caído).</div>';
+      card.querySelectorAll(".ftabs,.ftable-col").forEach(function (e) { e.style.display = "none"; });
+      return;
+    }
+    var hasPeso = {{ 'true' if has_peso_curve else 'false' }};
+
+    // ---- formato estilo proyecto (coma miles, punto decimales) ----
+    function num(v, d) { return (v == null || isNaN(v)) ? "—"
+      : Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+    function pct(v, d) { d = d == null ? 1 : d; return v == null ? "—" : num(v, d) + "%"; }
+    function sg(v, d) { d = d == null ? 2 : d; return v == null ? "—" : (v >= 0 ? "+" : "") + num(v, d); }
+    function sgp(v, d) { d = d == null ? 2 : d; return v == null ? "—" : (v >= 0 ? "+" : "") + num(v, d) + "%"; }
+    function vol(v) { if (v == null) return "—"; var a = Math.abs(v);
+      if (a >= 1e9) return num(v / 1e9, 1) + "B"; if (a >= 1e6) return num(v / 1e6, 1) + "M";
+      if (a >= 1e3) return num(v / 1e3, 1) + "K"; return num(v, 0); }
+    function cl(v) { return v == null ? "" : (v > 0 ? "pos" : (v < 0 ? "neg" : "")); }
+    var labels = C.map(function (r) { return r.label; });
+
+    // ---- tablas (share-tbl del proyecto) ----
+    // cols: {h, hl?, get(r)->{t, cls?}} ; get devuelve texto + clase opcional.
+    function buildTable(hostId, cols) {
+      var host = document.getElementById(hostId); if (!host) return;
+      var thead = "<thead><tr>" + cols.map(function (c) {
+        return '<th class="num ' + (c.hl ? "tircol" : "") + '">' + c.h + "</th>"; }).join("") + "</tr></thead>";
+      var tb = "<tbody>" + C.map(function (r) {
+        return "<tr>" + cols.map(function (c, i) {
+          var cell = c.get(r); var first = i === 0;
+          return '<td class="' + (first ? "" : "num ") + (cell.cls || "") + " " + (c.hl ? "tircol" : "") + '">' + cell.t + "</td>";
+        }).join("") + "</tr>";
+      }).join("") + "</tbody>";
+      host.innerHTML = '<table class="share-tbl">' + thead + tb + "</table>";
+    }
+
+    buildTable("futTbl-v1", [
+      { h: "Contrato", get: function (r) { return { t: r.label }; } },
+      { h: "FX Fut.",  get: function (r) { return { t: num(r.fx, 1) }; } },
+      { h: "Var 1D",   get: function (r) { return { t: sgp(r.var1d), cls: cl(r.var1d) }; } },
+      { h: "TNA", hl: 1, get: function (r) { return { t: pct(r.tna) }; } },
+      { h: "TEA",      get: function (r) { return { t: pct(r.tea) }; } },
+      { h: "Crawl mes", get: function (r) { return { t: pct(r.crawl, 2) }; } },
+      { h: "Open Int.", get: function (r) { return { t: num(r.oi, 0) }; } },
+      { h: "Vol $",    get: function (r) { return { t: vol(r.vol) }; } },
+      { h: "Días",     get: function (r) { return { t: num(r.dias, 0) }; } },
+    ]);
+    buildTable("futTbl-v2", [
+      { h: "Contrato", get: function (r) { return { t: r.label }; } },
+      { h: "TEA fut.", get: function (r) { return { t: pct(r.tea) }; } },
+      { h: "TEA pesos", get: function (r) { return { t: pct(r.peso_tea) }; } },
+      { h: "Carry", hl: 1, get: function (r) { return { t: r.carry == null ? "—" : sg(r.carry) + " pp", cls: cl(r.carry) }; } },
+      { h: "Basis $", get: function (r) { return { t: sg(r.basis, 1), cls: cl(r.basis) }; } },
+      { h: "Open Int.", get: function (r) { return { t: num(r.oi, 0) }; } },
+      { h: "Días", get: function (r) { return { t: num(r.dias, 0) }; } },
+    ]);
+    buildTable("futTbl-v9", [
+      { h: "Mes", get: function (r) { return { t: r.label }; } },
+      { h: "Dólar futuro", hl: 1, get: function (r) { return { t: num(r.fx, 1) }; } },
+      { h: "vs Spot", get: function (r) { return { t: sgp(r.vs_spot), cls: cl(r.vs_spot) }; } },
+      { h: "Costo cob. (TEA)", get: function (r) { return { t: pct(r.tea) }; } },
+      { h: "Costo mensual", get: function (r) { return { t: pct(r.crawl, 2) }; } },
+      { h: "Días", get: function (r) { return { t: num(r.dias, 0) }; } },
+    ]);
+
+    // ---- charts ----
+    function theme() {
+      var dark = document.documentElement.getAttribute("data-theme") === "dark";
+      return { dark: dark, txt: dark ? "#aab4d4" : "#4a5780",
+        grid: dark ? "rgba(255,255,255,.08)" : "rgba(10,29,74,.08)",
+        accent: dark ? "#6486e6" : "#3a5fcf", gold: "#d99a2b",
+        halo: dark ? "#0f1b3a" : "#ffffff" };
+    }
+    // Ajuste log de la curva: y = a + b·ln(x) por mínimos cuadrados (misma
+    // convención que _fit_log_curve del proyecto, acá con x = días al vto).
+    // null si <2 puntos válidos (x>0) o la matriz es singular.
+    function logfit(xs, ys) {
+      var n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (var i = 0; i < xs.length; i++) {
+        if (xs[i] == null || xs[i] <= 0 || ys[i] == null) continue;
+        var lx = Math.log(xs[i]);
+        n++; sx += lx; sy += ys[i]; sxx += lx * lx; sxy += lx * ys[i];
+      }
+      var denom = n * sxx - sx * sx;
+      if (n < 2 || Math.abs(denom) < 1e-12) return null;
+      var b = (n * sxy - sx * sy) / denom;
+      return { a: (sy - b * sx) / n, b: b };
+    }
+    // etiqueta de valor arriba de cada punto (como el informe A3)
+    function valueLabels(fmt) { return { id: "vl", afterDatasetsDraw: function (ch) {
+      var t = theme(), ctx = ch.ctx, m = ch.getDatasetMeta(0);
+      ctx.save(); ctx.font = "700 11px 'Inter Tight',sans-serif"; ctx.textAlign = "center";
+      ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = t.halo;
+      m.data.forEach(function (pt, i) { var v = ch.data.datasets[0].data[i]; if (v == null) return;
+        var s = fmt(v); ctx.strokeText(s, pt.x, pt.y - 9); ctx.fillStyle = t.accent; ctx.fillText(s, pt.x, pt.y - 9); });
+      ctx.restore(); } }; }
+    function baseOpts(yTitle, extra) { var t = theme();
+      return Object.assign({ responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { labels: { color: t.txt, boxWidth: 12, font: { size: 11 },
+          filter: function (it) { return it.text.indexOf("(trend)") < 0; } } } },
+        scales: { x: { ticks: { color: t.txt, font: { size: 10 } }, grid: { color: t.grid } },
+          y: { title: { display: !!yTitle, text: yTitle, color: t.txt }, ticks: { color: t.txt, font: { size: 10 } }, grid: { color: t.grid } } }
+      }, extra || {}); }
+
+    var CHARTS = {};   // tab -> Chart
+    function draw(tab) {
+      if (CHARTS[tab]) { CHARTS[tab].destroy(); delete CHARTS[tab]; }
+      var t = theme(), el = document.getElementById("futCv-" + tab); if (!el) return;
+      if (tab === "v1") {
+        var tna = C.map(function (r) { return r.tna; });
+        var dias = C.map(function (r) { return r.dias; });
+        // Curva log TNA = a + b·ln(días), evaluada en los días de cada contrato
+        // (el eje x es categórico por mes, pero los días crecen monótonos → sale
+        // la forma log cóncava). null si no ajusta → la curva no se dibuja.
+        var fit = logfit(dias, tna);
+        var curve = dias.map(function (d) {
+          return (fit && d != null && d > 0) ? fit.a + fit.b * Math.log(d) : null; });
+        CHARTS.v1 = new Chart(el.getContext("2d"), {
+          data: { labels: labels, datasets: [
+            { type: "line", label: "TNA", data: tna, borderColor: t.accent, backgroundColor: t.accent,
+              pointRadius: 4, pointBackgroundColor: t.accent, showLine: false, borderWidth: 0 },
+            { type: "line", label: "curva log (trend)", data: curve, borderColor: t.accent,
+              borderDash: [3, 4], borderWidth: 2, pointRadius: 0, tension: 0.25, spanGaps: true }
+          ] }, options: baseOpts("TNA %"), plugins: [valueLabels(function (v) { return num(v, 1) + "%"; })]
+        });
+      } else if (tab === "v2") {
+        CHARTS.v2 = new Chart(el.getContext("2d"), { type: "line",
+          data: { labels: labels, datasets: [
+            { label: "TEA pesos (tasa fija)", data: C.map(function (r) { return r.peso_tea; }),
+              borderColor: t.gold, backgroundColor: "rgba(217,154,43,.10)", pointRadius: 3, tension: .2, borderWidth: 2 },
+            { label: "TEA futuros (deval impl.)", data: C.map(function (r) { return r.tea; }),
+              borderColor: t.accent, backgroundColor: "rgba(58,95,207,.14)", pointRadius: 3, tension: .2, borderWidth: 2, fill: "-1" }
+          ] }, options: baseOpts("TEA %") });
+      } else if (tab === "v9") {
+        CHARTS.v9 = new Chart(el.getContext("2d"), {
+          data: { labels: labels, datasets: [
+            { type: "line", label: "Dólar futuro (FX)", data: C.map(function (r) { return r.fx; }),
+              borderColor: t.accent, backgroundColor: "rgba(58,95,207,.12)", pointRadius: 3, tension: .2, borderWidth: 2, fill: true, yAxisID: "y" },
+            { type: "line", label: "Costo cobertura (TEA)", data: C.map(function (r) { return r.tea; }),
+              borderColor: t.gold, borderWidth: 2, pointRadius: 3, tension: .2, yAxisID: "y1" }
+          ] }, options: baseOpts(null, { scales: {
+            y: { position: "left", title: { display: true, text: "$ / USD", color: t.txt }, ticks: { color: t.txt, font: { size: 10 } }, grid: { color: t.grid } },
+            y1: { position: "right", title: { display: true, text: "TEA %", color: t.txt }, ticks: { color: t.txt, font: { size: 10 } }, grid: { drawOnChartArea: false } },
+            x: { ticks: { color: t.txt, font: { size: 10 } }, grid: { color: t.grid } } } }) });
+      }
+    }
+    draw("v1");   // pestaña default
+
+    // ---- tabs ----
+    var TAB_META = {
+      v1: { name: "Curva Rofex", badge: "TNA implícita vs vencimiento" },
+      v2: { name: "Carry", badge: "Tasa pesos vs devaluación implícita" },
+      v9: { name: "Cobertura", badge: "Costo de cubrirse por mes" }
+    };
+    document.getElementById("futTabs").addEventListener("click", function (e) {
+      var btn = e.target.closest(".ftab-btn"); if (!btn) return;
+      var tab = btn.dataset.tab;
+      this.querySelectorAll(".ftab-btn").forEach(function (b) { b.classList.toggle("on", b === btn); });
+      card.querySelectorAll(".fpane").forEach(function (p) { p.classList.toggle("on", p.dataset.tab === tab); });
+      document.getElementById("futTabName").textContent = TAB_META[tab].name;
+      document.getElementById("futBadge").textContent = TAB_META[tab].badge;
+      // (re)dibuja: Chart.js no mide bien un canvas que estaba en display:none.
+      requestAnimationFrame(function () { draw(tab); });
+    });
+
+    // ---- guardar PNG de la pestaña activa (html2canvas) ----
+    var saveBtn = document.getElementById("futSave");
+    if (saveBtn) saveBtn.addEventListener("click", function () {
+      if (typeof html2canvas === "undefined") { alert("html2canvas no cargó"); return; }
+      saveBtn.disabled = true;
+      var dark = document.documentElement.getAttribute("data-theme") === "dark";
+      var bg = getComputedStyle(card).backgroundColor || (dark ? "#0f1b3a" : "#ffffff");
+      var side = card.offsetWidth || 1120;
+      var scale = Math.max(2, Math.min(6, Math.round(3000 / side)));
+      html2canvas(card, { scale: scale, backgroundColor: bg, useCORS: true, logging: false,
+        onclone: function (doc) {
+          var tools = doc.getElementById("futTools"); if (tools) tools.style.display = "none";
+          var tabs = doc.getElementById("futTabs"); if (tabs) tabs.style.display = "none";
+        }
+      }).then(function (canvas) {
+        canvas.toBlob(function (blob) {
+          if (!blob) { saveBtn.disabled = false; return; }
+          var active = card.querySelector(".ftab-btn.on");
+          var tn = (active ? active.textContent : "futuros").replace(/[^A-Za-z0-9]+/g, "_");
+          var d = new Date();
+          var ts = "" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") +
+            String(d.getDate()).padStart(2, "0") + "-" + String(d.getHours()).padStart(2, "0") +
+            String(d.getMinutes()).padStart(2, "0");
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "FUTUROS_DLR_" + tn + "_" + ts + ".png";
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        }, "image/png");
+      }).catch(function (err) { console.error("fut share", err); alert("Error generando la imagen: " + err); })
+        .finally(function () { saveBtn.disabled = false; });
+    });
+  })();
+  </script>
+</div>

@@ -33,35 +33,47 @@ class ProviderHub:
         "bonds": "https://data912.com/live/arg_bonds",
         "corp": "https://data912.com/live/arg_corp",
         "stocks": "https://data912.com/live/arg_stocks",
+        "options": "https://data912.com/live/arg_options",
     }
 
     def __init__(self, client: ResilientClient):
         self._client = client
         self._snapshot: Dict[str, Data912Row] = {}  # último snapshot bueno (stale-safe)
+        self._source: Dict[str, str] = {}           # symbol → endpoint de origen
 
     async def fetch_data912(self) -> Dict[str, Data912Row]:
-        async def _one(name: str, url: str) -> Dict[str, Data912Row]:
+        async def _one(name: str, url: str):
             try:
                 payload = await self._client.get_json(url, source=f"Data912/{name}")
-                return parse_snapshot_rows(payload if isinstance(payload, list) else [])
+                return name, parse_snapshot_rows(payload if isinstance(payload, list) else [])
             except CircuitOpenError:
                 logger.debug("Data912/%s breaker OPEN; usando stale", name)
-                return {}
+                return name, {}
+            except asyncio.CancelledError:  # respetar el protocolo de shutdown de asyncio
+                raise
             except Exception as e:  # noqa: BLE001 — un endpoint caído no tumba el batch
                 logger.warning("Data912/%s fetch failed: %s: %s", name, type(e).__name__, e)
-                return {}
+                return name, {}
 
         results = await asyncio.gather(
             *[_one(n, u) for n, u in self.DATA912_ENDPOINTS.items()]
         )
         merged: Dict[str, Data912Row] = {}
-        for r in results:
-            merged.update(r)
+        source: Dict[str, str] = {}
+        for name, rows in results:
+            for sym in rows:
+                source[sym] = name
+            merged.update(rows)
 
         # Preservar stale si todo falló (no wipear → el UI no queda en blanco).
         if merged:
             self._snapshot.update(merged)
+            self._source.update(source)
         return dict(self._snapshot)
+
+    def sources(self) -> Dict[str, str]:
+        """{symbol: endpoint} del último snapshot (para el listado de faltantes del ABM)."""
+        return dict(self._source)
 
     async def refresh_all(self) -> Dict[str, Data912Row]:
         """Refresca las fuentes async coordinadas. Hoy: Data912 (4 endpoints en

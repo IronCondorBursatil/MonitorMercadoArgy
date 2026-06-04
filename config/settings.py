@@ -63,11 +63,17 @@ class Settings(BaseSettings):
     db_dir: Path = Path(os.environ.get("LOCALAPPDATA", str(_BASE_DIR))) / "monitor"
     catalog_db: Path = db_dir / "catalog.db"
     analytics_duckdb: Path = db_dir / "analytics.duckdb"
+    # Cierres diarios por ticker (variaciones Sem/1M/3M/YTD/1A). Se auto-mantiene
+    # (priming Data912 historical + acumulación del feed vivo) — ver price_history.py.
+    price_history_db: Path = db_dir / "price_history.db"
 
     host: str = "127.0.0.1"
     port: int = 8000
     refresh_sec: int = 5
     bei_refresh_sec: int = 300
+    # Mantenimiento del store de precios: prime 1× + acumula cierre del feed. Diario
+    # alcanza (la historia cambia 1×/rueda); la última escritura del día ≈ cierre.
+    price_history_sec: int = 3600
 
     def model_post_init(self, __context) -> None:
         self.db_dir.mkdir(parents=True, exist_ok=True)
@@ -93,14 +99,14 @@ _LOG_FILE = str(settings.base_dir / "monitores_global.log")
 
 
 class _ConsoleFilter(logging.Filter):
-    """Política de CONSOLA: solo lo accionable. (El archivo recibe TODO.)
+    """Política de CONSOLA: solo lo accionable. (El archivo recibe WARNING+.)
 
     Deja pasar a la terminal únicamente:
       - WARNING / ERROR / CRITICAL  → fallas a resolver.
       - requests HTTP con error (uvicorn.access status >= 400).
       - cualquier record marcado explícito con extra={"console": True}.
-    Oculta de la consola (pero NO del archivo): el ruido por-ciclo —
-    httpx/httpcore (200 OK por fetch), access 2xx/3xx, e INFO de arranque/app.
+    Oculta de la consola: el ruido por-ciclo — httpx/httpcore (200 OK por fetch),
+    access 2xx/3xx, e INFO de arranque/app.
 
     Para forzar un INFO puntual a la terminal:  logger.info(msg, extra={"console": True})
     """
@@ -123,13 +129,15 @@ def setup_logging():
     if logging.getLogger().handlers:
         return
     fmt = logging.Formatter(LOG_FORMAT)
-    # ARCHIVO: log COMPLETO (INFO+, incluye httpx/access) — registro durable para
-    # debug. RotatingFileHandler: 5 MB × 5 backups (= 25 MB máx, respeta OneDrive).
+    # ARCHIVO: solo WARNING+ — registro durable de PROBLEMAS (errores de conexión,
+    # breakers, fallas de fetch) para post-mortem. Antes logueaba INFO+ (httpx/access
+    # por ciclo) y crecía a varios MB de ruido. En operación normal casi no crece.
+    # RotatingFileHandler: 5 MB × 5 backups (cap 25 MB, respeta OneDrive).
     file_handler = RotatingFileHandler(
         _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8",
     )
     file_handler.setFormatter(fmt)
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.WARNING)
     # CONSOLA: solo lo accionable (ver _ConsoleFilter). El ruido va al archivo.
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(fmt)

@@ -1,6 +1,6 @@
 <form hx-post="/abm/save" hx-target="#abm-list" hx-swap="innerHTML"
-      hx-on::after-request="if(event.detail.successful){this.reset(); document.getElementById('abm-form').innerHTML='';}">
-  <h4>{{ label }}{% if ticker %} · editar {{ ticker }}{% endif %}</h4>
+      hx-on::after-request="if(event.detail.successful){abmFlash(this);}">
+  <h4>{{ label }}{% if ticker %} · editar <b>{{ ticker }}</b>{% endif %}</h4>
   <input type="hidden" name="sheet" value="{{ sheet }}">
   <div class="abm-fields">
     {% for f in fields %}
@@ -23,5 +23,63 @@
     </label>
     {% endfor %}
   </div>
-  <button type="submit">Guardar</button>
+  <div class="abm-actions">
+    <button type="submit">Guardar</button>
+    <span class="abm-flash" hidden>✓ guardado</span>
+  </div>
 </form>
+
+{% if ticker %}
+<div class="abm-preview">
+  <div class="abm-sec">Métricas {% if metrics %}<span class="abm-faint">· vivas ({{ metrics.ticker }})</span>{% endif %}</div>
+  {% if metrics %}
+  <div class="abm-tiles">
+    <div class="abm-tile"><div class="v">{{ '%.2f'|format(metrics.price) if metrics.price is not none else '—' }}</div><div class="k">Precio</div></div>
+    <div class="abm-tile pos"><div class="v">{{ '%.2f'|format(metrics.tir*100)+'%' if metrics.tir is not none else '—' }}</div><div class="k">TIR</div></div>
+    <div class="abm-tile"><div class="v">{{ '%.2f'|format(metrics.md) if metrics.md is not none else '—' }}</div><div class="k">MD</div></div>
+    <div class="abm-tile"><div class="v">{{ '%.1f'|format(metrics.par*100)+'%' if metrics.par is not none else '—' }}</div><div class="k">Paridad</div></div>
+    <div class="abm-tile"><div class="v">{{ '%.2f'|format(metrics.vtec) if metrics.vtec is not none else '—' }}</div><div class="k">V.Téc</div></div>
+  </div>
+  {% else %}
+  <div class="abm-faint" style="padding:6px 2px">Sin métricas vivas ahora (el bono no cotiza o falta el primer refresh de Data912).</div>
+  {% endif %}
+
+  {% set calc_tks = [values.ticker_ars, values.ticker_mep, values.ticker_ccl]|select|list %}
+  {% set calc_default = values.ticker_mep or values.ticker_ccl or values.ticker_ars or ticker %}
+  <div class="abm-sec">Calculadora <span class="abm-faint">· precio ↔ TIR (motor en vivo)</span></div>
+  <div class="abm-calc">
+    <select id="abm-calc-tk" name="ticker" class="abm-calc-tk" title="Pata (moneda) a calcular">
+      {% for t in calc_tks %}<option value="{{ t }}" {{ 'selected' if t == calc_default else '' }}>{{ t }}</option>{% endfor %}
+    </select>
+    <form class="abm-calc-f" hx-post="/abm/calc" hx-include="#abm-calc-tk" hx-target="#abm-calc-out" hx-swap="innerHTML">
+      <input name="price" type="number" step="0.01" placeholder="Precio (dirty)">
+      <button type="submit">→ TIR / métricas</button>
+    </form>
+    <span class="abm-calc-sep">o</span>
+    <form class="abm-calc-f" hx-post="/abm/calc" hx-include="#abm-calc-tk" hx-target="#abm-calc-out" hx-swap="innerHTML">
+      <input name="tir_pct" type="number" step="0.01" placeholder="TIR %">
+      <button type="submit">→ Precio</button>
+    </form>
+  </div>
+  <div id="abm-calc-out"></div>
+
+  <div class="abm-sec">Flujo de fondos {% if cashflows %}<span class="abm-faint">· {{ cashflows|length }} pagos</span>{% endif %}</div>
+  {% if cashflows %}
+  <table class="abm-cf">
+    <thead><tr><th>Fecha</th><th>Amort.</th><th>Renta</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for cf in cashflows %}
+      <tr>
+        <td>{{ cf.date }}</td>
+        <td class="num">{{ '%.2f'|format(cf.amortization) }}</td>
+        <td class="num">{{ '%.2f'|format(cf.interest) }}</td>
+        <td class="num">{{ '%.2f'|format(cf.amortization + cf.interest) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="abm-faint" style="padding:6px 2px">Sin flujos materializados.</div>
+  {% endif %}
+</div>
+{% endif %}

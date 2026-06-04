@@ -24,7 +24,11 @@ class Base(DeclarativeBase):
 class InstrumentORM(Base):
     __tablename__ = "instruments"
 
-    ticker: Mapped[str] = mapped_column(String, primary_key=True)
+    ticker: Mapped[str] = mapped_column(String, primary_key=True)  # primario (ARS/pesos o el principal)
+    # Multi-ticker: mismas condiciones, distinta moneda de liquidación (sufijo
+    # D=MEP, C=CABLE). Opcionales; al cargar se expande a una especie por ticker.
+    ticker_mep: Mapped[Optional[str]] = mapped_column(String, default=None)
+    ticker_ccl: Mapped[Optional[str]] = mapped_column(String, default=None)
     short_name: Mapped[str] = mapped_column(String, default="")
     instrument_type: Mapped[str] = mapped_column(String, default="")
     maturity_date: Mapped[Optional[date]] = mapped_column(default=None)

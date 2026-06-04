@@ -16,8 +16,8 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from apps.web.bond_detail import calculate, get_bond_detail
-from apps.web.deps import get_fx, get_indices, get_provider, get_repo
+from apps.web.bond_detail import calculate, cer_projection, get_bond_detail
+from apps.web.deps import get_fx, get_indices, get_provider, get_repo, get_state
 
 router = APIRouter()
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
@@ -53,3 +53,91 @@ def metrics(ticker: str, request: Request,
         res = calculate(ticker, repo, provider, indices, fx, mode="from_price",
                         price=price, price_mode="dirty", settlement_lag=settlement_lag)
     return _TEMPLATES.TemplateResponse(request, "fragments/calc_result.html", {"res": res})
+
+
+def _to_float(raw):
+    """Parse tolerante (acepta coma decimal). None si no es número."""
+    if raw is None:
+        return None
+    try:
+        return float(str(raw).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _rem_provider():
+    from core.infrastructure.rem_provider import REMProvider
+    return REMProvider()
+
+
+def _sendero(state):
+    """Filas del sendero mensual BEI/REM del último cómputo BEI (o None)."""
+    bei = state.bei_tables() if state is not None else None
+    return (bei or {}).get("sendero") if bei else None
+
+
+def _render_cer_drawer(request, data, *, ticker, lag, price, mode, unif, raw_inputs):
+    unif_val = unif
+    if unif_val is None and data.get("default_unif") is not None:
+        unif_val = round(data["default_unif"] * 100, 2)
+    return _TEMPLATES.TemplateResponse(request, "fragments/cer_drawer_body.html", {
+        "d": data, "ticker": ticker, "lag": lag, "price": price,
+        "mode": mode, "unif": unif_val, "raw_inputs": raw_inputs,
+    })
+
+
+@router.get("/bond/{ticker}/cer", response_class=HTMLResponse)
+def cer_drawer(ticker: str, request: Request, lag: int = 1,
+               price: Optional[float] = None,
+               repo=Depends(get_repo), provider=Depends(get_provider),
+               indices=Depends(get_indices), fx=Depends(get_fx), state=Depends(get_state)):
+    """Cuerpo del cajón 'Proyección CER' (carga inicial): escenarios + valor CER
+    por mes hasta el vto, con REM/BEI de referencia."""
+    if price is None and state is not None:
+        price = state.price_of(ticker)
+    data = cer_projection(ticker, repo, provider, indices, fx,
+                          price_dirty=price, settlement_lag=lag,
+                          bei_sendero=_sendero(state), rem_provider=_rem_provider())
+    return _render_cer_drawer(request, data, ticker=ticker, lag=lag, price=price,
+                              mode="uniforme", unif=None, raw_inputs={})
+
+
+@router.post("/bond/{ticker}/cer", response_class=HTMLResponse)
+async def cer_drawer_calc(ticker: str, request: Request,
+                          repo=Depends(get_repo), provider=Depends(get_provider),
+                          indices=Depends(get_indices), fx=Depends(get_fx),
+                          state=Depends(get_state)):
+    """Recalcula el cajón con el escenario del usuario (uniforme o por mes)."""
+    form = await request.form()
+    lag = int(_to_float(form.get("lag")) or 1)
+    mode = form.get("mode", "uniforme")
+    price = _to_float(form.get("price"))
+
+    custom_infl = custom_monthly = None
+    raw_inputs: dict = {}
+    if mode == "custom":
+        custom_monthly = {}
+        for key, val in form.items():
+            if not key.startswith("infl_"):
+                continue
+            ym = key[5:]
+            raw_inputs[ym] = val
+            dec = _to_float(val)
+            if dec is None:
+                continue
+            try:
+                y, m = ym.split("-")
+                custom_monthly[(int(y), int(m))] = dec / 100.0
+            except ValueError:
+                pass
+        custom_monthly = custom_monthly or None
+    else:
+        ci = _to_float(form.get("unif"))
+        custom_infl = (ci / 100.0) if ci is not None else None
+
+    data = cer_projection(ticker, repo, provider, indices, fx,
+                          price_dirty=price, settlement_lag=lag,
+                          bei_sendero=_sendero(state), rem_provider=_rem_provider(),
+                          custom_infl_monthly=custom_infl, custom_monthly=custom_monthly)
+    return _render_cer_drawer(request, data, ticker=ticker, lag=lag, price=price,
+                              mode=mode, unif=form.get("unif"), raw_inputs=raw_inputs)

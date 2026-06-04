@@ -100,19 +100,6 @@ def _save_csv(path: str, data: Dict[date, float]) -> None:
             pass
 
 
-def _fetch_catalog() -> list:
-    """Fetch the full BCRA Monetarias catalog: all variables with metadata
-    and latest value. Returns [] on failure."""
-    url = f"{_BCRA_BASE}?limit=3000"
-    try:
-        payload = http_get_json(url, timeout=15, user_agent="Mozilla/5.0",
-                                source="BCRA/catalog")
-        return payload.get("results", [])
-    except Exception as e:
-        logger.warning(f"BCRA catalog fetch failed: {e}")
-        return []
-
-
 class BCRAIndicesProvider:
     """CER + TAMAR + A3500 + Reservas from BCRA, hydrated from disk on startup."""
 
@@ -130,10 +117,6 @@ class BCRAIndicesProvider:
     _cache_reservas: Dict[date, float] = {}
     _last_attempt: Optional[date] = None
     _disk_loaded: bool = False
-
-    # Catálogo completo de variables BCRA — actualizado una vez por día.
-    _catalog: list = []
-    _catalog_date: Optional[date] = None
 
     def __init__(self, excel_repo=None):
         self.excel_repo = excel_repo
@@ -264,16 +247,3 @@ class BCRAIndicesProvider:
             for d, v in sorted(self._cache_tamar.items())
             if d >= cutoff
         ]
-
-    def get_catalog(self) -> list:
-        """Catálogo completo de variables BCRA con metadatos y último valor.
-        Cache diario; en caso de fallo retorna el último catálogo conocido o []."""
-        with self._lock:
-            if self._catalog_date == date.today() and self._catalog:
-                return list(self._catalog)
-            cat = _fetch_catalog()
-            if cat:
-                type(self)._catalog = cat
-                type(self)._catalog_date = date.today()
-                logger.info(f"BCRA catalog: {len(cat)} variables loaded.")
-            return list(self._catalog)

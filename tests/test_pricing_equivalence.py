@@ -136,11 +136,15 @@ def test_metrics_equivalence(instruments):
     ref = date.today()
     mismatches = []
     for inst in instruments:
+        # `days_coupon` y `current_yield` se sacaron a propósito: son métricas de
+        # DISPLAY (no invariantes de pricing) y se realinearon a la convención del
+        # informe IAMC/Balanz divergiendo del legacy congelado — days desde el día
+        # hábil de pago, y current_yield = cupón anual / clean (ver
+        # tests/test_yield_conventions.py). El harness sigue protegiendo TIR/PV/MD/
+        # payoff/accrued/residual, que NO cambian.
         pairs = {
             "accrued": (Old.accrued_interest(inst, ref), New.accrued_interest(inst, ref)),
             "residual": (Old.residual_nominal(inst, ref), New.residual_nominal(inst, ref)),
-            "days_coupon": (Old.days_since_last_coupon(inst, ref), New.days_since_last_coupon(inst, ref)),
-            "current_yield": (Old.current_yield(inst, 100.0, ref), New.current_yield(inst, 100.0, ref)),
             "dv01": (Old.dv01(inst, 0.3, ref), New.dv01(inst, 0.3, ref)),
             "convexity": (Old.convexity(inst, 0.3, ref), New.convexity(inst, 0.3, ref)),
             "vanilla_pv": (Old._vanilla_pv(inst, 0.3, ref), New._vanilla_pv(inst, 0.3, ref)),

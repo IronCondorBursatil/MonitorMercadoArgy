@@ -11,6 +11,7 @@ from core.domain.pricing.strategies import (
     CerStrategy,
     DolarLinkedStrategy,
     DualCerTamarStrategy,
+    HardDollarStrategy,
     TamarStrategy,
 )
 
@@ -26,6 +27,7 @@ _RULES: List[Tuple[Callable, PricingStrategy]] = [
     (lambda i: i.is_dual_cer_tamar, DualCerTamarStrategy()),
     (lambda i: i.is_tamar_puro or i.is_dual_tamar, TamarStrategy()),
     (lambda i: i.is_dolar_linked, DolarLinkedStrategy()),
+    (lambda i: i.is_hard_dollar, HardDollarStrategy()),
     (lambda i: i.is_cer, CerStrategy()),
 ]
 _DEFAULT = VanillaStrategy()

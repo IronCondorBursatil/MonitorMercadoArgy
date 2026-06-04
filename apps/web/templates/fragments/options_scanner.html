@@ -1,0 +1,132 @@
+{# Scanner full-width: todas las opciones con tasas implícitas anualizadas.
+   Filtros chip + búsqueda; sort por header click; row click salta al subyacente. #}
+<div class="opt-ph opt-scan-h">
+  <span><b>SCANNER · TASA IMPLÍCITA</b> · {{ total }} contratos</span>
+
+  <form id="scan-form" hx-get="/options/scanner" hx-target="#opt-scan-wrap"
+        hx-swap="innerHTML" hx-trigger="refresh-scanner from:body, change"
+        style="display:contents">
+    <input type="hidden" name="sort_by" value="{{ sort_by }}">
+    <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
+
+    <span class="opt-scan-fg">
+      <span class="lbl">Tipo</span>
+      {% for k, lbl in [("", "All"), ("C", "Calls"), ("V", "Puts")] %}
+      <label class="opt-chip {% if kind == k %}on{% endif %}">
+        <input type="radio" name="kind" value="{{ k }}" {% if kind == k %}checked{% endif %} style="display:none">
+        {{ lbl }}
+      </label>
+      {% endfor %}
+    </span>
+
+    <span class="opt-scan-fg">
+      <span class="lbl">Liq</span>
+      {% for k, lbl in [("", "All"), ("bid", "Bid>0"), ("vol", "Vol>100")] %}
+      <label class="opt-chip {% if liq == k %}on{% endif %}">
+        <input type="radio" name="liq" value="{{ k }}" {% if liq == k %}checked{% endif %} style="display:none">
+        {{ lbl }}
+      </label>
+      {% endfor %}
+    </span>
+
+    <span class="opt-scan-fg">
+      <span class="lbl">Vto</span>
+      <label class="opt-chip {% if vto == '' %}on{% endif %}">
+        <input type="radio" name="vto" value="" {% if vto == '' %}checked{% endif %} style="display:none">All
+      </label>
+      {% for m in months %}
+      <label class="opt-chip {% if vto == m %}on{% endif %}">
+        <input type="radio" name="vto" value="{{ m }}" {% if vto == m %}checked{% endif %} style="display:none">{{ m }}
+      </label>
+      {% endfor %}
+    </span>
+
+    <span class="opt-scan-fg" style="margin-left:auto">
+      <input id="scan-search" class="opt-scan-input" name="q" value="{{ q }}"
+             placeholder="ticker / subyac" autocomplete="off">
+    </span>
+  </form>
+</div>
+
+<div class="opt-scan-body">
+  <table class="opt-scan-tbl">
+    <thead><tr>
+      {% set cols = [
+        ("ticker", "Ticker"),
+        ("underlying", "Subyac."),
+        ("kind_label", "C/P"),
+        ("strike", "Strike"),
+        ("month", "Vto"),
+        ("t_days", "Días"),
+        ("spot", "Spot"),
+        ("moneyness_pct", "vs Spot"),
+        ("bid", "Bid"),
+        ("ask", "Ask"),
+        ("iv_pct", "IV"),
+        ("tna_bruta", "TNA bid/S"),
+        ("tea_bruta", "TEA bid/S"),
+        ("tna_strike", "TNA al strike"),
+        ("volume", "Vol"),
+        ("oi", "OI"),
+      ] %}
+      {% for k, lbl in cols %}
+      <th class="{% if k == sort_by %}sorted {% if sort_dir == 'asc' %}asc{% endif %}{% endif %}"
+          onclick="optScanSort('{{ k }}')">{{ lbl }}</th>
+      {% endfor %}
+    </tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="tk" onclick="optSetUnderlying('{{ r.underlying }}')">{{ r.ticker }}</td>
+        <td>{{ r.underlying }}</td>
+        <td><span class="kind-{{ r.kind }}">{{ r.kind_label }}</span></td>
+        <td>{{ "%.2f"|format(r.strike) }}</td>
+        <td>{{ r.month }}</td>
+        <td>{{ r.t_days }}</td>
+        <td>{{ "%.2f"|format(r.spot) }}</td>
+        <td>{% if r.moneyness_pct is not none %}{{ "%.1f"|format(r.moneyness_pct * 100) }}%{% else %}—{% endif %}</td>
+        <td>{{ "%.2f"|format(r.bid) }}</td>
+        <td>{{ "%.2f"|format(r.ask) }}</td>
+        <td>{% if r.iv_pct is not none %}{{ "%.0f"|format(r.iv_pct) }}%{% else %}—{% endif %}</td>
+        <td class="tna {% if r.tna_bruta is not none and r.tna_bruta > 0.5 %}high{% elif r.tna_bruta is none or r.tna_bruta < 0.10 %}low{% endif %}">
+          {% if r.tna_bruta is not none %}{{ "%.0f"|format(r.tna_bruta * 100) }}%{% else %}—{% endif %}</td>
+        <td class="tna {% if r.tea_bruta is not none and r.tea_bruta > 0.5 %}high{% elif r.tea_bruta is none or r.tea_bruta < 0.10 %}low{% endif %}">
+          {% if r.tea_bruta is not none %}{{ "%.0f"|format(r.tea_bruta * 100) }}%{% else %}—{% endif %}</td>
+        <td class="tna {% if r.tna_strike is not none and r.tna_strike > 0.5 %}high{% elif r.tna_strike is none or r.tna_strike < 0.10 %}low{% endif %}">
+          {% if r.tna_strike is not none %}{{ "%.0f"|format(r.tna_strike * 100) }}%{% else %}—{% endif %}</td>
+        <td>{{ "{:,.0f}".format(r.volume).replace(",", ".") }}</td>
+        <td>{{ "{:,.0f}".format(r.oi).replace(",", ".") }}</td>
+      </tr>
+      {% endfor %}
+      {% if truncated %}
+      <tr><td colspan="16" style="text-align:center;color:var(--text-mute);padding:8px">
+        … {{ truncated }} más (afiná filtros)
+      </td></tr>
+      {% endif %}
+      {% if not rows %}
+      <tr><td colspan="16" class="dim" style="text-align:center;padding:24px">Sin resultados.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  function optScanSort(k) {
+    var form = document.getElementById("scan-form");
+    var by = form.querySelector("input[name=sort_by]");
+    var dir = form.querySelector("input[name=sort_dir]");
+    if (by.value === k) dir.value = dir.value === "asc" ? "desc" : "asc";
+    else { by.value = k; dir.value = "desc"; }
+    htmx.trigger("#opt-scan-wrap", "refresh-scanner");
+  }
+  /* Chips: el `change` del radio dispara el form (hx-trigger). Marcar `.on` visual. */
+  document.querySelectorAll("#scan-form .opt-chip input").forEach(function (inp) {
+    inp.addEventListener("change", function () {
+      var name = inp.name;
+      document.querySelectorAll("#scan-form .opt-chip").forEach(function (c) {
+        var v = c.querySelector("input");
+        if (v && v.name === name) c.classList.toggle("on", v.checked);
+      });
+    });
+  });
+</script>

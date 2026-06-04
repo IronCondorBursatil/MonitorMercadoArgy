@@ -10,7 +10,6 @@ Datos diarios (no live) → no vive del refresh de 5s.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse

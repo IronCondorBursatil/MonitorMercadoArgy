@@ -12,6 +12,7 @@ CER = ["CER", "LECER", "BONCER", "BONCER ZC", "CON CUPON", "STEP-UP"]
 DOLAR_LINKED = ["DOLAR_LINKED"]
 TAMAR = ["PURO"]            # TAMAR-linked: pay accrued TAMAR rate at maturity
 DUAL_TAMAR = ["DUAL", "DUAL_CER_TAMAR"]  # Dual TAMAR (fixed-floor) + Dual CER/TAMAR (new TXMJ* series)
+OBLIGACIONES_NEGOCIABLES = ["HARD DOLLAR", "DOLLAR LINKED"]  # ONs corporativas: hard-dollar (paga USD) / dollar-linked (paga pesos × FX). Ambos bajo categoría "Obligaciones Negociables".
 
 # BYMA Panel Líder — universo de acciones que componen el índice principal
 # del mercado argentino (revisado trimestralmente por BYMA). No son

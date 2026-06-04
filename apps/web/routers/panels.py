@@ -25,7 +25,8 @@ from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_fx, get_indices, get_provider, get_rofex, get_state
 from config.settings import settings
-from core.domain.instrument_groups import PANEL_LIDER
+from core.holiday_engine import settlement_byma_date
+from core.domain.instrument_groups import OBLIGACIONES_NEGOCIABLES, PANEL_LIDER
 from core.domain.portfolio import position_currency
 from core.domain.services import FinancialEngine
 from core.infrastructure.futures_provider import (
@@ -68,6 +69,19 @@ _BONARES_COLS = [
     {"key": "change_pct", "label": "%Día", "kind": "percent_signed", "decimals": 2},
     {"key": "volume", "label": "Vol $", "kind": "volume"},
 ]
+# Soberanos USD (Bonares/Globales) + Bopreales: igual que _BONARES_COLS pero con
+# las ventanas de rendimiento (Sem/1M/3M/YTD/1A) tras %Día, alimentadas por el
+# store de precios (price_history.py: Data912 historical + acumulación del feed).
+# Dólar Linked sigue usando _BONARES_COLS (su histórico recién acumula con el tiempo).
+_SOBERANO_USD_COLS = [
+    *_BONARES_COLS[:-1],  # Ticker…%Día (todo menos "Vol $")
+    {"key": "var_7d", "label": "Sem", "kind": "percent_signed", "decimals": 2},
+    {"key": "var_30d", "label": "1M", "kind": "percent_signed", "decimals": 2},
+    {"key": "var_90d", "label": "3M", "kind": "percent_signed", "decimals": 2},
+    {"key": "var_ytd", "label": "YTD", "kind": "percent_signed", "decimals": 2},
+    {"key": "var_1y", "label": "1A", "kind": "percent_signed", "decimals": 2},
+    _BONARES_COLS[-1],    # "Vol $" al final
+]
 _CER_COLS = [
     {"key": "ticker", "label": "Ticker", "kind": "text"},
     {"key": "category", "label": "Categoría", "kind": "text"},
@@ -92,6 +106,18 @@ _TASA_FIJA_COLS = [
     {"key": "tem", "label": "TEM(365)", "kind": "percent", "decimals": 2},
     {"key": "duration", "label": "DM", "kind": "number", "decimals": 2},
     {"key": "change_pct", "label": "Var %", "kind": "percent_signed", "decimals": 2},
+    {"key": "volume", "label": "Vol $", "kind": "volume"},
+]
+_ON_COLS = [
+    {"key": "ticker", "label": "Ticker", "kind": "text"},
+    {"key": "short_name", "label": "Emisor", "kind": "text"},
+    {"key": "vto", "label": "Vto", "kind": "date"},
+    {"key": "price", "label": "Precio", "kind": "number", "decimals": 2},
+    {"key": "technical_value", "label": "V.Téc", "kind": "number", "decimals": 2},
+    {"key": "parity", "label": "Paridad", "kind": "percent", "decimals": 2},
+    {"key": "tir", "label": "TIR", "kind": "percent", "decimals": 2},
+    {"key": "duration", "label": "MD", "kind": "number", "decimals": 2},
+    {"key": "change_pct", "label": "%Día", "kind": "percent_signed", "decimals": 2},
     {"key": "volume", "label": "Vol $", "kind": "volume"},
 ]
 _TAMAR_COLS = [
@@ -166,12 +192,13 @@ _BEI_TABLE_KEY = {"bei_tenor": "tenor", "bei_sendero": "sendero", "bei_pares": "
 
 # id -> (título, {instrument_types}, columnas)
 PANELS = {
-    "bonares": ("BONARES Y GLOBALES", {"BONAR", "GLOBAL"}, _BONARES_COLS),
-    "bopreales": ("BOPREALES", {"BOPREAL"}, _BONARES_COLS),
+    "bonares": ("BONARES Y GLOBALES", {"BONAR", "GLOBAL"}, _SOBERANO_USD_COLS),
+    "bopreales": ("BOPREALES", {"BOPREAL"}, _SOBERANO_USD_COLS),
     "cer": ("BONOS CER", {"CER", "LECER", "BONCER", "BONCER ZC", "CON CUPON", "STEP-UP"}, _CER_COLS),
     "tasa_fija": ("TASA FIJA", {"LECAP", "BONCAP", "BONOFIJA"}, _TASA_FIJA_COLS),
     "dolar_linked": ("DOLAR LINKED", {"DOLAR_LINKED"}, _BONARES_COLS),
     "tamar": ("TAMAR / DUAL", {"PURO", "DUAL", "DUAL_CER_TAMAR"}, _TAMAR_COLS),
+    "obligaciones_negociables": ("OBLIGACIONES NEGOCIABLES · ON USD", set(OBLIGACIONES_NEGOCIABLES), _ON_COLS),
     "valor_relativo": ("VALOR RELATIVO · rich / cheap (curvas peso)", set(), _VR_COLS),
     "panel_lider": ("PANEL LÍDER · acciones", set(), _PANEL_LIDER_COLS),
     "futuros": ("FUTUROS DLR (Matba/Rofex)", set(), _FUTUROS_COLS),
@@ -180,6 +207,7 @@ PANELS = {
     "bei_pares": ("MÉTODO DE PARES (cross-check NT8 §A)", set(), _BEI_PARES_COLS),
 }
 PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreales",
+               "obligaciones_negociables",
                "valor_relativo", "panel_lider", "futuros",
                "bei_tenor", "bei_sendero", "bei_pares"]
 
@@ -188,7 +216,15 @@ PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreale
 # Solo BONARES/GLOBALES: tienen las 3 patas (ARS/MEP/CABLE) limpias. Los BOPREAL
 # son casi todos sólo-MEP (sufijo D), así que el default ARS los ocultaría — si
 # se quisieran filtrar habría que elegirles otro default.
-CCY_FILTER_PANELS = {"bonares"}
+CCY_FILTER_PANELS = {"bonares", "obligaciones_negociables"}
+
+# Paneles donde se resalta la columna TIR (fondo accent, mismo efecto que la
+# `sortcol` del FCI) para distinguirla rápido: TODOS los paneles de bonos que
+# tienen columna TIR — soberanos (CER / Tasa Fija / TAMAR / Dólar Linked / Bonares
+# / Bopreales) + corporativos (ON) + valor relativo. Se aplica en el panel del
+# dashboard y en el popup de compartir (la foto).
+_TIR_HL_PANELS = {pid for pid, (_t, _types, _cols) in PANELS.items()
+                  if any(c.get("key") == "tir" for c in _cols)}
 
 
 def _ticker_ccy(ticker: str) -> str:
@@ -295,6 +331,7 @@ def _row_values(m, today: date) -> dict:
     next_cp = _next_coupon_date(inst, today)
     return {
         "ticker": inst.ticker,
+        "short_name": inst.short_name,
         "category": inst.category,
         "vto": vto,
         "days_next_coupon": (next_cp - today).days if next_cp else None,
@@ -307,6 +344,14 @@ def _row_values(m, today: date) -> dict:
         "tem": _pct(FinancialEngine.tea_to_tem(m.tir)),
         "duration": m.duration,
         "change_pct": m.snapshot.change_pct,
+        # Rendimientos por ventana (fracción → %). Salen de fetch_historical_prices
+        # (store price_history.py + CSV legacy), poblados por ticker a medida que hay
+        # histórico — completos para soberanos/CER (priming Data912), el resto acumula.
+        "var_7d": _pct(m.variance_7d),
+        "var_30d": _pct(m.variance_30d),
+        "var_90d": _pct(m.variance_90d),
+        "var_ytd": _pct(m.variance_ytd),
+        "var_1y": _pct(m.variance_1y),
         "volume": m.snapshot.volume,
     }
 
@@ -425,6 +470,122 @@ def _build_futuros_rows(rofex, fx, bcra) -> List[dict]:
     return rows
 
 
+# --- Futuros: popup tabbed (Curva Rofex / Carry / Cobertura) ----------------- #
+# El popup "foto" del panel de futuros NO es la foto genérica (tabla + scatter
+# TIR×MD): los futuros no tienen MD/TIR. Es una vista propia con la curva de TNA
+# por contrato + métricas de derivados de dólar (TNA/TEA lineal·compuesta, crawl
+# mensual, Var 1D vs ajuste previo, basis vs spot, y carry vs la curva de tasa
+# fija en pesos). Ver fragments/futuros_share.html.
+_TASA_FIJA_TYPES = {"LECAP", "BONCAP", "BONOFIJA"}
+
+
+def _implied_rates(fx_ref: Optional[float], spot: Optional[float],
+                   days: Optional[int]) -> tuple:
+    """(tna_lineal, tea, crawl_mensual) en decimales desde futuro/spot/días.
+
+    - TNA lineal (base 365):   (F/S − 1) · 365/d   — la "TNA" del informe A3.
+    - TEA   (efectiva anual):  (F/S)^(365/d) − 1
+    - Crawl mensual (compuesto):(F/S)^(30/d) − 1
+    (None, None, None) si falta algún input o hay overflow."""
+    if not (fx_ref and spot and spot > 0 and days and days > 0):
+        return None, None, None
+    ratio = fx_ref / spot
+    if ratio <= 0:
+        return None, None, None
+    try:
+        tna = (ratio - 1.0) * 365.0 / days
+        tea = ratio ** (365.0 / days) - 1.0
+        crawl = ratio ** (30.0 / days) - 1.0
+        return tna, tea, crawl
+    except (ValueError, OverflowError, ZeroDivisionError):
+        return None, None, None
+
+
+def _peso_tea_curve(state, today: date):
+    """Interpolador días→TEA de la curva de tasa fija en pesos (LECAP/BONCAP/BONOFIJA),
+    para el carry de la pestaña 'Carry'. Lineal por días, extrapolación plana en los
+    extremos. None si hay <2 puntos (sin curva → la columna carry queda en '—')."""
+    pts = []
+    for m in state.metrics():
+        inst = m.snapshot.instrument if m.snapshot else None
+        if not inst or inst.instrument_type not in _TASA_FIJA_TYPES:
+            continue
+        if m.tir is None or not inst.maturity_date:
+            continue
+        d = (inst.maturity_date - today).days
+        if d > 0:
+            pts.append((d, m.tir))
+    if len(pts) < 2:
+        return None
+    pts.sort()
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+
+    def interp(d: int) -> float:
+        if d <= xs[0]:
+            return ys[0]
+        if d >= xs[-1]:
+            return ys[-1]
+        for i in range(1, len(xs)):
+            if xs[i] >= d:
+                x0, x1, y0, y1 = xs[i - 1], xs[i], ys[i - 1], ys[i]
+                f = (d - x0) / (x1 - x0) if x1 != x0 else 0.0
+                return y0 + (y1 - y0) * f
+        return ys[-1]
+
+    return interp
+
+
+def _futuros_label(sym: str) -> str:
+    """'DLR/JUN26' → 'jun-26' (sufijo en minúsculas con guion)."""
+    suf = (sym.split("/", 1)[1] if "/" in sym else sym).rstrip("M")
+    if len(suf) >= 5:
+        return f"{suf[:3].lower()}-{suf[3:5]}"
+    return sym
+
+
+def _build_futuros_share(rofex, fx, indices, state) -> dict:
+    """Payload del popup tabbed de Futuros: por contrato, todas las métricas de
+    derivados de dólar + spot + flag de curva peso. {} si falla (degrada solo)."""
+    if rofex is None:
+        return {}
+    try:
+        quotes = rofex.get_quotes(ROFEX_SYMBOLS)
+        spot = resolve_spot_for_tna(fx, indices)
+    except Exception:
+        return {}
+    today = date.today()
+    peso_curve = _peso_tea_curve(state, today) if state is not None else None
+    contracts: List[dict] = []
+    for sym in ROFEX_SYMBOLS:
+        q = quotes.get(sym)
+        if not q:
+            continue
+        mat = parse_contract_maturity(sym)
+        days = (mat - today).days if mat else None
+        last, settle, prev = q.get("last"), q.get("settle"), q.get("prev_settle")
+        fx_ref = last if last is not None else settle    # precio de referencia (= panel)
+        if not (fx_ref and days and days > 0):
+            continue
+        tna, tea, crawl = _implied_rates(fx_ref, spot, days)
+        var1d = (fx_ref / prev - 1.0) * 100 if (fx_ref and prev) else None
+        peso_tea = peso_curve(days) if peso_curve else None
+        carry = (peso_tea - tea) * 100 if (peso_tea is not None and tea is not None) else None
+        contracts.append({
+            "label": _futuros_label(sym),
+            "fx": fx_ref,
+            "var1d": var1d,
+            "tna": _pct(tna), "tea": _pct(tea), "crawl": _pct(crawl),
+            "peso_tea": _pct(peso_tea), "carry": carry,
+            "oi": q.get("open_interest"), "vol": q.get("volume"),
+            "dias": days,
+            "basis": (fx_ref - spot) if spot else None,
+            "vs_spot": (fx_ref / spot - 1.0) * 100 if spot else None,
+        })
+    return {"contracts": contracts, "spot": spot,
+            "has_peso_curve": peso_curve is not None}
+
+
 def _build_bei_rows(panel_id: str, state) -> List[dict]:
     """Filas de los paneles BEI desde las tablas de compute_bei_tables (AppState).
     Los valores vienen en decimales → las columnas percent se escalan ×100."""
@@ -465,15 +626,19 @@ def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
         vals = _row_values(m, today)
         ccy = _ticker_ccy(vals["ticker"]) if ccy_filterable else None
         cells = []
+        tir_hl = panel_id in _TIR_HL_PANELS
         for c in cols:
             raw = vals.get(c["key"])
             dec = c.get("decimals", 2)
             # Precio en pesos de la pata ARS de un soberano: sin decimales (91,990).
             if c["key"] == "price" and ccy == "ARS":
                 dec = 0
+            cls = _cell_class(raw, c["kind"])
+            if tir_hl and c["key"] == "tir":
+                cls = (cls + " tircol").strip()
             cells.append({
                 "text": _fmt(raw, c["kind"], dec),
-                "cls": _cell_class(raw, c["kind"]),
+                "cls": cls,
             })
         row = {"ticker": vals["ticker"], "cells": cells}
         if ccy is not None:
@@ -486,6 +651,7 @@ def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
 def index(request: Request, state=Depends(get_state)):
     panels = [{"id": pid, "title": PANELS[pid][0], "columns": PANELS[pid][2],
                "ccy_filter": pid in CCY_FILTER_PANELS,
+               "tir_hl": pid in _TIR_HL_PANELS,  # resalta la columna TIR (soberanos/ON)
                "chartable": bool(PANELS[pid][1]),  # tiene MD/TIR → muestra botón Gráfico
                "rows": _build_rows(pid, state)} for pid in PANEL_ORDER]
     return _TEMPLATES.TemplateResponse(
@@ -566,11 +732,23 @@ def _chart_payload(panel_id: str, state, ccy_set: Optional[set]) -> List[dict]:
             label, color = title, "#3a5fcf"
         buckets.setdefault(label, {"color": color, "ms": []})["ms"].append(m)
 
+    # En Tasa Fija el eje Y es TNA (base 365), no TIR/TEA — convertimos cada y.
+    def _y(tea_dec: float) -> Optional[float]:
+        if panel_id != "tasa_fija":
+            return tea_dec * 100
+        tna = FinancialEngine.tea_to_tna(tea_dec)
+        return None if tna is None else tna * 100
+
     datasets: List[dict] = []
     for label, b in buckets.items():
         ms = b["ms"]
-        points = [{"x": round(m.duration, 3), "y": round(m.tir * 100, 3),
-                   "t": m.snapshot.instrument.ticker} for m in ms]
+        points = []
+        for m in ms:
+            y = _y(m.tir)
+            if y is None:
+                continue
+            points.append({"x": round(m.duration, 3), "y": round(y, 3),
+                           "t": m.snapshot.instrument.ticker})
         curve: List[dict] = []
         fit = _fit_log_curve(ms)
         mds = sorted(m.duration for m in ms)
@@ -580,7 +758,9 @@ def _chart_payload(panel_id: str, state, ccy_set: Optional[set]) -> List[dict]:
             for i in range(24):
                 x = lo + (hi - lo) * i / 23.0
                 if x > 0:
-                    curve.append({"x": round(x, 3), "y": round((a + bb * math.log(x)) * 100, 3)})
+                    y = _y(a + bb * math.log(x))
+                    if y is not None:
+                        curve.append({"x": round(x, 3), "y": round(y, 3)})
         datasets.append({"label": label, "color": b["color"], "points": points, "curve": curve})
     return datasets
 
@@ -590,7 +770,97 @@ def panel_chart(panel_id: str, request: Request, ccy: str = "", state=Depends(ge
     ccy_set = {c.strip().upper() for c in ccy.split(",") if c.strip()} or None
     datasets = _chart_payload(panel_id, state, ccy_set)
     title = PANELS.get(panel_id, (panel_id,))[0]
+    y_label = "TNA" if panel_id == "tasa_fija" else "TIR"
     return _TEMPLATES.TemplateResponse(
         request, "fragments/panel_chart.html",
-        {"title": title, "datasets_json": json.dumps(datasets)},
+        {"title": title, "datasets_json": json.dumps(datasets), "y_label": y_label},
     )
+
+
+# --- Compartir (popup cuadrado p/ WhatsApp): tabla completa + curva al costado - #
+# Columnas que se ocultan SOLO en la imagen de compartir (para que las esenciales
+# —Ticker/Vto/Precio/Paridad/TIR/DM/VAR%/Vol— crezcan y se lean desde el celular).
+_SHARE_HIDE_KEYS = {"category", "days_next_coupon", "technical_value"}
+
+# Bajada (subtítulo) por panel para la foto — da contexto al cliente.
+_PANEL_DESC = {
+    "bonares": "Soberanos en dólares · ley local y NY",
+    "bopreales": "Bopreales (BCRA) · hard-dollar",
+    "cer": "Pesos ajustados por inflación (CER)",
+    "tasa_fija": "Pesos a tasa fija",
+    "tamar": "Tasa variable TAMAR / Dual",
+    "dolar_linked": "Atados al dólar oficial",
+    "obligaciones_negociables": "Obligaciones Negociables · deuda corporativa USD",
+}
+
+
+@router.get("/panels/{panel_id}/share", response_class=HTMLResponse)
+def panel_share(panel_id: str, request: Request, ccy: str = "", state=Depends(get_state),
+                provider=Depends(get_provider), rofex=Depends(get_rofex),
+                fx=Depends(get_fx), indices=Depends(get_indices)):
+    """Popup 'compartir' cuadrado (1:1) para WhatsApp: tabla + curva TIR×MD al
+    costado (solo paneles chartables), ambos en la MONEDA elegida en el panel
+    (`ccy`, ej. MEP). Muestra todas las filas de esa moneda, pero recorta unas
+    columnas accesorias (`_SHARE_HIDE_KEYS`) para agrandar la letra. Es read-only:
+    no toca el dashboard (vive en #modal)."""
+    # Futuros: popup propio con pestañas (Curva Rofex / Carry / Cobertura), no la
+    # foto genérica (los futuros no tienen scatter TIR×MD). Liquidan T+0 (mismo día):
+    # el day-count de TNA/TEA/crawl en _build_futuros_share cuenta días = vto − hoy
+    # (no usa el settle T+1 BYMA). Sin subtítulo ni pie de fuente (decisión de diseño).
+    if panel_id == "futuros":
+        data = _build_futuros_share(rofex, fx, indices, state)
+        resp = _TEMPLATES.TemplateResponse(
+            request, "fragments/futuros_share.html",
+            {"contracts_json": json.dumps(data.get("contracts", [])),
+             "spot_txt": (f"{data['spot']:,.2f}" if data.get("spot") else "—"),
+             "has_peso_curve": data.get("has_peso_curve", False)},
+        )
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    today = date.today()
+    try:
+        settle = settlement_byma_date(today, 1).strftime("%d/%m/%Y")
+    except Exception:  # holiday data ausente → omitimos la liq.
+        settle = ""
+    title, _types, full_cols = PANELS.get(panel_id, (panel_id, set(), []))
+    rows = _build_rows(panel_id, state, provider)
+    ccy_set = {c.strip().upper() for c in ccy.split(",") if c.strip()} or None
+    # Moneda: SOLO aplica en paneles multi-moneda (CCY_FILTER_PANELS). En el resto se
+    # ignora el ?ccy (no tienen columna de moneda → evita títulos falsos tipo "CER · MEP").
+    # Si un panel multi-moneda llega sin moneda (deselect-all en el front), defaulteamos a
+    # MEP para no mezclar ARS/MEP/CABLE (precios y curva incomparables) en la misma foto.
+    if panel_id in CCY_FILTER_PANELS:
+        if ccy_set is None:
+            ccy_set = {"MEP"}
+        ccy_label = " + ".join(sorted(ccy_set))
+    else:
+        ccy_set, ccy_label = None, ""
+    # Filtra la tabla a la(s) moneda(s) elegida(s) (las filas sin 'ccy' quedan siempre).
+    if ccy_set is not None:
+        rows = [r for r in rows if r.get("ccy") is None or r["ccy"] in ccy_set]
+    # Recorta columnas accesorias: filtra el schema y las celdas (alineadas por índice).
+    keep = [i for i, c in enumerate(full_cols) if c.get("key") not in _SHARE_HIDE_KEYS]
+    cols = [full_cols[i] for i in keep]
+    if len(keep) != len(full_cols):
+        for r in rows:
+            cells = r.get("cells")
+            if cells and len(cells) == len(full_cols):
+                r["cells"] = [cells[i] for i in keep]
+    datasets = _chart_payload(panel_id, state, ccy_set)
+    y_label = "TNA" if panel_id == "tasa_fija" else "TIR"
+    # Subtítulo de la foto: bajada del panel + fecha y liquidación (T+1 BYMA, ya arriba).
+    resp = _TEMPLATES.TemplateResponse(
+        request, "fragments/panel_share.html",
+        {"title": title, "columns": cols, "rows": rows,
+         "tir_hl": panel_id in _TIR_HL_PANELS,
+         "desc": _PANEL_DESC.get(panel_id, ""), "ccy_label": ccy_label,
+         "asof": today.strftime("%d/%m/%Y"), "settle": settle,
+         "badge": ("%s vs Duración" % y_label),
+         "datasets_json": json.dumps(datasets), "has_chart": bool(datasets),
+         "y_label": y_label},
+    )
+    # No cachear: el popup/export se actualiza seguido; evita que el navegador sirva
+    # un fragmento viejo (cacheado) tras un cambio de template.
+    resp.headers["Cache-Control"] = "no-store"
+    return resp

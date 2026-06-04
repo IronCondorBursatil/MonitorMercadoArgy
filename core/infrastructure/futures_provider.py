@@ -39,7 +39,6 @@ import calendar
 import json
 import logging
 import threading
-import time
 from datetime import date
 from typing import Dict, List, Optional
 
@@ -121,10 +120,9 @@ def implied_tna(future_price: float, spot: float, mat: date,
 # Spot resolver para TNA implícita (híbrido horario)
 # --------------------------------------------------------------------------- #
 
-# Horario de rueda BYMA — ARG es UTC-3 todo el año (sin DST), así que el
-# datetime.now() local del server (asumiendo deploy en AR) es la hora ARG.
-# Si el server estuviera en otra timezone, habría que normalizar. Por ahora
-# asumimos AR local (consistente con la práctica del proyecto).
+# Horario de rueda BYMA (ARG = UTC-3, sin DST). Se computa con tz explícita de
+# Buenos Aires para ser correcto independientemente de la timezone del server
+# (cloud/otra región), no asumiendo AR local — consistente con holiday_engine.
 _MARKET_OPEN_HOUR = 11
 _MARKET_CLOSE_HOUR = 17
 
@@ -134,7 +132,8 @@ def _is_market_hours() -> bool:
     No chequea feriados — durante feriados igual cae al fallback A3500 del
     último hábil, que es lo correcto."""
     from datetime import datetime
-    now = datetime.now()
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
     return now.weekday() < 5 and _MARKET_OPEN_HOUR <= now.hour < _MARKET_CLOSE_HOUR
 
 
@@ -189,28 +188,29 @@ def _safe_float(v: str) -> Optional[float]:
         return None
 
 
-# Posiciones (validadas contra DOM y BCRA A3500 fixing del día):
+# Posiciones (re-validadas contra el feed live 04/06/2026 — corrige el orden
+# high/low y la semántica de [8..10], que el comentario original tenía mal):
 #   [0]  "M:<security_id>"  (con prefijo M:)
 #   [1]  seq number (interno de Primary, lo ignoramos)
-#   [2]  bid size
-#   [3]  bid price
-#   [4]  ask price
-#   [5]  ask size
+#   [2]  bid size                    [3]  bid price
+#   [4]  ask price                   [5]  ask size
 #   [6]  last price                  (vacío si no hubo trades hoy)
 #   [7]  last trade timestamp ISO    (idem)
-#   [8]  last trade size             (idem)
-#   [9]  daily traded volume (qty)
-#   [10] daily trade count
-#   [11] daily high
-#   [12] daily low
-#   [13] daily open
+#   [8]  daily volume (contratos operados hoy)
+#   [9]  daily turnover (ARS, monto operado)   ← lo exponemos como "volume"
+#   [10] daily volume (USD notional = contratos × 1000)
+#   [11] daily LOW                   [12] daily HIGH         [13] daily open
 #   [14] open interest
-#   [15] settlement price            (precio ajuste vigente)
+#   [15] settlement price            (ajuste vigente — vacío durante la rueda)
 #   [16] settlement date (YYYY-MM-DD)
-#   [17] prev settlement price
+#   [17] prev settlement price       (→ habilita la Var 1D)
 #   [18] prev settlement date
-#   [19] prev2 settlement price
-#   [20] prev2 settlement date
+#   [19] prev2 settlement price      [20] prev2 settlement date
+def _field(parts: List[str], i: int) -> Optional[float]:
+    """parts[i] como float, o None si el índice no existe / no parsea."""
+    return _safe_float(parts[i]) if i < len(parts) else None
+
+
 def _parse_m_message(msg: str) -> Optional[tuple]:
     """Parsea un mensaje `M:` a (security_id, quote_dict). None si no parsea."""
     if not msg.startswith("M:"):
@@ -220,12 +220,18 @@ def _parse_m_message(msg: str) -> Optional[tuple]:
         return None
     security_id = parts[0][2:]  # strip "M:"
     quote = {
-        "bid": _safe_float(parts[3]),
-        "ask": _safe_float(parts[4]),
-        "last": _safe_float(parts[6]),
-        "settle": _safe_float(parts[15]),
-        "volume": _safe_float(parts[9]),
-        "open_interest": _safe_float(parts[14]),
+        "bid": _field(parts, 3),
+        "ask": _field(parts, 4),
+        "last": _field(parts, 6),
+        "settle": _field(parts, 15),
+        "volume": _field(parts, 9),              # monto operado en ARS
+        "open_interest": _field(parts, 14),
+        # Campos nuevos (popup de futuros): Var 1D, rango intradía, volumen en contratos.
+        "prev_settle": _field(parts, 17),
+        "day_open": _field(parts, 13),
+        "day_high": _field(parts, 12),
+        "day_low": _field(parts, 11),
+        "volume_contracts": _field(parts, 8),
     }
     return security_id, quote
 
@@ -418,7 +424,8 @@ class RofexProvider:
             return cls._client
 
     def get_quotes(self, symbols: Optional[List[str]] = None) -> Dict[str, dict]:
-        """Returns {ticker: {bid, ask, last, settle, volume, open_interest}}.
+        """Returns {ticker: {bid, ask, last, settle, volume, open_interest,
+        prev_settle, day_open, day_high, day_low, volume_contracts}}.
 
         Para tickers sin datos todavía (WS frío en los primeros ~1-2s, o
         contrato sin actividad), el dict puede tener todos los valores None.

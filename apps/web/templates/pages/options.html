@@ -1,0 +1,645 @@
+{% extends "base.html" %}
+{% block title %}Opciones · Monitor Renta Fija AR{% endblock %}
+{% block head %}
+<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="/static/css/options.css">
+{% endblock %}
+{% block content %}
+<div class="opt-page"
+     data-underlying="{{ underlying }}" data-month="{{ month }}">
+
+  {% if not has_data %}
+  <div class="opt-empty">
+    <h2>Sin datos de opciones todavía</h2>
+    <p>El refresh loop está armando la chain (puede tardar 5-15s en el primer ciclo).
+       Recargá la página en unos segundos.</p>
+  </div>
+  {% else %}
+
+  <div class="opt-grid">
+    <!-- Sidebar: watchlist de subyacentes -->
+    <div class="opt-panel opt-side"
+         hx-get="/options/sidebar?u={{ underlying }}"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="opt-loading">cargando watchlist…</div>
+    </div>
+
+    <!-- Chain -->
+    <div class="opt-panel opt-chain-wrap"
+         id="opt-chain-wrap"
+         hx-get="/options/chain?u={{ underlying }}&v={{ month }}"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="opt-loading">cargando chain…</div>
+    </div>
+
+    <!-- Strategy builder (100% client-side, sin hx-get; consume el JSON embebido en chain) -->
+    <div class="opt-panel opt-strat" id="opt-strat">
+      <div class="opt-ph">STRATEGY BUILDER <span class="right" id="strat-info">vacío</span></div>
+      <div class="opt-strat-presets">
+        {% for p in presets %}
+        <button class="opt-btn" data-preset="{{ p }}">{{ p.replace("_", " ").title() }}</button>
+        {% endfor %}
+        <button class="opt-btn" data-preset="clear">Clear</button>
+        <span class="opt-presets-sep"></span>
+        <button class="opt-btn" id="strat-save" title="Guardar esta estrategia">💾 Guardar</button>
+        <span class="opt-load-wrap">
+          <button class="opt-btn" id="strat-load-btn" title="Cargar estrategia guardada">📂 Cargar ▾</button>
+          <div class="opt-load-menu" id="strat-load-menu"></div>
+        </span>
+        <button class="opt-btn" id="strat-share" title="Copiar link compartible">🔗 URL</button>
+      </div>
+      <div class="opt-strat-body">
+        <div class="opt-strat-chart"><canvas id="payoff-canvas"></canvas></div>
+        <div class="opt-strat-legs" id="strat-legs">
+          <div class="opt-empty-mini">Sin legs. Click bid/ask en la chain o usá un preset arriba.</div>
+        </div>
+      </div>
+      <div class="opt-strat-stats">
+        <div class="s" title="Prima neta: negativa = crédito (recibís), positiva = débito (pagás)">
+          <div class="l">Prima neta</div><div class="v" id="s-cost">—</div></div>
+        <div class="s" title="Ganancia máxima al vencimiento">
+          <div class="l">Max gan</div><div class="v pos" id="s-max">—</div></div>
+        <div class="s" title="Pérdida máxima al vencimiento (puede ser ilimitada)">
+          <div class="l">Max prd</div><div class="v neg" id="s-min">—</div></div>
+        <div class="s" title="Precio del subyacente donde el PnL = 0">
+          <div class="l">Break-even</div><div class="v small warn" id="s-be">—</div></div>
+        <div class="s" title="Δ neto: exposición direccional al subyacente">
+          <div class="l">Δ Delta</div><div class="v" id="s-delta">—</div></div>
+        <div class="s" title="Γ neto: convexidad / sensibilidad a movimientos">
+          <div class="l">Γ Gamma</div><div class="v" id="s-gamma">—</div></div>
+        <div class="s" title="Θ neto: PnL diario por paso del tiempo (negativo = perdés)">
+          <div class="l">Θ /día</div><div class="v" id="s-theta">—</div></div>
+        <div class="s" title="Vega: PnL por +1 vol-point en la IV implícita">
+          <div class="l">Vega</div><div class="v" id="s-vega">—</div></div>
+        <div class="s" title="Probabilidad de profit al vto (modelo lognormal · optionlab)">
+          <div class="l">P(profit)</div><div class="v" id="s-pop">—</div></div>
+        <div class="s" title="Ganancia esperada condicional a outcome favorable">
+          <div class="l">EV +</div><div class="v" id="s-evp">—</div></div>
+        <div class="s" title="Pérdida esperada condicional a outcome desfavorable">
+          <div class="l">EV −</div><div class="v" id="s-evl">—</div></div>
+        <div class="s" title="Rangos del subyac. donde la estrategia es rentable al vto">
+          <div class="l">Rentable @</div><div class="v small" id="s-ranges">—</div></div>
+      </div>
+    </div>
+
+    <!-- IV smile -->
+    <div class="opt-panel"
+         hx-get="/options/smile?u={{ underlying }}&v={{ month }}"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="opt-loading">cargando smile…</div>
+    </div>
+
+    <!-- OI heatmap -->
+    <div class="opt-panel"
+         hx-get="/options/oi?u={{ underlying }}&v={{ month }}"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="opt-loading">cargando OI…</div>
+    </div>
+  </div>
+
+  <!-- Scanner full-width -->
+  <div class="opt-panel opt-scan-wrap"
+       id="opt-scan-wrap"
+       hx-get="/options/scanner"
+       hx-trigger="load"
+       hx-swap="innerHTML"
+       hx-include="#scan-form">
+    <div class="opt-loading">cargando scanner…</div>
+  </div>
+
+  {% endif %}
+</div>
+
+<script>
+  /* Estado del strategy builder (client-side). El payoff es lineal al vto
+     (max(0, S-K) o max(0, K-S) menos prima) — no requiere recálculo server.
+     Los griegos se leen del JSON embebido por la chain (ya enriquecidos por
+     el refresh loop con CRR+IV). */
+  window.OPT = window.OPT || {
+    chain: [],            // last fetched chain (list of OptionItem dicts)
+    legs: [],             // [{ticker, qty}]
+    spot: 0,
+    underlying: "{{ underlying }}",
+    month: "{{ month }}",
+    chart: null,
+  };
+
+  function _fmt(v, d) { if (v == null || isNaN(v)) return "—"; return Number(v).toFixed(d == null ? 2 : d); }
+  function _fmtInt(v) { return v == null ? "—" : Math.round(v).toLocaleString("es-AR"); }
+
+  // Listener: cada vez que el fragment de chain se cambia, refrescamos cache + redrawn.
+  document.body.addEventListener("htmx:afterSwap", function (ev) {
+    var script = document.getElementById("chain-data");
+    if (script && (ev.target.id === "opt-chain-wrap" || ev.target.closest("#opt-chain-wrap"))) {
+      try {
+        OPT.chain = JSON.parse(script.textContent || "[]");
+        OPT.spot = OPT.chain.length ? OPT.chain[0].spot : 0;
+        var newU = script.getAttribute("data-u"), newV = script.getAttribute("data-v");
+        // Si cambió underlying/mes Y NO estamos en medio de un restore desde hash/saved,
+        // limpiar legs (cambio de contexto manual).
+        if (newU && (newU !== OPT.underlying || newV !== OPT.month) && !OPT._restoring) {
+          OPT.underlying = newU; OPT.month = newV; OPT.legs = [];
+        } else if (newU) {
+          OPT.underlying = newU; OPT.month = newV;
+        }
+        OPT._restoring = false;
+        renderStrategy();
+      } catch (e) { console.error("chain-data parse failed", e); }
+    }
+  });
+
+  // Cambio de underlying (sidebar) o de vto (selector en chain).
+  function optSetUnderlying(u) {
+    OPT.underlying = u; OPT.legs = [];
+    htmx.ajax("GET", "/options/chain?u=" + u, "#opt-chain-wrap");
+    htmx.ajax("GET", "/options/sidebar?u=" + u, ".opt-side");
+    htmx.ajax("GET", "/options/smile?u=" + u + "&v=" + OPT.month, ".opt-panel[hx-get^='/options/smile']");
+    htmx.ajax("GET", "/options/oi?u=" + u + "&v=" + OPT.month, ".opt-panel[hx-get^='/options/oi']");
+  }
+  function optSetMonth(m) {
+    OPT.month = m; OPT.legs = [];
+    var u = OPT.underlying;
+    htmx.ajax("GET", "/options/chain?u=" + u + "&v=" + m, "#opt-chain-wrap");
+    htmx.ajax("GET", "/options/smile?u=" + u + "&v=" + m, ".opt-panel[hx-get^='/options/smile']");
+    htmx.ajax("GET", "/options/oi?u=" + u + "&v=" + m, ".opt-panel[hx-get^='/options/oi']");
+  }
+
+  // Click en bid/ask de la chain → add leg.
+  function optAddLeg(ticker, dir) {
+    var ex = OPT.legs.find(function (l) { return l.ticker === ticker; });
+    if (ex) ex.qty += dir; else OPT.legs.push({ ticker: ticker, qty: dir });
+    OPT.legs = OPT.legs.filter(function (l) { return l.qty !== 0; });
+    renderStrategy();
+  }
+
+  // Preset (botones del builder).
+  document.body.addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-preset]");
+    if (!b) return;
+    var name = b.dataset.preset;
+    if (name === "clear") { OPT.legs = []; renderStrategy(); return; }
+    OPT.legs = optBuildPreset(name); renderStrategy();
+  });
+
+  function optPick(kind, target) {
+    var cs = OPT.chain.filter(function (o) { return o.kind === kind; });
+    if (!cs.length) return null;
+    return cs.reduce(function (best, o) {
+      return Math.abs(o.strike - target) < Math.abs((best ? best.strike : Infinity) - target) ? o : best;
+    }, null);
+  }
+  function optBuildPreset(name) {
+    var s = OPT.spot;
+    var presets = {
+      long_call: function () { return [["C", s * 1.02, 1]]; },
+      long_put: function () { return [["V", s * 0.98, 1]]; },
+      covered_call: function () { return [["C", s * 1.03, -1]]; },
+      bull_call_spread: function () { return [["C", s, 1], ["C", s * 1.08, -1]]; },
+      bear_put_spread: function () { return [["V", s, 1], ["V", s * 0.92, -1]]; },
+      straddle: function () { return [["C", s, 1], ["V", s, 1]]; },
+      strangle: function () { return [["C", s * 1.05, 1], ["V", s * 0.95, 1]]; },
+      iron_condor: function () {
+        return [["C", s * 1.10, 1], ["C", s * 1.05, -1],
+                ["V", s * 0.90, 1], ["V", s * 0.95, -1]];
+      },
+    };
+    var b = presets[name]; if (!b) return [];
+    return b().map(function (t) {
+      var it = optPick(t[0], t[1]);
+      return it ? { ticker: it.ticker, qty: t[2] } : null;
+    }).filter(Boolean);
+  }
+
+  function renderStrategy() {
+    var byTk = {}; OPT.chain.forEach(function (o) { byTk[o.ticker] = o; });
+    var info = document.getElementById("strat-info");
+    info.textContent = OPT.legs.length ? OPT.legs.length + " leg" + (OPT.legs.length > 1 ? "s" : "") : "vacío";
+    var box = document.getElementById("strat-legs");
+    if (!OPT.legs.length) {
+      box.innerHTML = '<div class="opt-empty-mini">Sin legs. Click bid/ask en la chain o usá un preset arriba.</div>';
+    } else {
+      box.innerHTML = OPT.legs.map(function (l, i) {
+        var o = byTk[l.ticker]; if (!o) return "";
+        var isLong = l.qty > 0;
+        var px = isLong ? o.ask : o.bid;
+        var kindLabel = o.kind === "C" ? "CALL" : "PUT";
+        return '<div class="opt-leg">' +
+          '<span class="opt-leg-dir ' + (isLong ? 'long' : 'short') + '">' + (isLong ? '↑ LONG' : '↓ SHORT') + '</span>' +
+          '<span class="opt-leg-kind ' + o.kind + '">' + kindLabel + '</span>' +
+          '<span class="opt-leg-info"><b>' + o.underlying + '</b> @ K ' + _fmt(o.strike, 0) +
+            ' <span class="dim">' + o.month + ' · px ' + _fmt(px) + '</span></span>' +
+          '<span class="opt-leg-qty">' +
+            '<button class="opt-qb" onclick="OPT.legs[' + i + '].qty--; OPT.legs = OPT.legs.filter(x => x.qty !== 0); renderStrategy()">−</button>' +
+            '<span class="opt-leg-q">' + (l.qty > 0 ? '+' : '') + l.qty + '</span>' +
+            '<button class="opt-qb" onclick="OPT.legs[' + i + '].qty++; renderStrategy()">+</button>' +
+          '</span>' +
+          '<button class="opt-leg-rm" title="quitar leg" onclick="OPT.legs.splice(' + i + ',1); renderStrategy()">✕</button>' +
+          '</div>';
+      }).join("");
+    }
+    drawPayoff(byTk);
+    updateHash();           // persistir estado en URL
+    requestAnalytics();     // recalcular P(profit) / EV (debounced)
+  }
+
+  /* Plugin Chart.js custom: dibuja líneas verticales en spot, strikes, break-evens. */
+  var optAnnotPlugin = {
+    id: "optAnnot",
+    afterDatasetsDraw: function (chart) {
+      var ann = chart.options.plugins.optAnnot; if (!ann || !ann.lines) return;
+      var ctx = chart.ctx, xs = chart.scales.x, ys = chart.scales.y;
+      ann.lines.forEach(function (ln) {
+        var x = xs.getPixelForValue(ln.label);  // label-space (categorical x)
+        if (ln.atValue != null) {
+          // Buscar el índice más cercano a atValue en chart.data.labels (que son strings).
+          var labels = chart.data.labels;
+          var idx = 0, best = Infinity;
+          for (var i = 0; i < labels.length; i++) {
+            var d = Math.abs(parseFloat(labels[i]) - ln.atValue);
+            if (d < best) { best = d; idx = i; }
+          }
+          x = xs.getPixelForValue(labels[idx]);
+        }
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash(ln.dash || []);
+        ctx.strokeStyle = ln.color;
+        ctx.lineWidth = ln.width || 1;
+        ctx.moveTo(x, ys.top); ctx.lineTo(x, ys.bottom); ctx.stroke();
+        if (ln.text) {
+          ctx.fillStyle = ln.color;
+          ctx.font = "600 9px ui-monospace, monospace";
+          ctx.fillText(ln.text, x + 3, ys.top + 9);
+        }
+        ctx.restore();
+      });
+    },
+  };
+
+  function drawPayoff(byTk) {
+    var spot = OPT.spot, lo = spot * 0.6, hi = spot * 1.4;
+    var xs = [], ys = [], cost = 0;
+    var d = 0, g = 0, th = 0, vg = 0;
+    var haveG = false, haveT = false, haveV = false;
+    var strikes = [];
+    OPT.legs.forEach(function (l) {
+      var o = byTk[l.ticker]; if (!o) return;
+      var entry = l.qty > 0 ? o.ask : o.bid;
+      cost += l.qty * entry;
+      if (o.delta != null) d += l.qty * o.delta;
+      if (o.gamma != null) { g += l.qty * o.gamma; haveG = true; }
+      if (o.theta != null) { th += l.qty * o.theta; haveT = true; }
+      if (o.vega  != null) { vg += l.qty * o.vega;  haveV = true; }
+      strikes.push(o.strike);
+    });
+    for (var i = 0; i <= 100; i++) {
+      var S = lo + (hi - lo) * i / 100;
+      xs.push(S);
+      var y = 0;
+      OPT.legs.forEach(function (l) {
+        var o = byTk[l.ticker]; if (!o) return;
+        var intr = o.kind === "C" ? Math.max(0, S - o.strike) : Math.max(0, o.strike - S);
+        var entry = l.qty > 0 ? o.ask : o.bid;
+        y += l.qty * (intr - entry);
+      });
+      ys.push(y);
+    }
+    var maxG = OPT.legs.length ? Math.max.apply(null, ys) : 0;
+    var maxL = OPT.legs.length ? Math.min.apply(null, ys) : 0;
+    // Break-evens (cruces por 0)
+    var bes = [];
+    for (var k = 1; k < ys.length; k++) {
+      if ((ys[k - 1] < 0 && ys[k] >= 0) || (ys[k - 1] > 0 && ys[k] <= 0)) {
+        var t = ys[k - 1] / (ys[k - 1] - ys[k]);
+        bes.push(xs[k - 1] + t * (xs[k] - xs[k - 1]));
+      }
+    }
+
+    // Render stats
+    var sCost = document.getElementById("s-cost");
+    sCost.textContent = OPT.legs.length ? (cost < 0 ? "+" : "") + _fmt(-cost, 2) : "—";
+    sCost.className = "v " + (!OPT.legs.length ? "" : cost < 0 ? "pos" : "neg");
+    sCost.title = !OPT.legs.length ? "" : (cost < 0
+      ? "Crédito neto: recibís " + _fmt(-cost, 2)
+      : "Débito neto: pagás " + _fmt(cost, 2));
+    document.getElementById("s-max").textContent = OPT.legs.length ? _fmt(maxG) : "—";
+    document.getElementById("s-min").textContent = OPT.legs.length ? _fmt(maxL) : "—";
+    document.getElementById("s-be").textContent = bes.length
+      ? bes.map(function (b) { return _fmt(b, 0); }).join(" · ") : "—";
+    document.getElementById("s-delta").textContent = OPT.legs.length ? _fmt(d, 2) : "—";
+    document.getElementById("s-gamma").textContent = haveG ? _fmt(g, 5) : "—";
+    var sT = document.getElementById("s-theta");
+    sT.textContent = haveT ? _fmt(th, 2) : "—";
+    sT.className = "v " + (haveT ? (th < 0 ? "neg" : "pos") : "");
+    document.getElementById("s-vega").textContent = haveV ? _fmt(vg, 2) : "—";
+
+    if (OPT.chart) OPT.chart.destroy();
+    var cv = document.getElementById("payoff-canvas"); if (!cv) return;
+    var dark = document.documentElement.getAttribute("data-theme") === "dark";
+    var txt = dark ? "#aab4d4" : "#4a5780";
+    var grid = dark ? "rgba(255,255,255,.08)" : "rgba(10,29,74,.08)";
+
+    // ── Symlog Y (linthresh adaptativo): lineal cerca de 0, log más allá. ──
+    // El profit zone (típicamente pequeño en abs vs la cola de pérdida) gana
+    // protagonismo visual; las colas se comprimen pero siguen visibles.
+    var maxAbs = ys.length ? Math.max.apply(null, ys.map(Math.abs)) : 100;
+    var LT = Math.max(20, Math.min(100, maxAbs * 0.25));  // ~25% del rango como zona lineal
+    function symlog(y) { return Math.sign(y) * Math.log1p(Math.abs(y) / LT) * LT; }
+    function symlogInv(t) { return Math.sign(t) * (Math.exp(Math.abs(t) / LT) - 1) * LT; }
+
+    // Transformar Y; los `null` se preservan (separan los datasets pos/neg).
+    var ysT = ys.map(symlog);
+    var posDataT = ysT.map(function (y, i) { return ys[i] > 0 ? y : (ys[i] === 0 ? 0 : null); });
+    var negDataT = ysT.map(function (y, i) { return ys[i] < 0 ? y : (ys[i] === 0 ? 0 : null); });
+
+    // Ticks: elegir valores "redondos" en el dominio original que estén dentro del rango.
+    var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    var allTicks = [-5000, -2000, -1000, -500, -200, -100, -50, -20, 0, 20, 50, 100, 200, 500, 1000, 2000];
+    var origTicks = allTicks.filter(function (v) { return v >= minY * 1.05 && v <= maxY * 1.05; });
+    if (origTicks.indexOf(0) < 0) origTicks.push(0);
+    origTicks.sort(function (a, b) { return a - b; });
+
+    // Annotations: spot + strikes + break-evens (todas en X, sin cambio por symlog)
+    var lines = [];
+    lines.push({ atValue: spot, color: "#4a8dff", dash: [4, 3], text: "spot " + _fmt(spot, 0), width: 1.4 });
+    strikes.forEach(function (k) {
+      lines.push({ atValue: k, color: dark ? "#5b6a96" : "#a0a8c0", dash: [2, 4], text: "K " + _fmt(k, 0) });
+    });
+    bes.forEach(function (b) {
+      lines.push({ atValue: b, color: "#f0b441", dash: [], text: "BE " + _fmt(b, 0), width: 1.2 });
+    });
+
+    OPT.chart = new Chart(cv.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: xs.map(function (x) { return _fmt(x, 0); }),
+        datasets: [
+          { label: "Ganancia", data: posDataT,
+            borderColor: "#2dd17a", backgroundColor: "rgba(45,209,122,.22)",
+            fill: "origin", tension: 0, pointRadius: 0, borderWidth: 1.8, spanGaps: true },
+          { label: "Pérdida", data: negDataT,
+            borderColor: "#ff5e6c", backgroundColor: "rgba(255,94,108,.22)",
+            fill: "origin", tension: 0, pointRadius: 0, borderWidth: 1.8, spanGaps: true },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: function (c) { return "Subyac. @ " + c[0].label; },
+              label: function (c) {
+                /* c.parsed.y está en espacio symlog → invertimos para mostrar PnL real */
+                return "PnL " + _fmt(symlogInv(c.parsed.y));
+              },
+            },
+          },
+          optAnnot: { lines: lines },
+        },
+        scales: {
+          x: { ticks: { color: txt, maxTicksLimit: 8, font: { size: 9 } }, grid: { color: grid } },
+          y: {
+            type: "linear",
+            ticks: {
+              color: txt, font: { size: 9 },
+              /* Recibe el valor en espacio symlog; lo invertimos para el label. */
+              callback: function (v) {
+                var orig = symlogInv(v);
+                if (Math.abs(orig) < 0.5) return "0";
+                var sign = orig > 0 ? "+" : "";
+                return sign + Math.round(orig);
+              },
+            },
+            afterBuildTicks: function (axis) {
+              axis.ticks = origTicks.map(function (v) { return { value: symlog(v) }; });
+            },
+            grid: { color: function (ctx) {
+              /* En espacio symlog, la grilla en 0 sigue siendo prominente. */
+              return Math.abs(ctx.tick.value) < 0.01 ? "#4a8dff" : grid;
+            } },
+          },
+        },
+      },
+      plugins: [optAnnotPlugin],
+    });
+  }
+
+  /* Re-fetch del scanner cuando cambian los filtros (sin recargar la página). */
+  document.body.addEventListener("change", function (ev) {
+    if (ev.target.closest("#scan-form")) {
+      htmx.trigger("#opt-scan-wrap", "refresh-scanner");
+    }
+  });
+  document.body.addEventListener("input", function (ev) {
+    if (ev.target.id === "scan-search") {
+      clearTimeout(window._scanT);
+      window._scanT = setTimeout(function () {
+        htmx.trigger("#opt-scan-wrap", "refresh-scanner");
+      }, 200);
+    }
+  });
+
+  /* ──────────────────────────────────────────────────────────────────────
+     URL hash + localStorage + analytics fetch
+     ────────────────────────────────────────────────────────────────────── */
+
+  function _legsToStr(legs) {
+    return legs.map(function (l) { return l.ticker + ":" + l.qty; }).join(",");
+  }
+  function _legsFromStr(s) {
+    if (!s) return [];
+    return s.split(",").filter(Boolean).map(function (pair) {
+      var p = pair.split(":"); var qty = parseInt(p[1], 10);
+      return { ticker: p[0], qty: isNaN(qty) ? 1 : qty };
+    });
+  }
+
+  // ── Hash ────────────────────────────────────────────────────────────────
+  function encodeState() {
+    if (!OPT.legs.length) return "";
+    return "u=" + encodeURIComponent(OPT.underlying) +
+           "&v=" + encodeURIComponent(OPT.month) +
+           "&l=" + encodeURIComponent(_legsToStr(OPT.legs));
+  }
+  function parseHash() {
+    var h = (window.location.hash || "").replace(/^#/, "");
+    if (!h) return null;
+    var out = {};
+    h.split("&").forEach(function (kv) {
+      var i = kv.indexOf("="); if (i < 0) return;
+      out[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
+    });
+    if (!out.u) return null;
+    return { u: out.u, v: out.v || "", legs: _legsFromStr(out.l || "") };
+  }
+  function updateHash() {
+    var s = encodeState();
+    var newUrl = window.location.pathname + (s ? "#" + s : "");
+    try { history.replaceState(null, "", newUrl); } catch (e) {}
+  }
+  function applyState(state) {
+    if (!state) return;
+    OPT._restoring = true;             // afterSwap NO debe limpiar legs
+    OPT.underlying = state.u;
+    OPT.month = state.v;
+    OPT.legs = state.legs.slice();
+    var url = "/options/chain?u=" + encodeURIComponent(state.u) +
+              (state.v ? "&v=" + encodeURIComponent(state.v) : "");
+    htmx.ajax("GET", url, "#opt-chain-wrap");
+    htmx.ajax("GET", "/options/sidebar?u=" + encodeURIComponent(state.u), ".opt-side");
+    if (state.v) {
+      htmx.ajax("GET", "/options/smile?u=" + state.u + "&v=" + state.v, ".opt-panel[hx-get^='/options/smile']");
+      htmx.ajax("GET", "/options/oi?u=" + state.u + "&v=" + state.v, ".opt-panel[hx-get^='/options/oi']");
+    }
+  }
+
+  // ── localStorage saved strategies ──────────────────────────────────────
+  var SAVED_KEY = "options_saved_strategies_v1";
+  function listSaved() {
+    try { return JSON.parse(localStorage.getItem(SAVED_KEY) || "[]"); }
+    catch (e) { return []; }
+  }
+  function persistSaved(arr) {
+    try { localStorage.setItem(SAVED_KEY, JSON.stringify(arr.slice(0, 50))); }
+    catch (e) { console.warn("localStorage full?", e); }
+  }
+  function saveStrategy() {
+    if (!OPT.legs.length) { alert("No hay legs para guardar."); return; }
+    var name = prompt("Nombre de la estrategia:",
+      "estrategia_" + OPT.underlying + "_" + (OPT.month || "x"));
+    if (!name) return;
+    name = String(name).trim().slice(0, 80);
+    if (!name) return;
+    var saved = listSaved().filter(function (x) { return x.name !== name; });
+    saved.unshift({
+      name: name, u: OPT.underlying, v: OPT.month,
+      legs: OPT.legs.slice(), ts: new Date().toISOString(),
+    });
+    persistSaved(saved);
+    renderSavedMenu();
+  }
+  function loadSaved(name) {
+    var s = listSaved().find(function (x) { return x.name === name; });
+    if (!s) return;
+    applyState({ u: s.u, v: s.v, legs: (s.legs || []).slice() });
+    document.getElementById("strat-load-menu").classList.remove("open");
+  }
+  function deleteSaved(name) {
+    persistSaved(listSaved().filter(function (x) { return x.name !== name; }));
+    renderSavedMenu();
+  }
+  function renderSavedMenu() {
+    var saved = listSaved();
+    var el = document.getElementById("strat-load-menu");
+    if (!saved.length) {
+      el.innerHTML = '<div class="opt-load-empty">Sin estrategias guardadas todavía.</div>';
+      return;
+    }
+    el.innerHTML = saved.map(function (s) {
+      var date = (s.ts || "").slice(0, 10);
+      return '<div class="opt-load-row">' +
+        '<button class="opt-load-pick" data-name="' + s.name.replace(/"/g, "&quot;") + '">' +
+          '<b>' + s.name + '</b>' +
+          '<span class="dim"> · ' + s.u + (s.v ? "/" + s.v : "") +
+          " · " + s.legs.length + " legs · " + date + '</span>' +
+        '</button>' +
+        '<button class="opt-load-del" title="eliminar" data-name="' + s.name.replace(/"/g, "&quot;") + '">✕</button>' +
+        '</div>';
+    }).join("");
+  }
+
+  // Click handlers para los 3 botones nuevos
+  document.body.addEventListener("click", function (ev) {
+    if (ev.target.closest("#strat-save")) { saveStrategy(); return; }
+    if (ev.target.closest("#strat-load-btn")) {
+      ev.stopPropagation();
+      var menu = document.getElementById("strat-load-menu");
+      if (!menu.classList.contains("open")) renderSavedMenu();
+      menu.classList.toggle("open");
+      return;
+    }
+    if (ev.target.closest("#strat-share")) {
+      navigator.clipboard.writeText(window.location.href).then(function () {
+        var btn = document.getElementById("strat-share");
+        var old = btn.textContent;
+        btn.textContent = "✓ copiado";
+        setTimeout(function () { btn.textContent = old; }, 1500);
+      }).catch(function () { alert(window.location.href); });
+      return;
+    }
+    var pick = ev.target.closest(".opt-load-pick");
+    if (pick) { loadSaved(pick.dataset.name); return; }
+    var del = ev.target.closest(".opt-load-del");
+    if (del) { ev.stopPropagation(); deleteSaved(del.dataset.name); return; }
+    // Clic afuera del menu → cerrar
+    if (!ev.target.closest(".opt-load-wrap")) {
+      var menu = document.getElementById("strat-load-menu");
+      if (menu) menu.classList.remove("open");
+    }
+  });
+
+  // ── Analytics fetch (debounced 300ms) ──────────────────────────────────
+  var _analyticsTimer = null;
+  function requestAnalytics() {
+    clearTimeout(_analyticsTimer);
+    if (!OPT.legs.length) { renderAnalytics(null); return; }
+    _analyticsTimer = setTimeout(function () {
+      fetch("/options/analytics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ legs: OPT.legs.map(function (l) {
+          return { ticker: l.ticker, qty: l.qty };
+        }) }),
+      })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(renderAnalytics)
+      .catch(function (e) { console.warn("analytics:", e); renderAnalytics(null); });
+    }, 300);
+  }
+  function renderAnalytics(data) {
+    var pop = document.getElementById("s-pop");
+    var evp = document.getElementById("s-evp");
+    var evl = document.getElementById("s-evl");
+    var rng = document.getElementById("s-ranges");
+    if (!data || data.prob_profit == null) {
+      pop.textContent = "—"; pop.className = "v";
+      evp.textContent = "—"; evp.className = "v";
+      evl.textContent = "—"; evl.className = "v";
+      rng.textContent = "—"; rng.className = "v small";
+      return;
+    }
+    var p = data.prob_profit;
+    pop.textContent = (p * 100).toFixed(1) + "%";
+    pop.className = "v " + (p > 0.5 ? "prob-high" : p > 0.3 ? "prob-mid" : "prob-low");
+    evp.textContent = data.ev_profit != null ? "+" + _fmt(data.ev_profit, 1) : "—";
+    evp.className = "v pos";
+    evl.textContent = data.ev_loss != null ? _fmt(data.ev_loss, 1) : "—";
+    evl.className = "v neg";
+    var ranges = (data.profit_ranges || []).slice(0, 2);
+    rng.textContent = ranges.length
+      ? ranges.map(function (r) {
+          var lo = r[0] == null ? "−∞" : _fmt(r[0], 0);
+          var hi = r[1] == null ? "+∞" : _fmt(r[1], 0);
+          return lo + "–" + hi;
+        }).join(" · ")
+      : "—";
+    rng.className = "v small warn";
+  }
+
+  // ── Restaurar estado desde hash al cargar la página ───────────────────
+  (function bootFromHash() {
+    var st = parseHash();
+    if (!st || !st.legs.length) return;
+    // Esperar un tick para que htmx termine la carga inicial de la chain
+    // (con load default = {{ underlying }}), después sobreescribimos.
+    setTimeout(function () { applyState(st); }, 50);
+  })();
+</script>
+{% endblock %}

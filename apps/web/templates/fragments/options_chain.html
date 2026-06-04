@@ -1,0 +1,52 @@
+{# Chain Calls ← K → Puts del subyacente seleccionado.
+   Embebe `chain-data` (JSON) que el strategy builder lee para calcular payoff. #}
+<div class="opt-ph">
+  CHAIN <b>{{ underlying }}</b>
+  <select class="opt-vto-sel" onchange="optSetMonth(this.value)">
+    {% for m in months %}
+    <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>
+    {% endfor %}
+  </select>
+  <span class="right">spot {{ "{:,.2f}".format(spot).replace(",", "·").replace(".", ",").replace("·", ".") }} · {{ n }} contratos</span>
+</div>
+<script id="chain-data" type="application/json"
+        data-u="{{ underlying }}" data-v="{{ month }}">{{ chain_json|safe }}</script>
+
+<div class="opt-chain-scroll">
+  <table class="opt-chain-tbl">
+    <thead><tr>
+      <th class="C">BID</th><th class="C">ASK</th><th>Δ</th><th>IV</th>
+      <th class="k">K</th>
+      <th>IV</th><th>Δ</th><th class="V">BID</th><th class="V">ASK</th>
+    </tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="{% if r.is_atm %}atm{% endif %}">
+        {% set c = r.call %}{% set p = r.put %}
+        <td class="C right{% if c %} clickable{% endif %}"
+            {% if c %}onclick="optAddLeg('{{ c.ticker }}', 1)" title="long bid"{% endif %}>
+          {% if c %}{{ "%.2f"|format(c.bid) }}{% else %}—{% endif %}</td>
+        <td class="C right{% if c %} clickable{% endif %}"
+            {% if c %}onclick="optAddLeg('{{ c.ticker }}', -1)" title="short ask"{% endif %}>
+          {% if c %}{{ "%.2f"|format(c.ask) }}{% else %}—{% endif %}</td>
+        <td class="right">{% if c and c.delta is not none %}{{ "%.2f"|format(c.delta) }}{% else %}—{% endif %}</td>
+        <td class="right">{% if c and c.iv_pct is not none %}{{ "%.0f"|format(c.iv_pct) }}{% else %}—{% endif %}</td>
+        <td class="k">{{ "%.2f"|format(r.strike) }}</td>
+        <td class="right">{% if p and p.iv_pct is not none %}{{ "%.0f"|format(p.iv_pct) }}{% else %}—{% endif %}</td>
+        <td class="right">{% if p and p.delta is not none %}{{ "%.2f"|format(p.delta) }}{% else %}—{% endif %}</td>
+        <td class="V right{% if p %} clickable{% endif %}"
+            {% if p %}onclick="optAddLeg('{{ p.ticker }}', 1)" title="long bid"{% endif %}>
+          {% if p %}{{ "%.2f"|format(p.bid) }}{% else %}—{% endif %}</td>
+        <td class="V right{% if p %} clickable{% endif %}"
+            {% if p %}onclick="optAddLeg('{{ p.ticker }}', -1)" title="short ask"{% endif %}>
+          {% if p %}{{ "%.2f"|format(p.ask) }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="9" class="dim" style="text-align:center;padding:24px">
+        Sin contratos para {{ underlying }} {{ month }}.
+      </td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

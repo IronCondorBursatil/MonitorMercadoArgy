@@ -23,7 +23,6 @@ FUNCIONES CALENDARIO:
   settlement_byma()      — fecha liquidacion T+0 / T+1
   fechas_cupon()         — schedule de cupones ajustado por BYMA
   bdays_hasta()          — dias habiles faltantes
-  years_habil()          — fraccion de ano en base Act/252
   is_open_now()          — estado del mercado (10:30-17:00)
   accrual_dias()         — dias corridos para accrual de interes
 
@@ -37,7 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, time
+from datetime import date, datetime, timedelta, time
 from functools import lru_cache
 from pathlib import Path
 
@@ -66,14 +65,6 @@ CACHE_JSON      = DATA_DIR / "feriados_ar_cache.json"
 REFRESH_DAYS    = 60
 TIMEOUT_API     = 10
 AÑOS_COBERTURA  = range(2020, 2030)
-
-TIPOS_BYMA = {
-    "inamovible":  "Feriado nacional fijo",
-    "puente":      "Puente turistico (decreto PE)",
-    "trasladable": "Se traslada al lunes mas cercano",
-    "nolaborable": "Optativo — depende del empleador",
-    "bancario":    "Feriado bancario especifico",
-}
 
 # Colores Excel
 C_HEADER    = "042C53"
@@ -115,34 +106,91 @@ def _get_byma() -> mcal.MarketCalendar:
 
 
 # ═════════════════════════════════════════════════════════════════
+#  FERIADOS AR — fuente de verdad para días hábiles
+# ═════════════════════════════════════════════════════════════════
+# Prioridad (decisión del usuario): el Excel oficial de feriados (armado desde
+# las APIs nolaborables/argentinadatos) manda; el paquete pandas (XBUE) queda
+# como fallback para años sin cobertura del Excel.
+#
+# El Excel es un MERGE de 5 fuentes y arrastra fechas espurias cuya única fuente
+# es `xbue_pmc` (pandas_market_calendars ubica mal trasladables/puentes, p.ej.
+# 2025-11-17). Se descartan esas filas: confiamos en API + holidays_lib/nager,
+# nunca en XBUE para AGREGAR feriados. Ver memoria xbue-calendar-missing-ar-holidays.
+
+@lru_cache(maxsize=1)
+def _ar_holidays() -> frozenset:
+    """Feriados AR (no laborables BYMA) desde data/feriados_ar.xlsx, excluyendo
+    las filas cuya fuente principal es solo `xbue_pmc`. frozenset[date]."""
+    try:
+        df = pd.read_excel(EXCEL_PATH, sheet_name="Feriados AR")
+        fechas = pd.to_datetime(df["Fecha"], errors="coerce")
+        fuente = df["Fuente principal"].astype(str).str.strip()
+        days = {
+            ts.date()
+            for ts, src in zip(fechas, fuente)
+            if pd.notna(ts) and src != "xbue_pmc"
+        }
+        return frozenset(days)
+    except Exception as e:  # Excel ausente/corrupto → todo al fallback XBUE
+        log.warning(f"No se pudo leer feriados AR de {EXCEL_PATH}: {e}")
+        return frozenset()
+
+
+@lru_cache(maxsize=1)
+def _ar_cobertura() -> tuple[int, int]:
+    """Rango de años (min, max) cubierto por el Excel de feriados. (0, -1) si vacío."""
+    ys = {d.year for d in _ar_holidays()}
+    return (min(ys), max(ys)) if ys else (0, -1)
+
+
+def _xbue_habil(d: date) -> bool:
+    """Fallback: ¿día de rueda según el calendario XBUE de pandas?"""
+    s = _get_byma().schedule(d.strftime("%Y-%m-%d"), d.strftime("%Y-%m-%d"))
+    return not s.empty
+
+
+def _es_habil(d: date) -> bool:
+    """Día hábil BYMA. Fin de semana → no. Para años cubiertos por el Excel
+    oficial AR, hábil = no es feriado de esa lista; fuera de cobertura, fallback
+    al calendario XBUE de pandas."""
+    if d.weekday() >= 5:  # 5=sábado, 6=domingo
+        return False
+    lo, hi = _ar_cobertura()
+    if lo <= d.year <= hi:
+        return d not in _ar_holidays()
+    return _xbue_habil(d)
+
+
+# ═════════════════════════════════════════════════════════════════
 #  FUNCIONES DE CALENDARIO
 # ═════════════════════════════════════════════════════════════════
 
+def es_habil(d: date) -> bool:
+    """Día hábil BYMA — API **date-native** (O(1): weekday + lookup en el frozenset
+    de feriados). PREFERIR sobre `is_habil(str)` en hot-paths (cer_reference_date,
+    settlement): evita el round-trip `date→str→pd.Timestamp→date` que cuesta ~2ms
+    por la creación del Timestamp; date-native es ~1µs."""
+    return _es_habil(d)
+
+
 def is_habil(fecha: str) -> bool:
-    """True si la fecha es dia habil BYMA."""
-    cal = _get_byma()
-    sched = cal.schedule(fecha, fecha)
-    return not sched.empty
+    """True si la fecha (str) es dia habil BYMA. Wrapper de compat sobre `es_habil`."""
+    return es_habil(pd.Timestamp(fecha).date())
 
 
 def date_range_habil(desde: str, hasta: str) -> pd.DatetimeIndex:
     """DatetimeIndex con todos los dias habiles BYMA en el rango."""
-    cal = _get_byma()
-    sched = cal.schedule(desde, hasta)
-    if sched.empty:
-        return pd.DatetimeIndex([])
-    return mcal.date_range(sched, frequency="1D").normalize().tz_localize(None)
+    dias = pd.date_range(start=desde, end=hasta, freq="D")
+    return pd.DatetimeIndex([d for d in dias if _es_habil(d.date())])
 
 
 def _buscar_habil(fecha: str, direccion: int, inclusive: bool) -> pd.Timestamp:
     """Busca el dia habil mas cercano en la direccion dada (+1 o -1)."""
-    cal = _get_byma()
     ts = pd.Timestamp(fecha)
     start = 0 if inclusive else 1
-    for i in range(start, 10):
+    for i in range(start, 15):
         cand = ts + pd.Timedelta(days=i * direccion)
-        s = cal.schedule(cand.strftime("%Y-%m-%d"), cand.strftime("%Y-%m-%d"))
-        if not s.empty:
+        if _es_habil(cand.date()):
             return cand
     raise ValueError(f"No se encontro dia habil cerca de {fecha}")
 
@@ -157,6 +205,26 @@ def anterior_habil(fecha: str, inclusive: bool = True) -> pd.Timestamp:
     return _buscar_habil(fecha, -1, inclusive)
 
 
+def settlement_byma_date(trade: date, lag: int = 1) -> date:
+    """Liquidación BYMA T+N **date-native** (sin parseo de string). Ver
+    `settlement_byma` para la convención. Preferir en hot-paths."""
+    if lag not in (0, 1):
+        raise ValueError(f"BYMA solo soporta T+0 y T+1. Recibido lag={lag}")
+    cand = trade
+    if lag == 0:  # CI: mismo día si hábil, si no el siguiente hábil
+        for _ in range(15):
+            if _es_habil(cand):
+                return cand
+            cand += timedelta(days=1)
+        raise ValueError(f"No se encontró día hábil cerca de {trade}")
+    count = 0
+    while count < lag:
+        cand += timedelta(days=1)
+        if _es_habil(cand):
+            count += 1
+    return cand
+
+
 def settlement_byma(trade_date: str, lag: int = 1) -> pd.Timestamp:
     """
     Fecha de liquidacion BYMA T+N contando solo dias habiles.
@@ -169,23 +237,10 @@ def settlement_byma(trade_date: str, lag: int = 1) -> pd.Timestamp:
     Timestamp('2026-04-14 00:00:00')
     >>> settlement_byma("2026-04-10", lag=0)  # CI mismo dia
     Timestamp('2026-04-10 00:00:00')
+
+    Wrapper str→pd.Timestamp sobre `settlement_byma_date` (date-native).
     """
-    if lag not in (0, 1):
-        raise ValueError(f"BYMA solo soporta T+0 y T+1. Recibido lag={lag}")
-
-    if lag == 0:
-        return siguiente_habil(trade_date, inclusive=True)
-
-    cal = _get_byma()
-    ts = pd.Timestamp(trade_date)
-    count = 0
-    cand = ts
-    while count < lag:
-        cand += pd.Timedelta(days=1)
-        s = cal.schedule(cand.strftime("%Y-%m-%d"), cand.strftime("%Y-%m-%d"))
-        if not s.empty:
-            count += 1
-    return cand
+    return pd.Timestamp(settlement_byma_date(pd.Timestamp(trade_date).date(), lag))
 
 
 def fechas_cupon(
@@ -234,11 +289,6 @@ def fechas_cupon(
 def bdays_hasta(desde: str, hasta: str) -> int:
     """Dias habiles BYMA entre dos fechas (inclusive)."""
     return len(date_range_habil(desde, hasta))
-
-
-def years_habil(desde: str, hasta: str, base: int = 252) -> float:
-    """Dias habiles a anos (Act/252)."""
-    return bdays_hasta(desde, hasta) / base
 
 
 def is_open_now() -> dict:
@@ -791,16 +841,6 @@ def refresh(forzar: bool = False,
 
     log.info(f"Refresh completado: {len(df)} feriados, {excel_path}")
     return df
-
-
-def get_feriados_para_byma(df: pd.DataFrame) -> list[str]:
-    """
-    Lista de fechas 'YYYY-MM-DD' para inyectar en calendario BYMA hibrido.
-    Excluye 'nolaborable' (optativo del empleador).
-    """
-    tipos_byma = {"inamovible", "puente", "trasladable", "bancario"}
-    mask = df["tipo"].isin(tipos_byma)
-    return sorted(df.loc[mask, "fecha"].dt.strftime("%Y-%m-%d").tolist())
 
 
 # ═════════════════════════════════════════════════════════════════

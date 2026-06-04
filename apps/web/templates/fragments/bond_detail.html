@@ -7,6 +7,12 @@
     <div class="modal-head">
       <div><b>{{ d.ticker }}</b> <span class="mut">{{ meta.short_name }}</span></div>
       <div class="toggle">
+        {% if meta.is_cer_proj %}
+        <button class="cer-open" type="button"
+                hx-get="/bond/{{ d.ticker }}/cer?lag={{ d.settlement_lag }}{% if d.market.price is not none %}&price={{ d.market.price }}{% endif %}"
+                hx-target="#cer-drawer-body" hx-swap="innerHTML"
+                onclick="cerOpen()">Proyección CER ▸</button>
+        {% endif %}
         <button hx-get="/bond/{{ d.ticker }}/detail?lag=0" hx-target="#modal" hx-swap="innerHTML"
                 class="{{ 'on' if lag == 0 else '' }}">T+0</button>
         <button hx-get="/bond/{{ d.ticker }}/detail?lag=1" hx-target="#modal" hx-swap="innerHTML"
@@ -36,23 +42,24 @@
           <dl class="metrics">
             <dt>Precio</dt><dd>{{ num(d.market.price) }}</dd>
             <dt>TIR (TEA)</dt><dd>{{ pct(m.tir) }}</dd>
+            <dt>TIR nominal</dt><dd>{{ pct(m.tna_nominal) }}</dd>
+            <dt>Current yield</dt><dd>{{ pct(m.current_yield) }}</dd>
+            <dt>MD</dt><dd>{{ num(m.duration) }}</dd>
+            <dt>V.Téc</dt><dd>{{ num(m.technical_value) }}</dd>
+            <dt>Paridad</dt><dd>{{ pct(m.parity) }}</dd>
+            <dt>Int. corridos</dt><dd>{{ num(m.accrued_interest) }}{% if m.days_accrued is not none %} ({{ m.days_accrued }}d){% endif %}</dd>
             <dt>TNA 365</dt><dd>{{ pct(m.tna) }}</dd>
             <dt>TEM 365</dt><dd>{{ pct(m.tem) }}</dd>
             <dt>TNA m=12</dt><dd>{{ pct(m.tna_mensual) }}</dd>
             <dt>TEM m=12</dt><dd>{{ pct(m.tem_360) }}</dd>
-            <dt>MD</dt><dd>{{ num(m.duration) }}</dd>
-            <dt>V.Téc</dt><dd>{{ num(m.technical_value) }}</dd>
-            <dt>Paridad</dt><dd>{{ pct(m.parity) }}</dd>
-            <dt>Int. corridos</dt><dd>{{ num(m.accrued_interest) }}</dd>
             <dt>V. Residual</dt><dd>{{ num(m.residual_nominal) }}</dd>
             <dt>DV01</dt><dd>{{ num(m.dv01, 4) }}</dd>
             <dt>Convexidad</dt><dd>{{ num(m.convexity) }}</dd>
             {% if m.spread_mercado is not none %}<dt>Spread mdo</dt><dd>{{ pct(m.spread_mercado) }}</dd>{% endif %}
           </dl>
         </section>
-      </div>
 
-      <section class="calc">
+        <section class="calc">
         <h4>Calculadora</h4>
         <form hx-post="/bond/{{ d.ticker }}/metrics" hx-target="#calc-result" hx-swap="innerHTML">
           <input type="hidden" name="settlement_lag" value="{{ d.settlement_lag }}">
@@ -65,7 +72,8 @@
           <button type="submit">→ Precio/métricas</button>
         </form>
         <div id="calc-result"></div>
-      </section>
+        </section>
+      </div>
 
       <section>
         <h4>Cashflows</h4>
@@ -85,5 +93,18 @@
         </table>
       </section>
     </div>
+
+    {% if meta.is_cer_proj %}
+    <div class="cer-scrim" onclick="cerClose()"></div>
+    <aside class="cer-drawer">
+      <header>
+        <h4>Proyección CER · {{ d.ticker }}</h4>
+        <button class="x" type="button" onclick="cerClose()">✕</button>
+      </header>
+      <div class="cer-drawer-body" id="cer-drawer-body">
+        <p class="mut" style="padding:12px">Cargando…</p>
+      </div>
+    </aside>
+    {% endif %}
   </div>
 </div>

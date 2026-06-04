@@ -14,10 +14,10 @@ from typing import Optional, Protocol, runtime_checkable
 
 import numpy as np
 
-from core.domain.conventions import cer_reference_date, days_30_360, settlement_byma
+from core.domain.conventions import cer_reference_date, settlement_byma_date
 from core.domain.pricing import metrics
 from core.domain.pricing.context import PricingContext
-from core.domain.xirr import _JULIAN_YEAR, _xirr_from_years, xirr
+from core.domain.xirr import _xirr_from_years
 
 
 @runtime_checkable
@@ -40,9 +40,9 @@ class VanillaStrategy:
         ref = ctx.settle
         indices = ctx.indices
 
-        all_cfs = sorted(inst.cashflows or [], key=lambda cf: cf.date)
-        past_cfs = [cf for cf in all_cfs if cf.date < ref]
-        future_cfs = [cf for cf in all_cfs if cf.date >= ref]
+        all_cfs = inst.cashflows  # ya cronológico (invariante del modelo)
+        past_cfs = [cf for cf in all_cfs if cf.date <= ref]      # ex-cupón: flujo en
+        future_cfs = [cf for cf in all_cfs if cf.date > ref]     # `ref` lo cobra el vendedor
 
         # Capitalizable de un solo flujo (LECAP/BONCAP): V.Téc crece
         # geométricamente de 100 (emisión) al payoff (vto).
@@ -55,7 +55,7 @@ class VanillaStrategy:
             if total > 0 and payoff > 0 and 0 < elapsed <= total:
                 base_value = 100.0 * (payoff / 100.0) ** (elapsed / total)
                 if inst.is_cer and indices and inst.cer_base:
-                    settle = settlement_byma(ref.strftime("%Y-%m-%d"), lag=1).date()
+                    settle = settlement_byma_date(ref, lag=1)
                     target_date = cer_reference_date(settle, inst.cer_lag)
                     cer_val = indices.get_cer(target_date)
                     if cer_val:
@@ -73,7 +73,7 @@ class VanillaStrategy:
 
         # Factor de indexación CER (NT N°8/2024 Eq. 13).
         if inst.is_cer and indices and inst.cer_base:
-            settle = settlement_byma(ref.strftime("%Y-%m-%d"), lag=1).date()
+            settle = settlement_byma_date(ref, lag=1)
             target_date = cer_reference_date(settle, inst.cer_lag)
             cer_val = indices.get_cer(target_date)
             if cer_val:
@@ -86,58 +86,48 @@ class VanillaStrategy:
         return base_value
 
     # ------------------------------------------------------------------ #
-    # TIR — XIRR vanilla Act/365.25; rama 30/360 inline (BOPREAL y CER+30/360).
-    # En el original `calculate_tir` chequea is_30_360 inline tras el camino
-    # general, NO como tipo aparte — por eso vive acá (y CER lo hereda).
+    # TIR — XIRR descontando con la convención declarada del instrumento
+    # (`inst.year_fraction_to`): ACT/365 las ONs, ACT/365.25 soberanos, 30/360
+    # BOPREAL/CER-30-360, ACT/ACT. Un único camino (sin split is_30_360); para
+    # 30/360 y 365.25 es numéricamente idéntico a las fórmulas anteriores.
     # ------------------------------------------------------------------ #
     def tir(self, inst, price: float, ctx: PricingContext) -> Optional[float]:
         settle = ctx.settle
-        future_cfs = inst.get_future_cashflows(settle)
+        future_cfs, yfs = metrics.discount_year_fractions(inst, settle)
         if not future_cfs:
             return None
-        if inst.is_30_360:
-            flows_arr = np.array([-price] + [cf.total for cf in future_cfs])
-            years_arr = np.array(
-                [0.0] + [days_30_360(settle, cf.date) / 360.0 for cf in future_cfs]
-            )
-            t = _xirr_from_years(flows_arr, years_arr)
-            return float(t) if not np.isnan(t) else None
-        flows = [-price] + [cf.total for cf in future_cfs]
-        dates = [settle] + [cf.date for cf in future_cfs]
-        t = xirr(flows, dates)
+        flows = np.array([-price] + [cf.total for cf in future_cfs])
+        years = np.array([0.0] + yfs)
+        t = _xirr_from_years(flows, years)
         return float(t) if not np.isnan(t) else None
 
     # ------------------------------------------------------------------ #
-    # Modified Duration — Macaulay / (1+TEA)^(1/m), Act/365.25.
-    # Rama 30/360 inline devuelve MacaulayD (convención BOPREAL/Balanz).
+    # Modified Duration — Macaulay / (1+TEA)^(1/m), descontando con la convención
+    # del instrumento. Un único camino. Guard de overflow: ante TIR degenerada
+    # (ej. CUAP con CER mock → TIR absurda), `(1+tir)**t` puede desbordar → None
+    # limpio en vez de OverflowError.
     # ------------------------------------------------------------------ #
     def duration(self, inst, tir: float, ctx: PricingContext) -> Optional[float]:
         settle = ctx.settle
-        future_cfs = inst.get_future_cashflows(settle)
-        if not future_cfs:
+        future_cfs, yfs = metrics.discount_year_fractions(inst, settle)
+        if not future_cfs or tir is None or np.isnan(tir):
             return None
-        if inst.is_30_360:
-            total_pv, weighted_pv = 0.0, 0.0
-            for cf in future_cfs:
-                t = days_30_360(settle, cf.date) / 360.0
+        try:
+            total_pv = 0.0
+            weighted_pv = 0.0
+            for cf, t in zip(future_cfs, yfs):
                 pv = cf.total / (1 + tir) ** t
                 total_pv += pv
                 weighted_pv += pv * t
-            return (weighted_pv / total_pv) if total_pv > 0 else None
-        total_pv = 0.0
-        weighted_pv = 0.0
-        for cf in future_cfs:
-            t = (cf.date - settle).days / _JULIAN_YEAR
-            pv = cf.total / (1 + tir) ** t
-            total_pv += pv
-            weighted_pv += pv * t
-        if total_pv <= 0:
+            if total_pv <= 0:
+                return None
+            macaulay = weighted_pv / total_pv
+            freq = getattr(inst, "payment_frequency", 1) or 1
+            if len(future_cfs) <= 1:
+                freq = 1
+            return macaulay / (1 + tir) ** (1.0 / freq)
+        except (OverflowError, ZeroDivisionError, ValueError):
             return None
-        macaulay = weighted_pv / total_pv
-        freq = getattr(inst, "payment_frequency", 1) or 1
-        if len(future_cfs) <= 1:
-            freq = 1
-        return macaulay / (1 + tir) ** (1.0 / freq)
 
     # ------------------------------------------------------------------ #
     # Precio desde TIR — PV vanilla.

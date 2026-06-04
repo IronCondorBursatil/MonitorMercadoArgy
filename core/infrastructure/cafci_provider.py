@@ -194,7 +194,7 @@ class CAFCIProvider:
         pero sin rendimientos por período (rend = None) — degradado pero funcional.
         Solo se activa si el dataset está vacío (no hay snapshot en disco).
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor
 
         funds: List[dict] = []
 

@@ -23,7 +23,7 @@ from typing import List, Optional
 import numpy as np
 
 from core.domain import conventions
-from core.domain.conventions import cer_reference_date as _cer_reference_date  # re-export (bond_detail)
+from core.domain.conventions import cer_reference_date as _cer_reference_date  # noqa: F401  re-export usado por bond_detail
 from core.domain.conventions import resolve_settle
 from core.domain.models import MarketSnapshot
 from core.domain.pricing import metrics
@@ -31,7 +31,6 @@ from core.domain.pricing.context import PricingContext
 from core.domain.pricing.registry import strategy_for
 from core.domain.pricing.stubs import ZeroTamar
 from core.domain.pricing.tamar import tamar_dual_payoff_at
-from core.domain.xirr import _JULIAN_YEAR
 from core.domain.xirr import xirr as _xirr
 
 _PCT_CHANGE_EPS = 1e-12
@@ -160,18 +159,21 @@ class FinancialEngine:
     # ------------------------------------------------------------------ #
     @staticmethod
     def calculate_theoretical_price(instrument, tir: float, reference_date: date) -> Optional[float]:
-        """Precio implícito de descontar flujos futuros al tir dado (act/365.25)."""
+        """Precio implícito de descontar flujos futuros al tir dado, con la
+        convención de día-count declarada del instrumento."""
         if instrument is None or tir is None:
             return None
-        future = instrument.get_future_cashflows(reference_date)
+        future, yfs = metrics.discount_year_fractions(instrument, reference_date)
         if not future:
             return None
-        price = 0.0
-        for cf in future:
-            years = (cf.date - reference_date).days / _JULIAN_YEAR
-            if years <= 0:
-                continue
-            price += cf.total / (1 + tir) ** years
+        try:
+            price = 0.0
+            for cf, years in zip(future, yfs):
+                if years <= 0:
+                    continue
+                price += cf.total / (1 + tir) ** years
+        except (OverflowError, ZeroDivisionError, ValueError):
+            return None
         return price if price > 0 else None
 
     @staticmethod
@@ -229,6 +231,10 @@ class FinancialEngine:
     @staticmethod
     def tea_to_tna(tea: Optional[float]) -> Optional[float]:
         return conventions.tea_to_tna(tea)
+
+    @staticmethod
+    def tea_to_tna_freq(tea: Optional[float], freq: int) -> Optional[float]:
+        return conventions.tea_to_tna_freq(tea, freq)
 
     @staticmethod
     def tea_to_tem_m12(tea: Optional[float]) -> Optional[float]:

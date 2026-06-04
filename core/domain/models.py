@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import date as _date
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 _UNSET = object()
 
@@ -68,6 +68,16 @@ class Instrument(BaseModel):
     cer_spread: Optional[float] = None  # DUAL CER/TAMAR: annual spread over CER (TXMJ* series)
     payment_frequency: int = 2  # Annual coupons (2 = semestral, AR market default)
     day_count: str = "ACT/365.25"  # "30/360", "ACT/365", "ACT/365.25", "ACT/ACT"
+    ley_aplicable: Optional[str] = None  # ON: "Argentina" / "Extranjera" — elige MEP vs CCL p/ la pata pesos
+
+    @field_validator("cashflows", mode="after")
+    @classmethod
+    def _sort_cashflows(cls, cfs: tuple) -> tuple:
+        """INVARIANTE: el schedule de cashflows es cronológico. Un bono paga sus
+        flujos en orden de fecha por definición — codificarlo acá (1 sort al
+        construir, sort estable) elimina los `sorted()` defensivos dispersos en el
+        hot-path de pricing. `model_construct` no se usa en el repo → sin bypass."""
+        return tuple(sorted(cfs, key=lambda cf: cf.date))
 
     # ------------------------------------------------------------------ #
     # Clasificación (espejo 1:1 de services._is_*_type). No muta el campo;
@@ -91,8 +101,21 @@ class Instrument(BaseModel):
 
     @property
     def is_dolar_linked(self) -> bool:
-        t = self.norm_type
+        # Acepta ambas grafías: "DOLAR LINKED" (master, ES) y "DOLLAR LINKED" (ABM ON, EN).
+        t = self.norm_type.replace("DOLLAR", "DOLAR")
         return "DOLAR_LINKED" in t or "DOLAR LINKED" in t
+
+    @property
+    def is_hard_dollar(self) -> bool:
+        """ON hard-dollar (paga USD). La pata pesos (…O) se pasa a USD por MEP/CCL
+        según ley (≠ DOLAR_LINKED, que usa el oficial). Disjunto de is_dolar_linked."""
+        return "HARD DOLLAR" in self.norm_type
+
+    @property
+    def is_ley_argentina(self) -> bool:
+        """Ley local explícita → la pata pesos se valúa contra MEP (dólar bolsa).
+        Extranjera o SIN dato → CCL (cable): el universo ON es mayormente ley NY."""
+        return "ARGENTIN" in (self.ley_aplicable or "").upper()
 
     @property
     def is_tamar_puro(self) -> bool:
@@ -111,12 +134,28 @@ class Instrument(BaseModel):
     def is_30_360(self) -> bool:
         return "30/360" in (self.day_count or "") or self.is_bopreal
 
-    def get_future_cashflows(self, reference_date: _date) -> List[Cashflow]:
-        return [cf for cf in self.cashflows if cf.date >= reference_date]
+    @property
+    def day_count_enum(self) -> "DayCount":
+        """Convención de día-count para DESCONTAR (TIR/duration/PV). BOPREAL fuerza
+        30/360 (espeja el fallback de `is_30_360`). Import function-local: rompe el
+        ciclo models→daycount→cashflow_synth→models."""
+        from core.domain.daycount import DayCount, parse_day_count
+        if self.is_bopreal:
+            return DayCount.THIRTY_360
+        return parse_day_count(self.day_count)
 
-    # Alias nuevo (nomenclatura del plan); mismo comportamiento.
-    def future_cashflows(self, ref: _date) -> List[Cashflow]:
-        return self.get_future_cashflows(ref)
+    def year_fraction_to(self, target: _date, ref: _date) -> float:
+        """Fracción de año ref→target bajo la convención del instrumento. Es el
+        único punto por el que las strategies/metrics descuentan."""
+        from core.domain.daycount import year_fraction
+        return year_fraction(ref, target, self.day_count_enum)
+
+    def get_future_cashflows(self, reference_date: _date) -> List[Cashflow]:
+        # Ex-cupón: un flujo que paga EXACTAMENTE en la fecha de referencia
+        # (liquidación) lo cobra el VENDEDOR — el comprador liquida ese día y no es
+        # tenedor de registro. Por eso el corte es estricto (> ref). Ver
+        # core.domain.pricing.metrics.period_bounds.
+        return [cf for cf in self.cashflows if cf.date > reference_date]
 
 
 class MarketSnapshot(BaseModel):
@@ -141,4 +180,6 @@ class InstrumentMetrics:
     parity: Optional[float] = None
     variance_7d: Optional[float] = None
     variance_30d: Optional[float] = None
+    variance_90d: Optional[float] = None
+    variance_ytd: Optional[float] = None
     variance_1y: Optional[float] = None

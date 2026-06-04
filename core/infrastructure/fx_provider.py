@@ -123,6 +123,18 @@ class DolarAPIProvider:
         q = self.get_quote("mayorista")
         return q.get("venta") if q else None
 
+    def get_mep_venta(self) -> Optional[float]:
+        """Offer (venta) del dólar MEP = casa 'bolsa' en dolarapi. Usado para pasar
+        la pata pesos (…O) de una ON hard-dollar LEY ARGENTINA a su USD implícito."""
+        q = self.get_quote("bolsa")
+        return q.get("venta") if q else None
+
+    def get_ccl_venta(self) -> Optional[float]:
+        """Offer (venta) del dólar CCL/cable = casa 'contadoconliqui'. Usado para la
+        pata pesos (…O) de una ON hard-dollar LEY EXTRANJERA (o sin ley declarada)."""
+        q = self.get_quote("contadoconliqui")
+        return q.get("venta") if q else None
+
     def get_mayorista_mid(self) -> Optional[float]:
         """Mid del dólar mayorista = (compra + venta) / 2. Usado como spot
         para la TNA implícita de los futuros DLR — representa mejor el "spot

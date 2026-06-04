@@ -25,6 +25,8 @@ duckdb
 SQLAlchemy>=2
 pydantic>=2
 pydantic-settings
+optionlab                # analytics avanzados de estrategias de opciones (P(profit), EV, ranges)
 
 # --- dev ---
 pytest
+hypothesis              # property-based testing (invariantes de pricing/day-count)

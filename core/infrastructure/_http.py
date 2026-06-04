@@ -24,9 +24,9 @@ import time
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from core.infrastructure._http_constants import TRANSIENT_HTTP_CODES as _TRANSIENT_HTTP_CODES
 
-_TRANSIENT_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+logger = logging.getLogger(__name__)
 
 # Upstreams (data912, BCRA, dolarapi) son APIs JSON públicas con cadenas TLS a
 # veces incompletas → verify=False (igual que el comportamiento previo).
