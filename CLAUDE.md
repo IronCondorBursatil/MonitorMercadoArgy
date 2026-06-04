@@ -45,6 +45,7 @@ core/infrastructure/
   schemas.py           Data912Row (validación Pydantic en el borde de ingesta)
   _http.py             http_get_json SYNC (httpx pooled) — read-path de los 5 providers sync (FX/indices/REM/CAFCI/argentinadatos + histórico), corren en to_thread fuera del event loop
   repositories.py indices_provider.py fx_provider.py futures_provider.py rem_provider.py cafci_provider.py
+  price_history.py     store SQLite auto-mantenido de cierres diarios (rendimientos Sem/1M/3M/YTD/1A): priming Data912 /historical/bonds + acumulación del feed vivo; read-path local (merge con el CSV legacy)
   repositories.build_instrument()   parser de fila → Instrument, COMPARTIDO por el loader Excel y el ABM SQLite
 apps/web/
   app.py               FastAPI + lifespan (refresh loop con hub.refresh_all async + BEI loop, motor vía to_thread). MONITOR_DISABLE_LOOPS en tests.
@@ -58,10 +59,11 @@ run.py scripts/ tests/ data/ config/
 
 ## Flujo web (HTMX SSR)
 
-`run.py`→uvicorn→`app.py`. El **lifespan** arranca 2 tasks: `_refresh_loop` (cada 5s:
+`run.py`→uvicorn→`app.py`. El **lifespan** arranca las tasks: `_refresh_loop` (cada 5s:
 `await hub.refresh_all()` trae Data912 async con breaker+pool, luego el motor corre
-`GenerateMonitorReport.execute` vía `to_thread` leyendo el snapshot del hub → `AppState`)
-y `_bei_loop` (`compute_bei_tables`). Cada panel es un `<tbody hx-get="/panels/{id}/rows">`
+`GenerateMonitorReport.execute` vía `to_thread` leyendo el snapshot del hub → `AppState`),
+`_bei_loop` (`compute_bei_tables`) y `_price_history_loop` (mantiene el store de cierres
+diarios para los rendimientos: priming Data912 + acumulación del feed). Cada panel es un `<tbody hx-get="/panels/{id}/rows">`
 que renderiza un fragmento SSR desde `AppState`; el auto-refresh es **event-driven por SSE**
 (`/stream` pushea `refresh` por ciclo; `hx-trigger="load, sse:refresh, every 15s"` con el
 polling como fallback). El detalle es un modal (`/bond/{t}/detail` + `/bond/{t}/metrics`).
@@ -72,10 +74,13 @@ polling como fallback). El detalle es un modal (`/bond/{t}/detail` + `/bond/{t}/
   contra el original congelado (`tests/_legacy_engine.py`) sobre todos los instrumentos.
   Cualquier cambio de pricing debe dejarlo verde.
 - **`FinancialEngine` preserva firmas** públicas (sus consumidores: bond_detail, generate_report).
-- **Excel = semilla**: `CatalogRepository` lee SQLite (auto-siembra del Excel si vacío vía
-  `ingest_master.py` / `ingest_from_excel`, que preserva `sheet`+`raw_fields`). La **ABM
-  escribe SQLite directo** (SQLAlchemy transaccional, §5.5 — ya NO toca el Excel) y llama
-  `reload(reseed_from_excel=False)` para refrescar el cache en memoria desde SQLite.
+- **SQLite (`catalog.db`) = fuente de verdad; Excel/CSV = semillas de bootstrap** (decisión v7.2):
+  el catálogo VIVO es SQLite. `CatalogRepository` lee SQLite (auto-siembra del Excel si vacío vía
+  `ingest_master.py` / `ingest_from_excel`, que preserva `sheet`+`raw_fields`). Las **ONs** siembran
+  de `data/obligaciones_negociables.csv` vía `on_catalog.ingest()` (bootstrap **solo si la hoja está
+  vacía** — no re-ingesta destructiva). La **ABM escribe SQLite directo** (SQLAlchemy transaccional,
+  §5.5 — ya NO toca el Excel) y es el editor de runtime; sus altas viven SOLO en la DB. `reload(reseed_from_excel=False)`
+  refresca el cache en memoria desde SQLite. Para cambiar datos ya en la DB: ABM o migración explícita, no re-seed.
 - **Intérprete Python**: usar `py -3.12` / `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`. Ver memoria `env_python_interpreter`. (El viejo "Store Python" ya no existe; sus deps se reinstalaron acá.)
 - **OneDrive**: nada de venv ni `.db` dentro del proyecto.
 

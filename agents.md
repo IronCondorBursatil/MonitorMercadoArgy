@@ -14,10 +14,16 @@
 >   `templates/`). `run.py` ahora arranca uvicorn. HTTP: `requests`→`httpx`.
 > - **Logging** (`config/settings.py::_ConsoleFilter`): la **consola** muestra SOLO lo
 >   accionable — `WARNING`+/errores, requests HTTP con status ≥ 400, y todo lo marcado
->   `extra={"console": True}`. El **archivo** `monitores_global.log` recibe **TODO** (INFO,
->   httpx, access; rota 5 MB × 5). Regla para futuros arreglos: **no** ensuciar la consola
->   con INFO por-ciclo (fetches OK, access 2xx) — va al archivo; si querés que un INFO salga
->   puntualmente en la terminal, usá `logger.info(msg, extra={"console": True})`.
+>   `extra={"console": True}`. El **archivo** `monitores_global.log` recibe **WARNING+**
+>   (errores de conexión, breakers, fallas de fetch — registro durable para post-mortem;
+>   rota 5 MB × 5). **v7.2**: antes era INFO+ (httpx/access por ciclo) y crecía a MB de ruido;
+>   ahora el ruido INFO NO se persiste. Para forzar un INFO puntual a la terminal:
+>   `logger.info(msg, extra={"console": True})`.
+> - **Day-count + solver (2026-05-30, v7.2)**: el descuento (TIR/duration/PV/convexidad) ahora
+>   **respeta el `day_count` declarado de cada bono** vía `core/domain/daycount.py` (nuevo) —
+>   antes todo lo no-30/360 caía a 365.25 ignorando el campo (ONs ACT/365 mal descontadas). Solver
+>   XIRR migrado a **Brent robusto** (`xirr.py`). Auditoría completa del codebase aplicada. Ver la
+>   convención **"Day-count / convención de descuento"** abajo y el CHANGELOG v7.2.
 > - **Las secciones de abajo sobre la capa web (server.py / app.js / Gridstack / endpoints
 >   `/api/*`) son HISTÓRICAS.** Las **convenciones financieras** (CER, TAMAR, BEI, day-counts,
 >   MD, accrued, settle T+0/T+1) SIGUEN VIGENTES — el motor preserva la matemática.
@@ -36,7 +42,7 @@ Monitor automatizado de los principales segmentos de renta fija en Argentina (So
 - **FX USD/ARS**: dolarapi.com
 - **REM (Relevamiento de Expectativas de Mercado)**: `bcra-rem-api.facujallia.workers.dev`
 - **FCI (Fondos Comunes de Inversión)**: CAFCI vía `estadisticas.cafci.org.ar/comparador-de-fondos.json` (catálogo completo + matriz de rendimientos diaria, sin auth)
-- **Histórico de precios** (variación intradiaria): `data/history/precio_historico.csv` (TSV)
+- **Histórico de precios** (rendimientos Sem/1M/3M/YTD/1A): store auto-mantenido `price_history.db` (`core/infrastructure/price_history.py`) — priming de Data912 `/historical/bonds` + acumulación del cierre del feed vivo; el CSV legacy `data/history/precio_historico.csv` queda como piso estático
 - **Histórico diario** (popup por ticker): proxy vía data912 con cache TTL 10min
 - **Master de instrumentos**: `data/instruments_master.xlsx`
 - Matemática: SciPy (Newton + Brentq para XIRR, least_squares para NSS), NumPy, Pandas
@@ -51,7 +57,7 @@ Monitor automatizado de los principales segmentos de renta fija en Argentina (So
 | Pilar | Implementación | Regla |
 |---|---|---|
 | **1. Una config por curva (panel)** | `apps/web/server.py::_build_refresh_context` | Cada curva es un panel del dashboard, declarado como tupla `(id, tipos, opts)`; todos comparten el row-builder `_base_bond_row()`. |
-| **2. Excel central como única fuente de instrumentos** | `core/infrastructure/repositories.py::ExcelInstrumentsRepository` | Nadie más lee `instruments_master.xlsx`. Sin listas hardcodeadas. ABM web (en [apps/web/instruments_abm.py](apps/web/instruments_abm.py)) es el único otro escritor permitido (atomic writes vía `.tmp` + `os.replace`). |
+| **2. SQLite (`catalog.db`) = fuente de verdad del catálogo; Excel/CSV = semillas de bootstrap** | `core/infrastructure/db/catalog_repository.py::CatalogRepository` (runtime) · `instruments_master.xlsx` + `data/obligaciones_negociables.csv` (seeds) · [apps/web/instruments_abm.py](apps/web/instruments_abm.py) (editor) | **(v7.2)** El catálogo VIVO es **SQLite** (en `%LOCALAPPDATA%\monitor`, fuera de OneDrive). El Excel master y el CSV de ON **sólo siembran** la DB en bootstrap (si está vacía). La **ABM escribe SQLite directo** (transaccional) y es el editor de altas/bajas/ediciones — las altas por ABM viven SOLO en la DB. Sin listas hardcodeadas de tickers. *(El viejo "Excel = única fuente" + ABM con writes atómicos al Excel quedó obsoleto en la reingeniería.)* |
 | **3. Matemática financiera centralizada** | `core/domain/services.py::FinancialEngine` + `core/domain/cashflow_synth.py` | Única implementación de xirr, TIR, MD, V.Téc, TNA, TEM. Nadie reimplementa fórmulas. Cashflow synthesis es un módulo puro reutilizado por el repo y la ABM. |
 | **4. Datos puramente Data912** | `core/infrastructure/repositories.py::Data912MarketDataProvider` | Único provider de precios live + histórico (OHLC). Excepciones documentadas: BCRA (CER, TAMAR), dolarapi (FX), Matba/Primary WS (futuros DLR + spot A3500, sin auth), REM (expectativas IPC), CAFCI (FCI: catálogo + rendimientos diarios). |
 
@@ -133,7 +139,7 @@ Monitores - Data912/
 │   ├── instruments_master.xlsx         # FUENTE DE VERDAD: 5 hojas (Soberanos, Tasa_Fija, CER, Dolar_Linked, TAMAR)
 │   │                                   #                   + Cashflows + Cashflows_Fija
 │   └── history/
-│       ├── precio_historico.csv        # Histórico TSV para variaciones 7D/30D/1Y (one column per ticker)
+│       ├── precio_historico.csv        # Piso estático del store de precios (legacy; ver core/infrastructure/price_history.py)
 │       ├── bei_diario.csv              # Persistencia diaria del BEI (auto-append)
 │       ├── cer_diario.csv              # Mirror BCRA var 30 (resilience: opera offline si BCRA cae)
 │       ├── tamar_diario.csv            # Mirror BCRA var 44 (idem)
@@ -182,8 +188,8 @@ Monitores - Data912/
 - Crear un cliente HTTP nuevo para otra fuente sin pasar por `core/infrastructure/_http.py::http_get_json` (perdés el retry sobre transients).
 - Reimplementar TIR / duration / NPV (usar `FinancialEngine`).
 - Reimplementar cashflow synthesis (usar `cashflow_synth.synth_cashflows`).
-- Leer el Excel maestro fuera de `ExcelInstrumentsRepository` (excepción permitida: `instruments_abm.py` para CRUD vía openpyxl).
-- Escribir el Excel sin pasar por `_atomic_save_workbook` (`.tmp` + `os.replace`).
+- Leer el catálogo fuera de `CatalogRepository` (SQLite). El Excel master / CSV de ON sólo se leen para **sembrar** la DB (bootstrap); el editor de runtime es la ABM (`instruments_abm.py`, escribe SQLite transaccional). *(v7.2: la verdad es SQLite, no el Excel.)*
+- Tratar al Excel master como fuente de verdad viva: es semilla. Las altas/ediciones del runtime van por la ABM → SQLite.
 
 ---
 
@@ -232,7 +238,23 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
 - Precio en pesos; **par = 100 USD**.
 - V.Téc en pesos = `residual_USD × mayorista_venta` (FX desde dolarapi).
 - Paridad = `price_pesos / V.Téc_pesos` (en rango 80-105% típico).
-- TIR es **USD TIR**: precio se deflacta por FX antes de XIRR.
+- TIR es **USD TIR**: precio se deflacta por FX antes de XIRR (day-count `ACT/365`, ver Day-count).
+
+### Obligaciones Negociables (ON hard-dollar)
+
+- Categoría `HARD DOLLAR`, **multi-ticker** (`…O` = pesos, `…D` = MEP, `…C` = CABLE; panel default `…D`).
+  Cashflows en USD.
+- **Day-count por instrumento**: las ON del informe (`data/obligaciones_negociables.csv` →
+  `core/infrastructure/on_catalog.py`, ingesta idempotente a SQLite) usan `ACT/365` ("real/365", base
+  de intereses del calculador del broker). Las ON de bancos cargadas por ABM varían: ej. **BACH = 30/360**,
+  **BF37/BPCV/BYCV/CACB/CICA = ACT/365**. El motor descuenta con la convención declarada de cada una
+  (ver Day-count). Validadas contra Balanz (`tests/test_balanz_golden.py`).
+- **Serie/Clase + Ley Aplicable** (v7.2): el CSV tiene columnas `serie_clase` (ej. "Clase XXXI",
+  del listado IAMC/BYMA) y `ley` (`Argentina` / `Extranjera`). `on_catalog` las lee → `serie_clase`
+  se agrega al `short_name` para display (`"EMISOR - Clase X"`) y ambas van a `raw_fields`. El form
+  ABM de ONs tiene los campos `serie_clase` (texto) + `ley_aplicable` (select). **`ingest()` es
+  destructivo** (borra la hoja y la reconstruye del CSV) → las ON cargadas por ABM (no en el CSV) se
+  anotan editándolas en el ABM, no por re-ingesta.
 
 ### Bonos LECAP / BONCAP capitalizables
 
@@ -245,6 +267,34 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
 ### Modified Duration — convención BYMA/IAMC
 
 `MD = Macaulay_years / (1+TEA)^(1/freq)`, donde `freq` es la frecuencia anual de pagos (2 = semestral). El campo `payment_frequency` del Instrument se infiere automáticamente del gap mediano entre cashflows si no está en el Excel.
+
+### Day-count / convención de descuento (centralizado en `core/domain/daycount.py`)
+
+> **Refactor 2026-05-30 (v7.2).** Antes el descuento (TIR/duration/PV/convexidad) estaba cableado a
+> `_JULIAN_YEAR = 365.25` salvo la rama 30/360 — **ignorando el `day_count` declarado del bono**. Las
+> ONs `ACT/365` se descontaban a 365.25 → error sistemático de ~1bp+. Ahora se respeta lo declarado.
+
+- **Fuente única**: `daycount.year_fraction(start, end, DayCount)` es la ÚNICA fracción de año de
+  descuento. Convenciones: `ACT/365` (días/365), `ACT/365.25` (días/365.25 — año juliano, **default
+  soberano**), `30/360` (ISDA, `days_30_360/360`), `ACT/ACT` (ISDA actual/actual). `parse_day_count()`
+  tolera alias/blanks/basura. `Instrument.day_count_enum` resuelve la convención (BOPREAL → 30/360).
+- **Respetar lo declarado**: todos los sitios de descuento (`pricing/base.py`, `pricing/metrics.py`,
+  `pricing/strategies.py`, `services.calculate_theoretical_price`) descuentan con
+  `inst.year_fraction_to(date, ref)`. Para `30/360` y `ACT/365.25` el resultado es **bit-idéntico** al
+  motor viejo (sólo cambian los `ACT/365`: ONs hard-dollar + Dólar-Linked, que ahora matchean Balanz —
+  ej. CICA 7.56%, antes 7.57%).
+- **Solver Brent** (`core/domain/xirr.py`): `xirr(flows, dates, day_count=None)`. brentq con
+  auto-bracketing geométrico (encuentra yields >1000% que el bracket fijo `[-0.999,10]` perdía); Newton
+  sólo como pre-paso rápido. `_npv` overflow-safe; `duration`/`vanilla_pv` con guard de `OverflowError`
+  → `None` limpio (mata el crash histórico de CUAP con TIR degenerada). `tests/_legacy_engine.py`
+  (fixture de equivalencia) espeja el MISMO descuento + solver → `test_pricing_equivalence` queda verde
+  por construcción.
+- **Invariante de cashflows**: `Instrument` ordena sus cashflows por fecha en un `field_validator` (el
+  schedule es cronológico por definición) → el hot-path de pricing ya no re-sortea defensivamente.
+- **Tests**: `test_daycount.py` (identidades + bordes bisiestos/fin-de-mes/ACT-ACT), `test_xirr_solver.py`
+  (robustez del solver + recuperación de yield), `test_daycount_pricing.py` (descuento por convención +
+  gap-lock ACT/365 vs 365.25), `test_balanz_golden.py` (anclas exactas vs Balanz), `test_pricing_invariants.py`
+  (round-trip / monotonicidad / cotas, property-based con `hypothesis`).
 
 ### Soberanos: 3 especies por moneda (ARS / MEP / CABLE) + pricing de la pata ARS
 
@@ -463,7 +513,7 @@ REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limi
 | Error | Causa probable | Solución |
 |---|---|---|
 | `No se encontró instruments_master.xlsx` | El Excel se movió | Restaurarlo en `data/instruments_master.xlsx` |
-| Variaciones 7D/30D/1Y todas `-` para un bono | Su ticker no está como columna en el CSV histórico | Refrescar `data/history/precio_historico.csv` |
+| Variaciones Sem/1M/3M/YTD/1A todas `—` para un bono | El store aún no tiene su histórico: Data912 `/historical/bonds/{ticker}` no lo cubre (LECAP/TAMAR/DL/bopreal/ON) y el feed recién acumula | Esperá a que acumule, o sembralo en `precio_historico.csv`. El priming/acumulación los maneja `price_history.py` |
 | TIR muestra `nan` o números absurdos | Cashflows del Excel desactualizados / vencidos / mal cargados | Revisar hoja `Cashflows`. Para LECAP, verificar `tem_licit` y `fecha_emision` |
 | CER/TAMAR no funcionan al primer startup | BCRA API caída + no hay CSV persistido | Verificar `https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/30` y `/44`. Tras el primer fetch exitoso, `data/history/{cer,tamar}_diario.csv` permiten operar offline. |
 | Aparece menos instrumentos de los esperados | Filtro de tipos en `instrument_groups.py` no incluye el tipo del Excel | Agregar el `instrument_type` al grupo correspondiente |
@@ -495,8 +545,27 @@ REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limi
 
 ---
 
-**Última actualización:** 2026-05-27
-**Versión:** 7.1 — **Dashboard HTMX: UI + ABM soberanos + pricing pata ARS** (sobre la web FastAPI+HTMX de v7.0; arquitectura actual en `CLAUDE.md`). Ver CHANGELOG v7.1. · 7.0 — **Reingeniería `mejora.md`** (branch `refactor/mejora-reingenieria`): pricing core Strategy/Protocol/Pydantic (equivalencia verificada), persistencia SQLite+DuckDB (`CatalogRepository`), primitivas async (httpx/breaker/hub), y **web FastAPI + HTMX** reemplazando el http.server + SPA. **Arquitectura actual en `CLAUDE.md`.** · 6.5 — Cartera + Escenarios + Valor Relativo (ver CHANGELOG v6.5). · 6.4 — Panel FCI (CAFCI). Nueva fuente de datos: Fondos Comunes de Inversión vía el micrositio de estadísticas de CAFCI (`estadisticas.cafci.org.ar/comparador-de-fondos.json`), que bundle-a en un solo JSON diario el catálogo completo (1149 fondos / 4602 clases) + la matriz de rendimientos diaria (~3723 clases con VCP + TNA/Directo a 7d/1m/3m/6m/YTD/12m). El método histórico del repo `fedemoglia/cafci-api` (pegarle a `api.cafci.org.ar` sin auth) está muerto: ese host hoy está detrás de una CloudFront Function con allowlist de rutas (`{"error":"Route not allowed"}`). Nuevo `CAFCIProvider` (fetch 1×/día, disk-mirror, offline-friendly, prime en background), endpoints `/api/fci` + `/api/fci/<clase_id>`, panel web `fci` con filtros (tipo de renta + moneda) + buscador + toggle TNA/Directo + headers ordenables + popup de detalle. Tests en `tests/test_cafci_provider.py`.
+**Última actualización:** 2026-05-30
+**Versión:** 7.2 — **Day-count centralizado + solver Brent + auditoría** (ver CHANGELOG v7.2). · 7.1 — **Dashboard HTMX: UI + ABM soberanos + pricing pata ARS** (sobre la web FastAPI+HTMX de v7.0; arquitectura actual en `CLAUDE.md`). Ver CHANGELOG v7.1. · 7.0 — **Reingeniería `mejora.md`** (branch `refactor/mejora-reingenieria`): pricing core Strategy/Protocol/Pydantic (equivalencia verificada), persistencia SQLite+DuckDB (`CatalogRepository`), primitivas async (httpx/breaker/hub), y **web FastAPI + HTMX** reemplazando el http.server + SPA. **Arquitectura actual en `CLAUDE.md`.** · 6.5 — Cartera + Escenarios + Valor Relativo (ver CHANGELOG v6.5). · 6.4 — Panel FCI (CAFCI). Nueva fuente de datos: Fondos Comunes de Inversión vía el micrositio de estadísticas de CAFCI (`estadisticas.cafci.org.ar/comparador-de-fondos.json`), que bundle-a en un solo JSON diario el catálogo completo (1149 fondos / 4602 clases) + la matriz de rendimientos diaria (~3723 clases con VCP + TNA/Directo a 7d/1m/3m/6m/YTD/12m). El método histórico del repo `fedemoglia/cafci-api` (pegarle a `api.cafci.org.ar` sin auth) está muerto: ese host hoy está detrás de una CloudFront Function con allowlist de rutas (`{"error":"Route not allowed"}`). Nuevo `CAFCIProvider` (fetch 1×/día, disk-mirror, offline-friendly, prime en background), endpoints `/api/fci` + `/api/fci/<clase_id>`, panel web `fci` con filtros (tipo de renta + moneda) + buscador + toggle TNA/Directo + headers ordenables + popup de detalle. Tests en `tests/test_cafci_provider.py`.
+
+### CHANGELOG v7.2
+
+Refactor de day-count + solver XIRR + **auditoría completa** del codebase (2026-05-30). Suite: **964
+verde** (+715 tests nuevos). Detalle de la convención en **"Day-count / convención de descuento"**.
+
+| Tipo | Item | Detalle |
+|---|---|---|
+| **Fix** | **Day-count por instrumento** | El descuento respeta el `day_count` declarado vía `core/domain/daycount.py::year_fraction` (nuevo: `DayCount` enum + `parse_day_count` + ACT/ACT ISDA). Antes todo lo no-30/360 caía a 365.25 ignorando el campo → ONs `ACT/365` con error de ~1bp. Ahora matchean Balanz (CICA 7.56% vs 7.57%). `30/360` y `365.25` quedan bit-idénticos. Espejado en `_legacy_engine.py` → `test_pricing_equivalence` verde. |
+| Engine | **Solver Brent robusto** | `xirr.py` → brentq con auto-bracketing geométrico (yields >1000% que el bracket fijo perdía), Newton como pre-paso, `_npv` overflow-safe + guards en `duration`/`vanilla_pv`. Fixea el crash histórico de **CUAP** (TIR degenerada → `OverflowError`). Firma `xirr(flows, dates, day_count=)`. |
+| Engine | **Invariante cashflows cronológicos** | `Instrument` ordena cashflows en un `field_validator` → el pricing no re-sortea (DRY + claridad). |
+| Tests | **+715 tests** | `test_daycount`, `test_xirr_solver`, `test_daycount_pricing` (gap-lock ACT/365), `test_balanz_golden` (anclas Balanz CICA/CACB/BPCV…), `test_pricing_invariants` (property-based, `hypothesis` → nueva dep dev). |
+| Audit | **Limpieza + bugs** | Greeks: valuación CRR duplicada (`p_r`=`p0`) → reuso. Dead code en `async_http`. `circuit_breaker` `assert`→`raise` explícito. DRY de códigos HTTP transitorios → `_http_constants.py`. **Bug CER** (`cer_return_scenarios`): el tramo lockeado usaba el fallback del escenario en vez del de REM. `futures_provider._is_market_hours` → tz-aware (ZoneInfo BA). `provider_hub` re-raise de `asyncio.CancelledError`. `tamar.project_cer_at` docstring (compuesta, no lineal). |
+| Feature | **short_call / short_put** | Expuestos en `PRESET_NAMES` de opciones (los builders ya existían; faltaba listarlos en el dropdown). |
+| Perf | **Días hábiles date-native** | `holiday_engine` expone `es_habil(date)` y `settlement_byma_date(date, lag)` — O(1) (weekday + lookup en frozenset), **sin** el round-trip `date→str→pd.Timestamp→date`. `cer_reference_date`, `settlement_for` y las ramas CER de `technical_value` (base/strategies) ahora son date-native (~7× por llamada; `is_habil(str)`/`settlement_byma(str)` quedan como wrappers de compat). |
+| Chore | **Log file → WARNING+** | `monitores_global.log` pasa de INFO+ (todo: httpx/access/INFO, MB de ruido) a **WARNING+** (errores de conexión / breakers / fallas de fetch para post-mortem). Consola sin cambios. |
+| Arq/Docs | **SQLite = fuente única del catálogo** | Se explicitó (Pilar 2) que la verdad en runtime es `catalog.db`; Excel master + `obligaciones_negociables.csv` son semillas de bootstrap; la ABM es el editor (sus altas viven solo en la DB). `_ensure_obligaciones_negociables` ahora siembra ON **sólo si la hoja está vacía** (sin re-ingesta destructiva → no pisa las ON del ABM). |
+| Feature | **ON: Serie/Clase + Ley Aplicable** | Campos nuevos en el schema ABM de ON (`serie_clase` texto, `ley_aplicable` select Argentina/Extranjera) + columnas en el CSV. `on_catalog` los lee → `serie_clase` al `short_name` + ambos a `raw_fields`. Poblados 14/38 del CSV desde el listado IAMC/BYMA. |
+| Test fix | `_a_cer_ticker` date-fragile | El helper tomaba el primer CER del catálogo (X29Y6, LECER vencido) → proyección vacía. Ahora filtra por CER vivo (`maturity > settle` + flujos futuros) en `test_bond_detail.py` y `test_bonds_router.py`. |
 
 ### CHANGELOG v7.1
 
