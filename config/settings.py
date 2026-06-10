@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Bases .db FUERA de OneDrive: el sync corrompe SQLite/DuckDB mid-write.
     db_dir: Path = Path(os.environ.get("LOCALAPPDATA", str(_BASE_DIR))) / "monitor"
     catalog_db: Path = db_dir / "catalog.db"
+    # Backups recuperables de la catalog.db (fuente de verdad viva): snapshot online
+    # 1×/día al arrancar, rota a `backup_keep` días. Fuera de OneDrive — ver backup.py.
+    backup_dir: Path = db_dir / "backups"
+    backup_keep: int = 7
     # Cierres diarios por ticker (variaciones Sem/1M/3M/YTD/1A). Se auto-mantiene
     # (priming Data912 historical + acumulación del feed vivo) — ver price_history.py.
     price_history_db: Path = db_dir / "price_history.db"

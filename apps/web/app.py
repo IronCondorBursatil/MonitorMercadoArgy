@@ -298,6 +298,16 @@ async def lifespan(app: FastAPI):
     app.state.app_state.set_data_source(app.state.hub.active_mode,
                                         app.state.hub.active_label,
                                         app.state.hub.is_delayed)
+    # Backup del catálogo (fuente de verdad viva) ANTES de warmear el repo / migrar:
+    # snapshot consistente del estado previo, best-effort (jamás bloquea el arranque).
+    try:
+        from core.infrastructure.db.backup import backup_db
+        bak = await asyncio.to_thread(backup_db, settings.catalog_db, settings.backup_dir,
+                                      keep=settings.backup_keep)
+        if bak:
+            logger.info("catalog backup: %s", bak.name)
+    except Exception:  # noqa: BLE001
+        logger.warning("backup de catalog.db falló (no bloquea el arranque)", exc_info=True)
     repo = get_repo()  # warm: carga SQLite / siembra desde Excel
     # Providers para el popup de detalle (comparten caches class-level con el refresh).
     app.state.provider = Data912MarketDataProvider()
