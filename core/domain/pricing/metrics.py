@@ -18,6 +18,12 @@ from dateutil.relativedelta import relativedelta
 # "colas" diminutas (artefactos de fecha, ej. AO28 3 días); MAX excluye long-last-coupons.
 _STUB_MIN_FRAC = 0.1
 _STUB_MAX_FRAC = 0.9
+# Solo se extiende si el cupón final paga ~un cupón REGULAR COMPLETO a pesar del período
+# corto (caso reestructurado tipo CLISA: 2.37 = el regular → devengado en el período
+# completo → Balanz descuenta al fin de período). Si el cupón final está PRORRATEADO al
+# stub corto (ej. YM42: 1.73 ≈ ½ del regular 3.51), se devengó en el período corto → se
+# descuenta a la fecha real (NO se extiende).
+_STUB_FULL_COUPON_FRAC = 0.9
 
 
 def period_bounds(instrument, ref_date: date) -> Optional[tuple]:
@@ -77,8 +83,13 @@ def discount_year_fractions(instrument, ref_date: date) -> tuple:
         # Extender sólo un cupón final CORTO GENUINO: (a) `cfs[-2]` debe ser un cupón
         # (interest>0) — si fuera amort-only, no marca un período regular y extender
         # sería incorrecto (amortizers multi-fase); (b) la duración del stub entre MIN
-        # y MAX del período regular (excluye colas diminutas tipo AO28 y long-last).
-        if cfs[-2].interest > 0 and full > 0 and _STUB_MIN_FRAC * full < stub < _STUB_MAX_FRAC * full:
+        # y MAX del período regular (excluye colas diminutas tipo AO28 y long-last);
+        # (c) el cupón final debe ser ~COMPLETO (no prorrateado al stub) — si está
+        # prorrateado (YM42: 1.73 vs regular 3.51) se devengó en el período corto y se
+        # descuenta a la fecha real.
+        full_coupon = cfs[-1].interest >= _STUB_FULL_COUPON_FRAC * cfs[-2].interest
+        if (cfs[-2].interest > 0 and full > 0 and full_coupon
+                and _STUB_MIN_FRAC * full < stub < _STUB_MAX_FRAC * full):
             years[-1] = instrument.year_fraction_to(regular_end, ref_date)
     return cfs, years
 
@@ -115,19 +126,25 @@ def accrued_interest(instrument, ref_date: date) -> float:
     if not bounds:
         return 0.0
     period_start, next_cf = bounds
-    # Fecha de pago real (día hábil) del cupón anterior → desde ahí corren los días.
+
+    if instrument.is_30_360:
+        # 30/360 ignora findes/feriados (meses de 30 días): los días corridos se cuentan
+        # desde la fecha PROGRAMADA del cupón anterior, SIN correr a día hábil — así lo
+        # hace Balanz (cupón sáb 30/05 → 10 días al 10/06, no 9). El corrimiento a día
+        # hábil aplica SOLO a las convenciones ACT (abajo; ver CS44).
+        from core.domain.cashflow_synth import days_30_360 as _d30360
+        period_days = _d30360(period_start, next_cf.date)
+        elapsed_dc = _d30360(period_start, ref_date)
+        if period_days <= 0 or elapsed_dc <= 0:
+            return 0.0
+        return next_cf.interest * min(elapsed_dc, period_days) / period_days
+
+    # ACT/*: los días corren desde la fecha de PAGO real (día hábil *following*) del
+    # cupón anterior — Balanz acumula desde ahí (ej. cupón sáb 17/01 → pagado lun 19/01).
     eff_start = _following_business_day(period_start)
     elapsed = (ref_date - eff_start).days
     if elapsed <= 0:
         return 0.0
-
-    if instrument.is_30_360:
-        from core.domain.cashflow_synth import days_30_360 as _d30360
-        period_days = _d30360(eff_start, next_cf.date)
-        elapsed_dc = min(_d30360(eff_start, ref_date), period_days)
-        if period_days <= 0:
-            return 0.0
-        return next_cf.interest * elapsed_dc / period_days
 
     # ACT/365: preferir tasa diaria derivada del cupón pasado para manejar
     # correctamente bonds con "long last coupon" (vto ≠ fecha regular del último cupón).
@@ -160,6 +177,9 @@ def days_since_last_coupon(instrument, ref_date: date) -> Optional[int]:
     bounds = period_bounds(instrument, ref_date)
     if not bounds:
         return None
+    if instrument.is_30_360:  # 30/360: días de la convención desde el corte PROGRAMADO
+        from core.domain.cashflow_synth import days_30_360 as _d30360
+        return max(0, _d30360(bounds[0], ref_date))
     return max(0, (ref_date - _following_business_day(bounds[0])).days)
 
 

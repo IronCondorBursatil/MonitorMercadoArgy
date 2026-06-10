@@ -7,7 +7,8 @@ from datetime import date
 import pytest
 
 from core.infrastructure.price_history import (
-    PriceHistoryStore, prime_from_data912, record_live_closes,
+    PriceHistoryStore, byma_prime_candidates, prime_from_byma_historico,
+    prime_from_data912, record_live_closes,
 )
 
 
@@ -53,6 +54,39 @@ def test_record_live_closes_from_snapshot(store):
     assert store.get_series("BAD") == {}
 
 
+def test_avg_volumes_window_and_average(store):
+    """avg_volumes promedia el monto operado dentro de la ventana; lo viejo no cuenta."""
+    from datetime import timedelta
+    today = date.today()
+    store.record_closes({"TLCPD": 110.0}, today - timedelta(days=1), volumes={"TLCPD": 1000.0})
+    store.record_closes({"TLCPD": 111.0}, today - timedelta(days=2), volumes={"TLCPD": 2000.0})
+    store.record_closes({"TLCPD": 50.0}, today - timedelta(days=200),
+                        volumes={"TLCPD": 999999.0})  # fuera de la ventana de 90d
+    avg = store.avg_volumes(["tlcpd"], days=90)        # case-insensitive
+    assert avg["TLCPD"] == pytest.approx(1500.0)        # (1000+2000)/2; el viejo excluido
+    assert store.avg_volumes(["NOPE"], days=90) == {}   # sin volumen → ausente
+
+
+def test_close_only_write_preserves_volume(store):
+    """Un write close-only (sin volumes) NO borra el volumen ya acumulado (COALESCE)."""
+    from datetime import timedelta
+    d = date.today() - timedelta(days=1)
+    store.record_closes({"AL30D": 63.0}, d, volumes={"AL30D": 5000.0})
+    store.record_closes({"AL30D": 64.0}, d)             # close-only → preserva volumen
+    assert store.avg_volumes(["AL30D"], days=90) == {"AL30D": pytest.approx(5000.0)}
+    assert store.get_series("AL30D") == {d: 64.0}       # el close sí se actualizó
+
+
+def test_record_live_closes_captures_volume(store):
+    """record_live_closes toma `row.v` (monto operado) cuando es > 0."""
+    class _Row:
+        def __init__(self, c, v=None):
+            self.c, self.v = c, v
+    snap = {"TLCPD": _Row(110.0, 1234.0), "NOVOL": _Row(50.0, None), "ZEROV": _Row(40.0, 0.0)}
+    record_live_closes(snap, store, date.today())
+    assert store.avg_volumes(["TLCPD", "NOVOL", "ZEROV"], days=90) == {"TLCPD": pytest.approx(1234.0)}
+
+
 def test_prime_from_data912_writes_covered_skips_empty(store):
     class _Prov:
         def fetch_bond_history(self, t):
@@ -65,6 +99,70 @@ def test_prime_from_data912_writes_covered_skips_empty(store):
     assert got == 2
     assert store.get_series("GD46D") == {date(2025, 12, 30): 71.6, date(2026, 6, 2): 73.0}
     assert store.get_series("BPY6D") == {}
+
+
+def test_prime_from_byma_historico_writes_via_injected_fetch(store):
+    """Backfill BYMA: usa la fetch inyectada (sin red) y UPSERT al store. Devuelve
+    cierres escritos; un ticker sin serie no aporta."""
+    series = {
+        "BPB7C": {date(2026, 6, 4): 98.0, date(2026, 6, 5): 98.2},
+        "BPC7C": {date(2026, 6, 5): 98.5},
+        "NADA":  {},                                   # sin serie → 0
+    }
+    seen = {}
+
+    def fake_fetch(tk, max_days=400):
+        seen[tk] = max_days
+        return series.get(tk, {})
+
+    got = prime_from_byma_historico(["bpb7c", "BPC7C", "NADA", ""], store,
+                                    max_days=365, fetch=fake_fetch)
+    assert got == 3
+    assert store.get_series("BPB7C") == {date(2026, 6, 4): 98.0, date(2026, 6, 5): 98.2}
+    assert store.get_series("BPC7C") == {date(2026, 6, 5): 98.5}
+    assert store.get_series("NADA") == {}
+    assert seen.get("BPB7C") == 365 and "" not in seen   # normaliza/upper, dropea vacío
+
+
+def test_prime_from_byma_historico_normalizes_cer_alias(store):
+    """La pata CER de un dual (TXMJ8_CER) se prima/guarda bajo el símbolo de mercado
+    (TXMJ8), igual que el read-path — sino quedaría en una clave muerta."""
+    captured = {}
+
+    def fake_fetch(tk, max_days=400):
+        captured.setdefault("tickers", []).append(tk)
+        return {date(2026, 6, 5): 110.0}
+
+    prime_from_byma_historico(["TXMJ8_CER"], store, fetch=fake_fetch)
+    assert captured["tickers"] == ["TXMJ8"]                 # fetch del símbolo bare
+    assert store.get_series("TXMJ8") == {date(2026, 6, 5): 110.0}
+    assert store.get_series("TXMJ8_CER") == {}              # NO bajo la clave alias
+
+
+def test_byma_prime_candidates_selects_short_unattempted(store):
+    """Candidatos = tickers con < min_days cierres, aún no intentados; normaliza
+    (_CER → bare), dedup, y excluye los ya cubiertos por Data912."""
+    store.upsert("AL30D", {date(2026, 1, d): 60.0 + d for d in range(1, 26)})  # 25 ruedas
+    store.upsert("BPB7C", {date(2026, 6, 5): 98.0})                            # 1 rueda
+    wanted = ["AL30D", "BPB7C", "BPC7C", "TXMJ8_CER", "bpb7c"]   # dup case + alias
+    cands = byma_prime_candidates(wanted, store, attempted=set(), min_days=20)
+    assert cands == ["BPB7C", "BPC7C", "TXMJ8"]   # AL30D cubierto; _CER normalizado; dedup
+    # los ya intentados no reaparecen (intento 1× por proceso)
+    cands2 = byma_prime_candidates(wanted, store, attempted={"BPB7C", "TXMJ8"}, min_days=20)
+    assert cands2 == ["BPC7C"]
+
+
+def test_prime_from_byma_historico_isolates_fetch_failures(store):
+    """Un fallo de red por ticker no aborta el resto (best-effort)."""
+    def flaky_fetch(tk, max_days=400):
+        if tk == "BOOM":
+            raise RuntimeError("network down")
+        return {date(2026, 6, 5): 100.0}
+
+    got = prime_from_byma_historico(["BOOM", "OKAY"], store, fetch=flaky_fetch)
+    assert got == 1
+    assert store.get_series("OKAY") == {date(2026, 6, 5): 100.0}
+    assert store.get_series("BOOM") == {}
 
 
 def test_load_error_does_not_latch_empty_cache(store, monkeypatch):

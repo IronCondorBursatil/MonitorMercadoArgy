@@ -329,10 +329,17 @@ _CCY_TICKER_FIELDS = [
     {"key": "ticker_ccl", "label": "Ticker CABLE (C)", "type": "text",
      "help": "Sufijo C — opcional"},
 ]
+
+# ISIN: campo común a todas las hojas (se enriquece solo desde BYMA, editable a mano).
+_ISIN_FIELD = {"key": "isin", "label": "ISIN", "type": "text",
+               "help": "Clave del activo (BYMA). Se completa solo; editable a mano"}
 for _schema in SHEET_SCHEMAS.values():
     _flds = _schema["fields"]
     if not any(f["key"] == "ticker_ars" for f in _flds):
-        _schema["fields"] = _CCY_TICKER_FIELDS + [f for f in _flds if f["key"] != "ticker"]
+        _flds = _CCY_TICKER_FIELDS + [f for f in _flds if f["key"] != "ticker"]
+    if not any(f["key"] == "isin" for f in _flds):
+        _flds = _flds + [_ISIN_FIELD]
+    _schema["fields"] = _flds
 
 
 # --------------------------------------------------------------------------- #
@@ -395,6 +402,19 @@ def _find_bond_row(s, ticker_u: str) -> Optional[InstrumentORM]:
                  or (o.ticker_ccl and o.ticker_ccl.upper() == ticker_u)), None)
 
 
+def _byma_isin_for(s, tickers) -> Optional[str]:
+    """ISIN del universo BYMA (byma_catalog) para cualquiera de las patas del bono."""
+    from core.infrastructure.db.models import BymaCatalogORM
+    ts = [t.upper() for t in tickers if t]
+    if not ts:
+        return None
+    row = s.execute(
+        select(BymaCatalogORM.isin)
+        .where(BymaCatalogORM.symbol.in_(ts), BymaCatalogORM.isin.isnot(None))
+    ).first()
+    return row[0] if row else None
+
+
 def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
     """{"sheet", "fields", "cashflows", "cashflows_source"} para CUALQUIER ticker
     del bono (primario o pata), o None. `fields` trae los slots ticker_ars/mep/ccl
@@ -413,6 +433,10 @@ def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
             fields.pop(k, None)
         for tk in _row_tickers(orm):
             fields[_sob_slot(tk)] = tk
+        # ISIN: la columna manda (la setea el enrich BYMA / el último save). Si está
+        # vacía, se busca en el universo BYMA (byma_catalog) por cualquiera de las patas
+        # → el form lo muestra aunque el enrich del catálogo curado aún no lo haya fijado.
+        fields["isin"] = orm.isin or _byma_isin_for(s, _row_tickers(orm)) or ""
         cf_rows = [
             {
                 "date": cf.fecha_pago.isoformat(),
@@ -577,6 +601,93 @@ def backfill_soberano_ccy_legs(market_symbols) -> List[str]:
     if added:
         logger.info("Backfill soberanos: +%d patas de moneda %s", len(added), added)
     return added
+
+
+# Paneles multi-moneda donde tiene sentido completar patas D/C (tienen ccy-filter).
+# NO se tocan CER/Tasa Fija/TAMAR/Dólar Linked: son instrumentos pesos de 1 ticker —
+# sumarles D/C sería "fila basura" (ver memoria multi-ticker-model).
+_MULTI_CCY_SHEETS = (_SOBERANOS_SHEET, "Obligaciones_Negociables")
+
+
+def _universe_groups():
+    """Grupos cotizantes del universo BYMA por ISIN y por ticker_pesos.
+    Devuelve (by_isin, by_tp, by_sym): {clave: {moneda: symbol}} + índice symbol→fila.
+    El ISIN es la clave AUTORITATIVA del activo (linkea bases distintas: BPC7↔BPOC7);
+    ticker_pesos queda de fallback para grupos sin ISIN. Excluye no-cotizantes y .SB."""
+    from core.infrastructure.db.models import BymaCatalogORM
+    init_db()
+    with SessionLocal() as s:
+        uni = s.execute(select(BymaCatalogORM)).scalars().all()
+    by_sym = {u.symbol.upper(): u for u in uni}
+    by_isin: Dict[str, Dict[str, str]] = {}
+    by_tp: Dict[str, Dict[str, str]] = {}
+    for u in uni:
+        if u.cotiza and not u.segmento:
+            if u.isin:
+                by_isin.setdefault(u.isin.upper(), {})[u.moneda] = u.symbol.upper()
+            if u.ticker_pesos:
+                by_tp.setdefault(u.ticker_pesos.upper(), {})[u.moneda] = u.symbol.upper()
+    return by_isin, by_tp, by_sym
+
+
+def backfill_legs_from_universe(dry_run: bool = False) -> List[Dict[str, Any]]:
+    """Completa las patas COTIZANTES faltantes (pesos/MEP/CABLE) de soberanos y ONs
+    deduciendo el activo por el universo BYMA. Agrupa por **ISIN** (clave del activo →
+    linkea bases distintas como BPC7↔BPOC7); fallback a ticker_pesos. Reusa
+    `save_instrument` (consolida en 1 fila, re-keya al primario, preserva cashflows).
+    Idempotente. `dry_run` solo reporta. Devuelve [{ticker, added, key}]."""
+    by_isin, by_tp, by_sym = _universe_groups()
+    init_db()
+    with SessionLocal() as s:
+        rows = s.execute(
+            select(InstrumentORM).where(InstrumentORM.sheet.in_(_MULTI_CCY_SHEETS))
+        ).scalars().all()
+        plan = []
+        for o in rows:
+            present = [t.upper() for t in _row_tickers(o)]
+            present_set = set(present)
+            avail: Dict[str, str] = {}
+            keys = set()
+            # 1) ticker_pesos de las patas presentes (fallback / mismo-base)
+            for t in present:
+                u = by_sym.get(t)
+                if u and u.ticker_pesos and u.ticker_pesos.upper() in by_tp:
+                    avail.update(by_tp[u.ticker_pesos.upper()])
+                    keys.add(u.ticker_pesos.upper())
+            # 2) ISIN (autoritativo, gana): el del bono curado + el de sus patas
+            isins = {o.isin.upper()} if o.isin else set()
+            isins |= {by_sym[t].isin.upper() for t in present
+                      if t in by_sym and by_sym[t].isin}
+            for isin in isins:
+                if isin in by_isin:
+                    avail.update(by_isin[isin])   # pisa al tp si difiere
+                    keys.add(isin)
+            missing = sorted({sym for sym in avail.values() if sym not in present_set})
+            if missing:
+                plan.append((o.ticker, o.sheet or "", present, missing, sorted(keys)))
+
+    results: List[Dict[str, Any]] = []
+    for primary, sheet, present, missing, keys in plan:
+        results.append({"ticker": primary, "added": missing, "key": keys})
+        if dry_run:
+            continue
+        inst = get_instrument(primary)
+        if not inst:
+            continue
+        fields = dict(inst.get("fields", {}))
+        for slot in _SOB_SLOTS:        # re-armar los slots con el set COMPLETO de patas
+            fields.pop(slot, None)
+        for tk in [*present, *missing]:
+            fields[_sob_slot(tk)] = tk
+        try:
+            save_instrument(sheet, fields)   # cashflows=None → reusa los existentes
+        except (ValueError, KeyError) as e:
+            logger.warning("backfill_legs %s falló: %s", primary, e)
+            results[-1]["error"] = str(e)
+    if not dry_run and results:
+        logger.info("Backfill patas universo: %d bonos completados (+%d patas).",
+                    len(results), sum(len(r["added"]) for r in results))
+    return results
 
 
 def unknown_data912_tickers(

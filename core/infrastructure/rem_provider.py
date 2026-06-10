@@ -26,7 +26,14 @@ from core.infrastructure._http import http_get_json
 logger = logging.getLogger(__name__)
 
 _BASE         = "https://bcra-rem-api.facujallia.workers.dev/api"
-_ARD_REM_URL  = "https://argentinadatos.com/v1/finanzas/rem/ultimo"
+# OJO: host `api.` (el apex pelado argentinadatos.com da 404). Igual que el resto
+# de read-paths ArgentinaDatos del repo (argentinadatos_provider / fci / feriados).
+_ARD_REM_URL  = "https://api.argentinadatos.com/v1/finanzas/rem/ultimo"
+
+# Mes abreviado inglés → nº (ARD usa 'May-26'). Tabla propia = locale-independiente
+# (strptime '%b' depende de LC_TIME y rompería con un locale español).
+_EN_MONTH = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+             "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
 
 
 def _parse_period(raw) -> Optional[date]:
@@ -41,6 +48,12 @@ def _parse_period(raw) -> Optional[date]:
     s = raw.strip()
     if not s or "próx" in s.lower() or "prox" in s.lower():
         return None
+    # ARD: 'May-26' (mes-abrev inglés + yy). Día 1 (sólo importan año/mes).
+    if len(s) == 6 and s[3] == "-" and s[:3].lower() in _EN_MONTH:
+        try:
+            return date(2000 + int(s[4:]), _EN_MONTH[s[:3].lower()], 1)
+        except ValueError:
+            return None
     candidates = [s, s.split(" ")[0]] if " " in s else [s]
     for cand in candidates:
         for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m"):
@@ -57,19 +70,33 @@ class REMProvider:
     URL_IPC    = f"{_BASE}/ipc_general"
     TTL_SECONDS = 6 * 3600  # REM updates monthly; long TTL avoids the 1 req/min limit.
 
+    FAIL_COOLDOWN = 120.0  # tras un fallo total (primaria+fallback), no reintentar
+                           # hasta este cooldown → mata el storm de re-fetch por
+                           # instrumento cuando la red/DNS se cae un instante.
+
     _lock          = threading.Lock()
     _cache_rows:   List[dict] = []
     _last_fetch_ts: float     = 0.0
+    _last_fail_ts:  float     = 0.0
 
     @staticmethod
     def _normalize_ard(rows: list) -> List[dict]:
         """Normaliza la respuesta de ArgentinaDatos al schema interno.
 
-        ARD usa 'periodo' (sin tilde), devuelve array directo (sin wrapper 'datos').
-        Mapeamos al schema que usan get_monthly_path() / get_next_12m_yoy().
-        """
+        ARD `/finanzas/rem/ultimo` trae TODOS los indicadores del REM (IPC, TAMAR,
+        export, PIB, ...) y DOS muestras ('todos' = total de participantes, 'top_10').
+        Nos quedamos SOLO con **IPC nivel general · muestra=todos** — que replica la
+        planilla `ipc_general` de la primaria — para no contaminar el sendero de
+        inflación con TAMAR/otros ni duplicar con la muestra top_10.
+
+        ARD usa 'periodo' (sin tilde), array directo (sin wrapper 'datos'). Mapeamos
+        al schema que consumen get_monthly_path() / get_next_12m_yoy()."""
         out = []
         for row in rows:
+            if "IPC nivel general" not in str(row.get("indicador") or ""):
+                continue
+            if row.get("muestra") != "todos":
+                continue
             out.append({
                 "período":   row.get("periodo", ""),   # tilde: compatible con _parse_period
                 "referencia": row.get("referencia", ""),
@@ -80,7 +107,15 @@ class REMProvider:
 
     def _fetch(self) -> None:
         with self._lock:
-            if self._cache_rows and (time.time() - self._last_fetch_ts) < self.TTL_SECONDS:
+            now = time.time()
+            if self._cache_rows and (now - self._last_fetch_ts) < self.TTL_SECONDS:
+                return
+            # Negative cache: si el último intento (primaria+fallback) falló hace poco,
+            # no martillar. Sin esto, con el cache vacío CADA caller (un instrumento
+            # CER por ciclo de pricing) re-fetcheaba → storm de logs/red ante un blip
+            # de DNS. Sirve stale si lo hubiera; si no, queda en degraded hasta el
+            # cooldown (REM es mensual → un par de minutos sin reintentar es inocuo).
+            if (now - self._last_fail_ts) < self.FAIL_COOLDOWN:
                 return
 
             rows: List[dict] = []
@@ -113,6 +148,9 @@ class REMProvider:
                 type(self)._cache_rows     = rows
                 type(self)._last_fetch_ts  = time.time()
                 logger.info("Loaded %d REM IPC rows.", len(rows))
+            else:
+                # Falló todo este ciclo → arma el negative-cache (anti-storm).
+                type(self)._last_fail_ts = time.time()
 
     @staticmethod
     def _safe_med(raw) -> Optional[float]:

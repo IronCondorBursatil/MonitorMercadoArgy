@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="abm-viewbar">
+  <button type="button" class="abm-viewbtn on" data-view="editor" onclick="abmView('editor')">Editor ABM</button>
+  <button type="button" class="abm-viewbtn" data-view="universe" onclick="abmView('universe')">Universo BYMA ({{ byma_count }})</button>
+</div>
 <main class="abm-main">
   <!-- IZQUIERDA: lista + filtros -->
   <aside class="panel abm-col abm-listcol">
@@ -28,17 +32,33 @@
     </div>
   </section>
 
-  <!-- DERECHA: Data912 sin cargar -->
-  <aside class="panel abm-col abm-d912col">
-    <div class="panel-head">EN DATA912 · SIN CARGAR</div>
-    <div id="abm-d912" hx-get="/abm/data912" hx-trigger="load, every 30s" hx-swap="innerHTML" hx-on::after-swap="d912Apply()">
-      <div class="d912-empty">Cargando…</div>
+</main>
+
+<!-- VISTA: Universo BYMA (buscador de especies por ticker / ISIN / emisor) -->
+<main class="abm-universe" id="abm-universe" hidden>
+  <section class="panel abm-uni">
+    <div class="panel-head">UNIVERSO BYMA · {{ byma_count }} especies (ISIN · categoría · emisor)</div>
+    <div class="uni-tools">
+      <input id="uni-q" class="abm-input" name="q" autocomplete="off"
+             placeholder="Buscar por ticker, ISIN o emisor…"
+             hx-get="/abm/universe" hx-target="#uni-results" hx-swap="innerHTML"
+             hx-trigger="input changed delay:250ms, search" hx-include="#uni-cat">
+      <select id="uni-cat" class="abm-input uni-cat" name="cat"
+              hx-get="/abm/universe" hx-target="#uni-results" hx-swap="innerHTML"
+              hx-trigger="change" hx-include="#uni-q">
+        <option value="">Todas las categorías</option>
+        {% for c, n in byma_cats %}<option value="{{ c }}">{{ c }} ({{ n }})</option>{% endfor %}
+      </select>
     </div>
-  </aside>
+    <div id="uni-results" class="uni-results"
+         hx-get="/abm/universe" hx-trigger="load" hx-swap="innerHTML">
+      <div class="uni-empty">Cargando universo…</div>
+    </div>
+  </section>
 </main>
 
 <style>
-  .abm-main { display:grid; grid-template-columns:330px minmax(0,1fr) 300px; gap:14px;
+  .abm-main { display:grid; grid-template-columns:1fr 2fr; gap:14px;
               align-items:start; margin:14px; height:calc(100vh - 90px); }
   .abm-col { display:flex; flex-direction:column; min-height:0; max-height:100%; }
   .abm-col .panel-head { flex:0 0 auto; }
@@ -116,44 +136,100 @@
   #abm-calc-out dl.metrics dt { color:var(--text-dim); font-size:12px; }
   #abm-calc-out dl.metrics dd { margin:0; text-align:right; font:600 12px var(--font-mono); }
   #abm-calc-out .err { color:var(--neg); padding:8px; }
-  /* ---- derecha: Data912 (reusa estilos del sidebar) ---- */
-  #abm-d912 { overflow:auto; flex:1 1 auto; min-height:0; padding:8px 10px; }
-  .d912-empty { color:var(--text-dim); font-size:12px; padding:6px 2px; }
-  .d912-grp { margin-bottom:10px; }
-  .d912-grp-h { font-size:11px; font-weight:700; color:var(--accent); letter-spacing:.4px; margin:4px 0;
-                cursor:pointer; user-select:none; display:flex; align-items:center; gap:5px; }
-  .d912-grp-h:hover { color:var(--text); }
-  .d912-grp-h span { color:var(--text-dim); font-weight:400; }
-  .d912-caret { font-size:9px; color:var(--text-faint); display:inline-block; transition:transform .12s; }
-  .d912-grp.collapsed .d912-caret { transform:rotate(-90deg); }
-  .d912-grp.collapsed .d912-chips { display:none; }
-  .d912-chips { display:flex; flex-wrap:wrap; gap:4px; }
-  .d912-tk { background:var(--head-bg); border:1px solid var(--panel-border); color:var(--text);
-             border-radius:4px; padding:3px 7px; font:600 11px var(--font-mono); cursor:pointer; }
-  .d912-tk:hover { background:var(--accent); color:#07223f; }
-  .d912-tk--skip { border-color:#c97a1a; color:#c97a1a; }
-  .d912-tk--skip:hover { background:#c97a1a; color:#07223f; }
-  /* ONs corp: layout base + O/D/C */
-  .d912-corp-list { display:flex; flex-direction:column; gap:2px; }
-  .d912-corp-row { display:flex; align-items:center; gap:5px; padding:1px 0; }
-  .d912-corp-nm { font:600 11px var(--font-mono); color:var(--text-dim); min-width:58px; flex:0 0 auto; }
-  .d912-corp-vars { display:flex; gap:3px; }
-  /* O = pesos: color base; D = MEP: dorado; C = cable: verde */
-  .d912-tk--d { border-color:#b8972a; color:#b8972a; }
-  .d912-tk--d:hover { background:#b8972a; color:#07223f; }
-  .d912-tk--c { border-color:#2a9e6a; color:#2a9e6a; }
-  .d912-tk--c:hover { background:#2a9e6a; color:#07223f; }
-  /* Filtros O/D/C del header corp */
-  .d912-corp-filters { display:flex; gap:3px; margin-left:auto; }
-  .d912-cf { background:transparent; border:1px solid var(--panel-border); color:var(--text-faint);
-             border-radius:3px; padding:1px 5px; font:700 10px var(--font-mono); cursor:pointer; transition:all .1s; }
-  .d912-cf.on[data-suf="o"] { border-color:var(--accent); color:var(--accent); }
-  .d912-cf.on[data-suf="d"] { border-color:#b8972a; color:#b8972a; }
-  .d912-cf.on[data-suf="c"] { border-color:#2a9e6a; color:#2a9e6a; }
   @media (max-width:1100px){ .abm-main{ grid-template-columns:1fr; height:auto; } }
+
+  /* ---- toggle de vista (Editor / Universo BYMA) ---- */
+  .abm-viewbar { display:flex; gap:6px; margin:12px 14px 0; }
+  .abm-viewbtn { background:var(--page-bg); border:1px solid var(--panel-border); color:var(--text-dim);
+                 border-radius:7px 7px 0 0; padding:7px 16px; cursor:pointer; font:600 12px var(--font-body);
+                 letter-spacing:.3px; }
+  .abm-viewbtn.on { background:var(--accent); color:#07223f; border-color:var(--accent); }
+  /* ---- Universo BYMA ---- */
+  .abm-universe { margin:0 14px 14px; height:calc(100vh - 128px); }
+  .abm-uni { display:flex; flex-direction:column; height:100%; }
+  .abm-uni .panel-head { flex:0 0 auto; }
+  .uni-tools { display:flex; gap:8px; padding:9px 12px; flex:0 0 auto; border-bottom:1px solid var(--panel-border); }
+  .uni-tools .abm-input { width:auto; }
+  .uni-tools #uni-q { flex:1 1 auto; }
+  .uni-cat { flex:0 0 auto; min-width:220px; }
+  .uni-results { overflow:auto; flex:1 1 auto; min-height:0; }
+  .uni-meta { padding:7px 12px; font-size:11px; color:var(--text-dim); position:sticky; top:0;
+              background:var(--panel-bg); border-bottom:1px solid var(--panel-border); z-index:2; }
+  .uni-table { width:100%; border-collapse:collapse; }
+  .uni-table th { font-size:10px; color:var(--text-faint); text-transform:uppercase; text-align:left;
+                  padding:6px 12px; border-bottom:1px solid var(--panel-border); position:sticky; top:28px;
+                  background:var(--head-bg); z-index:1; white-space:nowrap; }
+  .uni-table td { padding:5px 12px; border-bottom:1px solid var(--panel-border); font-size:12px; }
+  .uni-table tr:hover { background:var(--row-hover); }
+  .uni-tk { font:700 12px var(--font-mono); color:var(--accent); cursor:pointer; }
+  .uni-tk--ficha { color:#e8852b; }   /* ON con ficha técnica cargada */
+  .uni-tk:hover { text-decoration:underline; }
+  .uni-isin { font:12px var(--font-mono); color:var(--text); }
+  .uni-faint { color:var(--text-faint); }
+  .uni-emisor { color:var(--text-dim); max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* ---- Universo agrupado: 1 fila por título, header de 2 niveles (grupo + moneda) ---- */
+  .uni-table--grouped thead .uni-grp-head th { top:28px; }
+  .uni-table--grouped thead .uni-ccy-head th { top:51px; }
+  .uni-table--grouped th.uni-grp { text-align:center; font-weight:700; letter-spacing:.6px;
+                                    border-left:1px solid var(--panel-border); }
+  .uni-table--grouped th.uni-grp--esp { color:var(--text-faint); }
+  .uni-table--grouped th.uni-ccol { text-align:left; }
+  .uni-table--grouped th.uni-ccol--esp { color:var(--text-faint); }
+  /* separador vertical entre el bloque primary y el de especiales (clase, no
+     nth-child: robusto a la columna opcional Legislación) */
+  .uni-table--grouped .uni-ccy-head th:nth-child(1),
+  .uni-table--grouped .uni-ccy-head th:nth-child(4),
+  .uni-table--grouped tbody td.uni-sep { border-left:1px solid var(--panel-border); }
+  .uni-cell { font:600 12px var(--font-mono); color:var(--text); cursor:pointer; }
+  .uni-cell:hover { color:var(--accent); text-decoration:underline; }
+  .uni-cell.uni-esp { color:var(--text-faint); font-weight:400; }
+  /* Legislación (solo ON): badge AR=Ley Local / US=Ley NY */
+  .uni-leg { font-size:11px; color:var(--text-dim); white-space:nowrap; }
+  /* ¿Cargado en pricing? + monto operado MEP/CABLE (día + promedio) */
+  .uni-alta { text-align:center; font:700 13px var(--font-mono); }
+  .uni-alta--yes { color:#1ea672; }
+  .uni-alta--no  { color:var(--text-faint); }
+  .uni-vol { font:600 11.5px var(--font-mono); color:var(--text-dim); white-space:nowrap; text-align:right; }
+  /* grupos de monto (hoy/prom) + separadores de grupo */
+  .uni-table--grouped th.uni-grp--mh, .uni-table--grouped th.uni-grp--mp { color:var(--text-dim); }
+  .uni-table--grouped .uni-ccy-head th.uni-ccol--mh, .uni-table--grouped .uni-ccy-head th.uni-ccol--mp { text-align:right; }
+  .uni-table--grouped .uni-ccy-head th:nth-child(7),
+  .uni-table--grouped .uni-ccy-head th:nth-child(10) { border-left:1px solid var(--panel-border); }
+  /* filtro por columna (estilo blotter) */
+  .uni-table--grouped thead .uni-flt th { top:74px; padding:3px 6px; background:var(--head-bg); }
+  .uni-fin, .uni-fsel { width:100%; min-width:50px; box-sizing:border-box; background:var(--page-bg);
+              border:1px solid var(--panel-border); color:var(--text); border-radius:4px;
+              padding:2px 5px; font:11px var(--font-body); }
+  .uni-fnum { min-width:38px; text-align:right; }
+  .uni-fin::placeholder { color:var(--text-faint); }
+  .uni-fin:focus, .uni-fsel:focus { border-color:var(--accent); outline:none; }
+  /* orden por columna de monto: clic en el título ARS/MEP/CABLE */
+  .uni-sortable { cursor:pointer; user-select:none; }
+  .uni-sortable:hover { color:var(--accent); }
+  .uni-sortarr { font-size:9px; color:var(--accent); }
+  /* scroll infinito: fila-centinela que dispara la carga del lote siguiente */
+  .uni-loading { text-align:center; color:var(--text-faint); font-size:11px; font-style:italic;
+                 padding:10px; letter-spacing:.3px; }
+  .uni-empty { color:var(--text-faint); font-style:italic; padding:40px; text-align:center; }
 </style>
 
 <script>
+  // --- toggle de vista Editor / Universo BYMA ---
+  function abmView(v){
+    document.querySelectorAll('.abm-viewbtn').forEach(function(b){ b.classList.toggle('on', b.dataset.view===v); });
+    var ed=document.querySelector('.abm-main'), uni=document.getElementById('abm-universe');
+    if(ed) ed.hidden = (v!=='editor');
+    if(uni) uni.hidden = (v!=='universe');
+    if(v==='universe'){ var q=document.getElementById('uni-q'); if(q) q.focus(); }
+  }
+  // --- copiar ticker del universo al portapapeles ---
+  function uniCopy(td){
+    var t=(td.textContent||'').trim();
+    if(!t || t==='—') return;            // celda vacía → nada que copiar
+    if(navigator.clipboard) navigator.clipboard.writeText(t);
+    var old=td.textContent; td.textContent='✓ '+t;
+    setTimeout(function(){ td.textContent=old; }, 700);
+  }
   // --- filtro de la lista (hoja + texto) ---
   function abmActiveHoja(){ var c=document.querySelector('#abm-chips .abm-chip.on'); return c?c.dataset.hoja:''; }
   function abmFilter(){
@@ -189,66 +265,10 @@
     if(target){ target.value=t; target.focus(); }
     else if(navigator.clipboard){ navigator.clipboard.writeText(t); }
   }
-  // --- Data912: filtro O/D/C en corp ---
-  function _d912CorpApply(grp) {
-    var active = new Set([...grp.querySelectorAll('.d912-cf.on')].map(b => b.dataset.suf));
-    var visible = 0;
-    grp.querySelectorAll('.d912-corp-row').forEach(function(row) {
-      var rowSufs = new Set();
-      row.querySelectorAll('.d912-tk').forEach(function(tk) {
-        var sufCls = [...tk.classList].find(function(c) {
-          return c.startsWith('d912-tk--') && c !== 'd912-tk--skip';
-        });
-        if (sufCls) rowSufs.add(sufCls.replace('d912-tk--', ''));
-      });
-      // AND: la fila debe tener TODOS los sufijos seleccionados
-      var rowShow = active.size === 0 || [...active].every(function(s) { return rowSufs.has(s); });
-      // Los chips individuales se muestran solo si están en el filtro activo
-      row.querySelectorAll('.d912-tk').forEach(function(tk) {
-        var sufCls = [...tk.classList].find(function(c) {
-          return c.startsWith('d912-tk--') && c !== 'd912-tk--skip';
-        });
-        var suf = sufCls ? sufCls.replace('d912-tk--', '') : '';
-        tk.style.display = (active.size === 0 || active.has(suf)) ? '' : 'none';
-      });
-      row.style.display = rowShow ? '' : 'none';
-      if (rowShow) visible++;
-    });
-    var countSpan = grp.querySelector('.d912-grp-h > span');
-    if (countSpan) countSpan.textContent = '(' + visible + ')';
-  }
-  function d912CorpFilter(btn) {
-    btn.classList.toggle('on');
-    var grp = btn.closest('.d912-grp');
-    _d912CorpApply(grp);
-    localStorage.setItem('abm-corp-filter', JSON.stringify([...grp.querySelectorAll('.d912-cf.on')].map(b => b.dataset.suf)));
-  }
-  // --- Data912: categorías colapsables (estado persistido en localStorage) ---
-  function d912Collapsed(){ try{ return new Set(JSON.parse(localStorage.getItem('abm-d912-collapsed')||'[]')); }catch(e){ return new Set(); } }
-  function d912Save(s){ localStorage.setItem('abm-d912-collapsed', JSON.stringify([...s])); }
-  function d912Toggle(h){
-    var g=h.closest('.d912-grp'); g.classList.toggle('collapsed');
-    var s=d912Collapsed(), k=g.dataset.src;
-    g.classList.contains('collapsed') ? s.add(k) : s.delete(k);
-    d912Save(s);
-  }
-  function d912Apply(){
-    var s=d912Collapsed();
-    document.querySelectorAll('#abm-d912 .d912-grp').forEach(function(g){
-      g.classList.toggle('collapsed', s.has(g.dataset.src));
-    });
-    var corpGrp = document.querySelector('#abm-d912 .d912-grp[data-src="corp"]');
-    if (corpGrp) {
-      try {
-        var saved = new Set(JSON.parse(localStorage.getItem('abm-corp-filter') || '["o","d","c"]'));
-        corpGrp.querySelectorAll('.d912-cf').forEach(function(b){ b.classList.toggle('on', saved.has(b.dataset.suf)); });
-      } catch(e) {}
-      _d912CorpApply(corpGrp);
-    }
-  }
-  // re-aplicar filtro/estado cuando HTMX refresca la lista o el sidebar Data912
+  // re-aplicar el filtro de la lista cuando HTMX la refresca
   document.body.addEventListener('htmx:afterSwap', function(e){
     if(e.target.id==='abm-list') abmFilter();
   });
 </script>
+<script src="/static/js/uni_filters.js"></script>
 {% endblock %}

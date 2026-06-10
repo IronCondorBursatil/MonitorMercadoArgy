@@ -205,7 +205,7 @@ def test_dolarapi() -> None:
         st, body, dt = _http_get(URL)
         assert st == 200, f"HTTP {st}"
         data = json.loads(body)
-        assert isinstance(data, list), f"expected list"
+        assert isinstance(data, list), "expected list"
         payload["data"] = data
         return f"{len(data)} casas in {dt*1000:.0f}ms"
     _try("dolarapi", "GET /v1/dolares", conn)
@@ -281,7 +281,7 @@ def test_bcra() -> None:
             t = time.monotonic()
             data = _fetch_series(var_id, days=days)
             dt = (time.monotonic() - t) * 1000.0
-            assert data, f"empty response (BCRA may be down or rate-limited)"
+            assert data, "empty response (BCRA may be down or rate-limited)"
             series[name] = data
             return f"{len(data)} points in {dt:.0f}ms"
         return go
@@ -502,7 +502,7 @@ def test_e2e_cycle() -> None:
         BOPREALES, CER, DOLAR_LINKED, DUAL_TAMAR, SOBERANOS, TAMAR, TASA_FIJA,
     )
     from core.use_cases.generate_report import GenerateMonitorReport
-    from config.settings import MASTER_XLSX, settings
+    from config.settings import settings
     REFRESH_SEC = settings.refresh_sec
 
     def go():
@@ -511,7 +511,7 @@ def test_e2e_cycle() -> None:
         # bond type. Init costs (Excel parse, TAMAR 3y bootstrap, first
         # network round) are paid once and don't repeat per cycle, so we
         # warm up once and measure the steady-state cycle.
-        repo = ExcelInstrumentsRepository(MASTER_XLSX)
+        repo = ExcelInstrumentsRepository(str(settings.master_xlsx))
         prov = Data912MarketDataProvider()
         use_case = GenerateMonitorReport(repo, prov)
         fx = DolarAPIProvider()

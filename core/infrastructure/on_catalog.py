@@ -90,11 +90,15 @@ def row_to_instrument(r: Dict[str, str]) -> Instrument:
     emisor = r["emisor"].strip()
     serie = (r.get("serie_clase") or "").strip()  # ej. "Clase XXXI" (listado IAMC/BYMA)
     short = f"{emisor} - {serie}" if serie else emisor
+    # Base por fila (col `base`); default ACT/365. La mayoría de las ONs hard-dollar
+    # liquidan intereses real/365, pero algunas (ej. Telecom Clase 24) son 30/360 —
+    # el day-count cambia accrued/clean/TIR, así que NO es un detalle (ver golden).
+    day_count = (r.get("base") or "").strip() or DAY_COUNT
     return Instrument(
         ticker=row_legs(r)[0], short_name=short,
         instrument_type=ITYPE, maturity_date=vto, emission_date=emis,
         cashflows=tuple(cfs), category=CATEGORY, payment_frequency=cfreq,
-        day_count=DAY_COUNT,
+        day_count=day_count, ley_aplicable=(r.get("ley") or "").strip() or None,
     )
 
 
@@ -117,7 +121,7 @@ def abm_raw_fields(r: Dict[str, str]) -> Dict[str, object]:
         "fecha_vencimiento": vto.isoformat(),
         "cupon anual %": r["cupon"].strip(),
         "frecuencia pagos": _FREQ[r["frec_cupon"].strip().upper()],
-        "base calculo": DAY_COUNT,
+        "base calculo": (r.get("base") or "").strip() or DAY_COUNT,
         "tipo amortizacion": "amortizing" if amort else "bullet",
         "amort inicio": prox.isoformat() if amort else "",
         "amort cantidad": len(amort_schedule(prox, vto, kfreq, cuotas)) if amort else "",

@@ -23,7 +23,7 @@ import threading
 from datetime import date, datetime, timedelta
 from typing import Dict, Optional
 
-from config.settings import DATA_DIR
+from config.settings import settings
 from core.infrastructure._http import http_get_json
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 _BCRA_BASE = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias"
 
-_HISTORY_DIR = os.path.join(DATA_DIR, "history")
+_HISTORY_DIR = str(settings.history_dir)
 _CER_CSV      = os.path.join(_HISTORY_DIR, "cer_diario.csv")
 _TAMAR_CSV    = os.path.join(_HISTORY_DIR, "tamar_diario.csv")
 _A3500_CSV    = os.path.join(_HISTORY_DIR, "a3500_diario.csv")
@@ -103,10 +103,15 @@ def _save_csv(path: str, data: Dict[date, float]) -> None:
 class BCRAIndicesProvider:
     """CER + TAMAR + A3500 + Reservas from BCRA, hydrated from disk on startup."""
 
-    _CER_FETCH_DAYS = 30
+    # CER y A3500 se bootstrappean ~400 días (el lente de moneda del panel FCI
+    # necesita 3m/6m/ytd/12m de historia para deflactar por inflación/devaluación);
+    # una vez cubierta la ventana, sólo se topup-ean los días recientes.
+    _CER_BOOTSTRAP_DAYS = 400
+    _CER_TOPUP_DAYS = 30
     _TAMAR_BOOTSTRAP_DAYS = 3 * 365
     _TAMAR_TOPUP_DAYS = 30
-    _A3500_FETCH_DAYS = 30
+    _A3500_BOOTSTRAP_DAYS = 400
+    _A3500_TOPUP_DAYS = 30
     # Reservas: 90 días para el chart histórico de la página Monitor BCRA.
     _RESERVAS_FETCH_DAYS = 90
 
@@ -134,6 +139,16 @@ class BCRAIndicesProvider:
         )
         cls._disk_loaded = True
 
+    @staticmethod
+    def _fetch_window(cache: Dict[date, float], bootstrap_days: int, topup_days: int) -> int:
+        """Días a pedir: `bootstrap_days` mientras la cache no cubra ~la ventana
+        completa (vacía o con historia corta → backfill), luego `topup_days`."""
+        if not cache:
+            return bootstrap_days
+        if (date.today() - min(cache)).days < bootstrap_days - 40:
+            return bootstrap_days   # historia corta → backfillear la ventana
+        return topup_days
+
     def _fetch_all(self):
         with self._lock:
             if not self._disk_loaded:
@@ -142,7 +157,8 @@ class BCRAIndicesProvider:
                 return
             type(self)._last_attempt = date.today()
 
-            cer_new = _fetch_series(30, days=self._CER_FETCH_DAYS)
+            cer_days = self._fetch_window(self._cache_cer, self._CER_BOOTSTRAP_DAYS, self._CER_TOPUP_DAYS)
+            cer_new = _fetch_series(30, days=cer_days)
             if cer_new:
                 added = len(set(cer_new) - set(self._cache_cer))
                 self._cache_cer.update(cer_new)
@@ -157,7 +173,8 @@ class BCRAIndicesProvider:
                 _save_csv(_TAMAR_CSV, self._cache_tamar)
                 logger.info(f"TAMAR: +{added} new points, {len(self._cache_tamar)} total.")
 
-            a3500_new = _fetch_series(5, days=self._A3500_FETCH_DAYS)
+            a3500_days = self._fetch_window(self._cache_a3500, self._A3500_BOOTSTRAP_DAYS, self._A3500_TOPUP_DAYS)
+            a3500_new = _fetch_series(5, days=a3500_days)
             if a3500_new:
                 added = len(set(a3500_new) - set(self._cache_a3500))
                 self._cache_a3500.update(a3500_new)
@@ -193,6 +210,16 @@ class BCRAIndicesProvider:
     def get_cer(self, target_date: date) -> Optional[float]:
         self._fetch_all()
         return self._lookup(target_date, self._cache_cer)
+
+    def cer_series(self) -> Dict[date, float]:
+        """Serie CER {date: valor} (copia). Para el lente de moneda del panel FCI."""
+        self._fetch_all()
+        return dict(self._cache_cer)
+
+    def a3500_series(self) -> Dict[date, float]:
+        """Serie A3500 {date: valor} (copia). Proxy FX para el lente del panel FCI."""
+        self._fetch_all()
+        return dict(self._cache_a3500)
 
     def get_tamar(self, target_date: Optional[date] = None) -> Optional[float]:
         self._fetch_all()

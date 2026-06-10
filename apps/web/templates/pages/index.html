@@ -53,17 +53,25 @@
             <button type="button" class="ccy-btn" data-ccy="CABLE">CABLE</button>
           </span>
           {% endif %}
+          {% if p.settle_filter %}
+          {# Plazo de liquidación: UN botón que alterna 24hs (T+1, default) ↔ CI (T+0).
+             En CI se ilumina (.active) para señalar el cambio. Recalcula el panel. #}
+          <button type="button" class="settle-toggle" data-settle="24"
+                  title="Plazo de liquidación — clic para alternar 24hs ↔ CI">24hs</button>
+          {% endif %}
           <button type="button" class="ph-btn ph-x" data-act="close" title="Cerrar panel">✕</button>
         </span>
       </div>
       <div class="panel-body">
         <table>
           <thead>
-            <tr>{% for c in p.columns %}<th class="{{ 'tircol' if p.tir_hl and c['key'] == 'tir' else '' }}">{{ c.label }}</th>{% endfor %}</tr>
+            <tr>{% for c in p.columns %}<th class="{{ 'tircol' if c['key'] == p.hl_key else '' }}">{{ c.label }}</th>{% endfor %}</tr>
           </thead>
           <tbody id="tbody-{{ p.id }}"
                  hx-get="/panels/{{ p.id }}/rows"
-                 hx-trigger="load, sse:refresh, every 15s"
+                 {% if p.settle_filter %}hx-vals='js:{settle: panelSettle("{{ p.id }}")}'
+                 hx-trigger="load, sse:refresh, every 15s, settlechange"
+                 {% else %}hx-trigger="load, sse:refresh, every 15s"{% endif %}
                  hx-swap="innerHTML">
             {% with rows=p.rows, ncols=p.columns|length %}
               {% include "fragments/panel_rows.html" %}
@@ -97,12 +105,16 @@
     document.head.appendChild(st);  // antes del init: la clase .gs-COL ya queda estilada
 
     // Por DEFAULT el alto se ajusta al contenido (sin scrollbar); DESPUÉS el
-    // resize es libre — alto y ancho, desde los bordes y las esquinas (se/sw).
+    // resize es libre. Handles SÓLO en el borde derecho (ancho) y la esquina se
+    // (ancho+alto): NO ponemos el handle del borde inferior ("s"/"sw") porque tapaba
+    // toda la barra de scroll horizontal del panel (era imposible agarrarla — la
+    // banda de resize del fondo se comía el puntero). Así el fondo queda libre salvo
+    // la esquina se, donde el grip de estirar vive naturalmente.
     // Al redimensionar a mano, el panel queda "manual" y deja de auto-ajustarse
     // (salvo que cambies de moneda, que fuerza el re-fit para mostrar todas).
     var grid = GridStack.init({
       column: COL, cellHeight: CELL, margin: MARGIN, float: false,
-      handle: ".panel-head", resizable: { handles: "e, s, se, sw" },
+      handle: ".panel-head", resizable: { handles: "e, se" },
     });
     // v3: el alto arranca en auto-fit. Prioridad: layout personal (localStorage) >
     // layout default del server (DEFAULT_LAYOUT) > auto-layout de GridStack.
@@ -180,6 +192,32 @@
         requestAnimationFrame(function () { fitPanel(item, true); });
       });
       apply();  // estado inicial (MEP por defecto)
+    });
+
+    // --- Selector de plazo por panel (CI / 24hs) -------------------------- //
+    // Recalcula el panel server-side (precio + TIR/paridad/MD del plazo elegido).
+    // El estado vive en data-settle del .panel (sobrevive a los swaps del tbody);
+    // el tbody lo lee vía hx-vals (panelSettle) en cada load/refresh.
+    window.panelSettle = function (id) {
+      var p = document.querySelector('.grid-stack-item[gs-id="' + id + '"] .panel');
+      return (p && p.dataset.settle) || "24";
+    };
+    document.querySelectorAll(".settle-toggle").forEach(function (btn) {
+      var panel = btn.closest(".panel");
+      var item = btn.closest(".grid-stack-item");
+      panel.dataset.settle = btn.dataset.settle || "24";   // default 24hs
+      btn.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+      btn.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var next = btn.dataset.settle === "24" ? "CI" : "24";  // alterna
+        btn.dataset.settle = next;
+        btn.textContent = (next === "CI") ? "CI" : "24hs";
+        btn.classList.toggle("active", next === "CI");          // CI → iluminado
+        panel.dataset.settle = next;
+        var tbody = item.querySelector("tbody[hx-get]");
+        if (window.htmx && tbody) htmx.trigger(tbody, "settlechange");  // recarga con el plazo nuevo
+      });
     });
 
     // --- Toolbar del panel (Gráfico | Config | X) + persistencia ---------- //

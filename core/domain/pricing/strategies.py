@@ -21,6 +21,8 @@ duración), exactamente como el motor viejo.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 
 from core.domain.conventions import cer_reference_date, settlement_byma_date
@@ -28,7 +30,7 @@ from core.domain.pricing import metrics
 from core.domain.pricing.base import VanillaStrategy
 from core.domain.pricing.context import PricingContext
 from core.domain.pricing.tamar import tamar_dual_payoff_at
-from core.domain.xirr import _xirr_from_years, xirr
+from core.domain.xirr import _xirr_from_years
 
 
 class CerStrategy(VanillaStrategy):
@@ -225,7 +227,7 @@ class DualCerTamarStrategy(VanillaStrategy):
         ref = ctx.settle
         indices = ctx.indices
         if indices and inst.cer_base:
-            settle = settlement_byma_date(ref, lag=1)
+            settle = settlement_byma_date(ref, lag=ctx.settle_lag)
             target_date = cer_reference_date(settle, inst.cer_lag)
             cer_val = indices.get_cer(target_date)
             if cer_val:

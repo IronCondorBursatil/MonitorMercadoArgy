@@ -33,10 +33,81 @@ _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.paren
 
 @router.get("/abm", response_class=HTMLResponse)
 def abm_page(request: Request):
+    from core.infrastructure.byma.universe import categories, count
     return _TEMPLATES.TemplateResponse(request, "pages/abm.html", {
         "instruments": abm_store.list_instruments(),
         "sheets": list(abm_store.SHEET_SCHEMAS.keys()),
+        "byma_cats": categories(),
+        "byma_count": count(),
     })
+
+
+_UNIVERSE_PAGE = 200  # tamaño del lote del scroll infinito
+
+
+def _fmt_monto(v: Optional[float]) -> str:
+    """Monto operado → string compacto (1.2M / 380k / 250). '—' si nulo/cero."""
+    if not v or v <= 0:
+        return "—"
+    if v >= 1e6:
+        return f"{v / 1e6:.1f}M"
+    if v >= 1e3:
+        return f"{v / 1e3:.0f}k"
+    return f"{v:.0f}"
+
+
+def _attach_volumes(rows, hub) -> None:
+    """Adjunta a cada grupo el **monto operado del día** por moneda (ARS/MEP/CABLE) desde
+    el snapshot vivo del hub. Crudo `mh_<ccy>` (filtro/orden numérico vía data-v) +
+    formateado `mh_<ccy>_f` (M/k). Best-effort. (El promedio histórico se sigue acumulando
+    en price_history pero NO se muestra: la columna se sacó por falta de datos.)"""
+    try:
+        snap = hub.snapshot() if hub else {}
+    except Exception:  # noqa: BLE001 — el hub puede no estar listo
+        snap = {}
+
+    def _today(cell: str):
+        s = sum((getattr(snap.get(t.upper()), "v", None) or 0.0)
+                for t in (cell or "").split(" · ") if t)
+        return s or None
+
+    for g in rows:
+        for key, slot in (("ars", "pesos"), ("mep", "mep"), ("cable", "cable")):
+            v = _today(g["primary"][slot])
+            g[f"mh_{key}"], g[f"mh_{key}_f"] = v, _fmt_monto(v)
+
+
+@router.get("/abm/universe", response_class=HTMLResponse)
+def abm_universe(request: Request, q: str = "", cat: str = "", page: int = 0,
+                 hub=Depends(get_hub)):
+    """Buscador del universo BYMA (ticker/ISIN/emisor + filtro de categoría),
+    1 fila por título valor (moneda → columna), con **scroll infinito**.
+
+    `page==0` (carga inicial / cambio de filtro) → shell completo (meta + thead +
+    1er lote). `page>0` (centinela revelado al scrollear) → solo el lote de filas +
+    su próximo centinela, que reemplaza al anterior vía outerHTML."""
+    from core.infrastructure.byma.universe import search_byma_grouped
+
+    page = max(0, page)
+    # Con una categoría elegida (caso de uso real) traemos TODO el set de una (cientos
+    # de títulos) → el filtro por columna del cliente opera sobre el universo completo,
+    # sin huecos del scroll infinito. Sin categoría (≈miles), seguimos paginando.
+    if cat.strip():
+        rows, total = search_byma_grouped(q, cat, limit=100_000, offset=0)
+        has_next = False
+        page = 0
+    else:
+        rows, total = search_byma_grouped(q, cat, limit=_UNIVERSE_PAGE, offset=page * _UNIVERSE_PAGE)
+        has_next = (page * _UNIVERSE_PAGE + len(rows)) < total
+    _attach_volumes(rows, hub)  # monto operado ARS/MEP/CABLE (día + promedio)
+    # Legislación (ON): columna extra Ticker↔ISIN, solo al filtrar Obligaciones Negociables.
+    show_leg = cat.strip() == "Obligaciones Negociables"
+    ctx = {"rows": rows, "q": q, "cat": cat, "page": page, "has_next": has_next,
+           "show_leg": show_leg}
+    if page == 0:
+        ctx["total"] = total
+        return _TEMPLATES.TemplateResponse(request, "fragments/abm_universe.html", ctx)
+    return _TEMPLATES.TemplateResponse(request, "fragments/abm_universe_rows.html", ctx)
 
 
 @router.get("/abm/data912", response_class=HTMLResponse)

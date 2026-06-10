@@ -10,7 +10,7 @@ from datetime import date
 from core.domain.models import MarketSnapshot
 from core.domain.services import FinancialEngine
 from core.infrastructure.on_catalog import (
-    CATEGORY, DAY_COUNT, ITYPE, build_instruments, row_to_instrument, to_d_ticker,
+    CATEGORY, DAY_COUNT, ITYPE, build_instruments, to_d_ticker,
 )
 
 SETTLE = date(2026, 5, 28)
@@ -28,12 +28,21 @@ def test_build_instruments_shape_and_metadata():
     for i in insts:
         assert i.instrument_type == ITYPE
         assert i.category == CATEGORY
-        assert i.day_count == DAY_COUNT
+        assert i.day_count in (DAY_COUNT, "30/360")  # default ACT/365; override por col `base`
         assert i.ticker[-1] in ("O", "D")  # primaria: …O (pesos) o …D si no hay …O
         assert i.cashflows, f"{i.ticker} sin cashflows"
         assert i.cashflows[-1].date == i.maturity_date  # último flujo al vto
         # el capital total amortizado = VR (sum de amortizaciones)
         assert sum(cf.amortization for cf in i.cashflows) > 0
+
+
+def test_per_row_base_override():
+    """La col `base` del CSV pisa el day-count default (ACT/365). Telecom Clase 24
+    (TLCPO) es 30/360; YPF YM34O (sin base) queda ACT/365."""
+    by_t = {i.ticker: i for i in build_instruments()}
+    assert by_t["TLCPO"].day_count == "30/360"
+    assert by_t["TLCPO"].ley_aplicable == "NY"
+    assert by_t["YM34O"].day_count == DAY_COUNT  # sin override → ACT/365
 
 
 def test_row_legs_consolidates_existing_currency_legs():

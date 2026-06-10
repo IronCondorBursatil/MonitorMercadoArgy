@@ -15,12 +15,12 @@ import threading
 from datetime import date
 from typing import Dict, List, Optional
 
-from config.settings import DATA_DIR
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 _LOCK = threading.RLock()
-_PATH = os.path.join(DATA_DIR, "cartera.json")
+_PATH = os.path.join(str(settings.data_dir), "cartera.json")
 
 
 def _read() -> List[dict]:

@@ -1,11 +1,11 @@
-ticker_o,legs,emisor,estructura,cupon,frec_cupon,emision,vto,vr,cuotas_cap,frec_cap,prox_cap,prox_cupon,vt_ref,ytm_ref,serie_clase,ley
+ticker_o,legs,emisor,estructura,cupon,frec_cupon,emision,vto,vr,cuotas_cap,frec_cap,prox_cap,prox_cupon,vt_ref,ytm_ref,serie_clase,ley,base
 VSCXO,ODC,VISTA ENERGY,TF,7.9,S,08-Apr-26,08-Apr-38,100,3,A,04-Aug-36,,101.1,7.65,Clase XXXI,Argentina
 YM34O,ODC,YPF,TF,8.3,S,17-Jan-25,17-Jan-34,100,3,A,17-Jan-32,,103.0,7.62,,
 YMCXO,ODC,YPF,TF,8.8,S,11-Sep-24,11-Sep-31,100,3,A,11-Sep-29,,101.9,7.48,,
 IRCPO,ODC,IRSA,TF,8.0,S,31-Mar-25,31-Mar-35,100,3,A,31-Mar-33,,101.3,7.53,,
 YM39O,ODC,YPF,TF,8.8,S,28-Aug-25,22-Jul-30,100,1,A,22-Jul-30,,103.1,7.37,Clase XXXIX,Argentina
 TLCTO,ODC,TELECOM ARGENTINA,TF,8.5,S,20-Jan-26,20-Jan-36,100,2,A,20-Jan-35,,103.0,8.28,Clase 27,Argentina
-TLCPO,ODC,TELECOM ARGENTINA,TF,9.3,S,28-May-25,28-May-33,100,2,A,28-May-32,,100.0,8.51,,
+TLCPO,ODC,TELECOM ARGENTINA,TF,9.25,S,28-May-25,28-May-33,100,2,A,28-May-32,,100.0,8.51,Clase 24,NY,30/360
 VSCVO,ODC,VISTA ENERGY,TF,8.5,S,10-Jun-25,10-Jun-33,100,3,A,10-Jun-31,,104.0,7.15,Clase XXIX,Argentina
 TLCMO,ODC,TELECOM ARGENTINA,TF,9.5,S,18-Jul-24,18-Jul-31,100,3,A,18-Jul-29,,103.4,7.77,,
 MGCRO,ODC,PAMPA ENERGIA,TF,7.8,S,14-Nov-25,14-Nov-37,100,1,A,14-Nov-37,,100.3,7.79,Clase 26,Extranjera

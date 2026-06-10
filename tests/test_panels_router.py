@@ -88,6 +88,41 @@ def test_bonares_panel_has_return_columns_colored():
     assert "Sem" not in [c["label"] for c in panels._BONARES_COLS]
 
 
+def test_share_popup_drops_inapplicable_cols_for_soberanos_only():
+    """La foto de soberanos hard-dollar (bonares/bopreales) omite TNA/TEM/V.Téc/Días
+    (se comparan por TIR); Tasa Fija conserva TNA/TEM (su métrica core)."""
+    for pid in ("bonares", "bopreales"):
+        keys = {c["key"] for c in panels._share_full_cols(panels._SOBERANO_USD_COLS, pid)}
+        assert keys.isdisjoint({"tna", "tem", "technical_value", "dias"})
+        assert "tir" in keys and "ticker" in keys           # lo core se conserva
+    # Tasa Fija las conserva (no está en _SHARE_DROP_COLS)
+    tf_keys = {c["key"] for c in panels._share_full_cols(panels._TASA_FIJA_COLS, "tasa_fija")}
+    assert {"tna", "tem"} <= tf_keys
+
+
+def test_share_popup_drops_inapplicable_cols_for_cer():
+    """La foto CER omite V.Téc/TNA/TEM/Próx Cup (CER se compara por TIR real; esas
+    columnas agregan ruido) pero conserva Días, Precio, Paridad, TIR y DM."""
+    keys = {c["key"] for c in panels._share_full_cols(panels._CER_COLS, "cer")}
+    assert keys.isdisjoint({"technical_value", "tna", "tem", "days_next_coupon"})
+    assert {"ticker", "dias", "price", "parity", "tir", "duration"} <= keys
+
+
+def test_share_popup_route_bonares_drops_cols_headers():
+    """Ruta /panels/bonares/share: sin headers TNA/TEM/V.Téc/Días en la foto."""
+    m = _metric("AL30D", "BONAR", 63.5, 0.12, 3.0, 70.0, 0.9)
+    state = _StubState([m])
+    app.dependency_overrides[panels.get_state] = lambda: state
+    try:
+        with TestClient(app) as c:
+            html = c.get("/panels/bonares/share?ccy=MEP").text
+        for hdr in (">TNA<", ">TEM<", ">V.Téc<", ">Días<"):
+            assert hdr not in html, f"header {hdr} no debería estar en la foto de soberanos"
+        assert "AL30D" in html
+    finally:
+        app.dependency_overrides.pop(panels.get_state, None)
+
+
 def test_valor_relativo_rich_cheap():
     # Curva CER (peso real, flavor único): 3 en curva + 1 claramente barato.
     state = _StubState([
@@ -275,3 +310,8 @@ def test_index_and_fragment_routes():
         assert 'hx-get="/panels/bonares/rows"' in r.text
         assert c.get("/panels/cer/rows").status_code == 200
         assert c.get("/panels/tamar/rows").status_code == 200
+        # Selector de plazo: UN solo botón (default 24hs) en BONARES y CER.
+        assert r.text.count('class="settle-toggle"') == 2
+        assert 'data-settle="24"' in r.text
+        # el panel CER acepta el plazo CI (recálculo on-demand)
+        assert c.get("/panels/cer/rows?settle=CI").status_code == 200

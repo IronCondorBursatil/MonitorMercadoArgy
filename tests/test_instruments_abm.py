@@ -6,7 +6,7 @@ una .db temporal sembrada desde el Excel real, sin tocar la catalog.db de prod.
 
 import pytest
 
-from config.settings import MASTER_XLSX, settings
+from config.settings import settings
 from core.infrastructure.db import engine as db_engine
 from core.infrastructure.db.catalog_repository import ingest_from_excel
 
@@ -25,7 +25,7 @@ def abm_db(tmp_path):
     """Engine apuntado a una .db temporal sembrada desde el master Excel."""
     db_engine.configure(tmp_path / "abm_test.db")
     try:
-        ingest_from_excel(MASTER_XLSX)
+        ingest_from_excel(str(settings.master_xlsx))
         yield
     finally:
         db_engine.configure(settings.catalog_db)  # restaurar la .db real

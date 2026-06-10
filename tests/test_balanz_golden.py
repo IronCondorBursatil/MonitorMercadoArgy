@@ -60,6 +60,74 @@ def test_clisa_stub_final_period_matches_balanz():
     assert (dirty - ai) == pytest.approx(38.359, abs=1e-2)
 
 
+def test_tlcpo_telecom_clase24_amortizing_30_360_matches_balanz():
+    """Telecom Argentina Clase 24 (USP9028NCA74, ticker …D=TLCPD): 9.25% 30/360
+    semestral, amortiza 50%+50% (28/05/2032 + 28/05/2033). Balanz @ dirty 111.20,
+    settle 10/06/2026: TIR 7.24%, clean 110.892, VT 100.31, accrued 0.31, MD 4.90,
+    paridad 110.86%, current yield 8.34%. Es 30/360: con ACT/365 daría accrued ~0.33,
+    clean 110.87 y paridad 110.83 (NO matchearía Balanz)."""
+    from core.domain.on_cashflows import amort_schedule, build_on_cashflows
+    sched = amort_schedule(date(2032, 5, 28), date(2033, 5, 28), capital_freq=1, cuotas=2)
+    cfs = build_on_cashflows(emission=date(2025, 5, 28), maturity=date(2033, 5, 28),
+                             coupon_rate=0.0925, coupon_freq=2, vr=100.0, amort_dates=sched)
+    inst = Instrument(
+        ticker="TLCPD", short_name="Telecom Argentina S.A. - Clase 24",
+        instrument_type="HARD DOLLAR", maturity_date=date(2033, 5, 28),
+        emission_date=date(2025, 5, 28), payment_frequency=2, day_count="30/360",
+        cashflows=tuple(cfs),
+    )
+    settle, dirty = date(2026, 6, 10), 111.20
+    ctx = PricingContext(settle=settle)
+    tir = _STRAT.tir(inst, dirty, ctx)
+    md = _STRAT.duration(inst, tir, ctx)
+    ai = metrics.accrued_interest(inst, settle)
+    vt = metrics.residual_nominal(inst, settle) + ai
+    clean = dirty - ai
+    assert tir == pytest.approx(0.0724, abs=1.5e-4), f"TIR {tir*100:.2f}%"
+    assert clean == pytest.approx(110.892, abs=2e-3)
+    assert ai == pytest.approx(0.31, abs=3e-3)                 # 0.3083 → 0.31
+    assert ai < 0.32, "debe ser 30/360 (~0.31), NO ACT/365 (~0.33)"
+    assert vt == pytest.approx(100.31, abs=1e-2)
+    assert md == pytest.approx(4.90, abs=1e-2)
+    assert (dirty / vt) == pytest.approx(1.1086, abs=2e-4)     # paridad = dirty/VT
+    assert metrics.current_yield(inst, dirty, settle) == pytest.approx(0.0834, abs=2e-4)
+    # amortización: dos cuotas de 50, la última al vto
+    assert sum(cf.amortization for cf in cfs) == pytest.approx(100.0)
+    assert cfs[-1].date == date(2033, 5, 28) and cfs[-1].amortization == pytest.approx(50.0)
+
+
+def test_ym42_short_stub_prorated_coupon_not_extended():
+    """YPF Clase XLII (YM42, AR0123407162, ley ARG): 7% sem ACT/365 con período final
+    CORTO (vto 02/03/2029, 90d tras el último cupón regular). El cupón final está
+    PRORRATEADO (1.73 ≈ ½ del regular 3.51) → NO se extiende, a diferencia de CLISA que
+    paga cupón COMPLETO. @ dirty 103.85 USD, settle 10/06/2026: TIR 5.60%, clean 103.697,
+    accrued 0.15, VT 100.15, MD 2.46. Con la extensión (bug) daría TIR 5.16 / MD 2.67."""
+    rows = [
+        (date(2026, 6, 2), 3.49, 0.0), (date(2026, 12, 2), 3.51, 0.0),
+        (date(2027, 6, 2), 3.49, 0.0), (date(2027, 12, 2), 3.51, 0.0),
+        (date(2028, 6, 2), 3.51, 0.0), (date(2028, 12, 2), 3.51, 0.0),
+        (date(2029, 3, 2), 1.73, 100.0),
+    ]
+    inst = Instrument(
+        ticker="YM42D", short_name="YPF S.A. - Clase XLII", instrument_type="HARD DOLLAR",
+        maturity_date=date(2029, 3, 2), emission_date=date(2025, 12, 2),
+        payment_frequency=2, day_count="ACT/365",
+        cashflows=tuple(Cashflow(date=d, interest=i, amortization=a) for d, i, a in rows),
+    )
+    settle, dirty = date(2026, 6, 10), 103.85
+    ctx = PricingContext(settle=settle)
+    tir = _STRAT.tir(inst, dirty, ctx)
+    md = _STRAT.duration(inst, tir, ctx)
+    ai = metrics.accrued_interest(inst, settle)
+    vt = metrics.residual_nominal(inst, settle) + ai
+    assert tir == pytest.approx(0.0560, abs=1.5e-4), f"TIR {tir*100:.2f}%"
+    assert tir > 0.055, "stub prorrateado NO debe extenderse (extendido daría 5.16%)"
+    assert (dirty - ai) == pytest.approx(103.6966, abs=2e-3)
+    assert ai == pytest.approx(0.1534, abs=2e-3)
+    assert vt == pytest.approx(100.15, abs=1e-2)
+    assert md == pytest.approx(2.46, abs=1e-2)
+
+
 def _build(cupon, freq, base, emis, vto, itype="HARD DOLLAR"):
     row = {
         "ticker": "GOLD", "tipo": itype,
@@ -85,6 +153,35 @@ _ANCHORS = [
      date(2026, 6, 1), 101.9, 0.0782, 100.2863, 101.6137, 1.6137, 1.85),
     ("BPCV", 3.25, 2, "ACT/365", date(2024, 11, 5), date(2027, 5, 5),
      date(2026, 6, 1), 98.23, 0.0558, 97.9896, 100.2404, 0.2404, 0.89),
+    # Banco BBVA Clase 40 (BF40, AR0078136758, ley ARG): 5% sem ACT/365 bullet, cupones
+    # prorrateados por días reales (2.48/2.52/2.48). @ dirty 103, settle 10/06/2026.
+    ("BF40", 5.0, 2, "ACT/365", date(2026, 2, 27), date(2027, 8, 27),
+     date(2026, 6, 10), 103.0, 0.0368, 101.5890, 101.41, 1.41, 1.16),
+    # CAPEX Clase XII (CACD, AR0629138345, ley ARG): 8.25% sem ACT/365 bullet, cupones
+    # 4.11/4.14 (días reales). @ dirty 102.5 (pata USD), settle 10/06/2026.
+    ("CACD", 8.25, 2, "ACT/365", date(2025, 12, 4), date(2029, 6, 4),
+     date(2026, 6, 10), 102.5, 0.0749, 102.3644, 100.14, 0.1356, 2.61),
+    # EDEMSA Clase 3 (OZC3, AR0428738048, ley ARG): 8% sem ACT/365 bullet, cupones
+    # 3.97/4.03 (días reales). @ dirty 100.85 (pata USD), settle 10/06/2026.
+    ("OZC3", 8.0, 2, "ACT/365", date(2024, 11, 29), date(2027, 11, 29),
+     date(2026, 6, 10), 100.85, 0.0771, 100.5870, 100.26, 0.2630, 1.36),
+    # Pluspetrol Clase 4 (PLC4, USP7924AAA62, ley NY): 8.5% sem 30/360 bullet, cupón
+    # programado SÁBADO 30/05 → accrued 30/360 desde la fecha PROGRAMADA (10 días, NO 9
+    # del día hábil) = 0.2361; Balanz muestra 0.24. @ dirty 109.15, settle 10/06/2026.
+    ("PLC4", 8.5, 2, "30/360", date(2025, 5, 30), date(2032, 5, 30),
+     date(2026, 6, 10), 109.15, 0.0677, 108.9139, 100.2361, 0.2361, 4.69),
+    # Pan American Energy Clase 35 (PN35, AR0623274765, ley ARG): 7% sem ACT/365 bullet,
+    # cupones 3.47/3.53 (días reales). @ dirty 106 (pata USD), settle 10/06/2026.
+    ("PN35", 7.0, 2, "ACT/365", date(2024, 9, 27), date(2029, 9, 27),
+     date(2026, 6, 10), 106.0, 0.0554, 104.5616, 101.4384, 1.4384, 2.89),
+    # YPF Clase XXXVII (YM37, AR0657794191, ley ARG): 7% TRIMESTRAL (freq 4) ACT/365
+    # bullet, cupones 1.71/1.76 (días reales). @ dirty 103.75 (pata USD), settle 10/06/2026.
+    ("YM37", 7.0, 4, "ACT/365", date(2025, 5, 7), date(2027, 5, 7),
+     date(2026, 6, 10), 103.75, 0.0356, 103.0979, 100.6521, 0.6521, 0.87),
+    # Tecpetrol Clase 8 (TTC8, AR0166027471, ley ARG): 5% sem ACT/365 bullet, cupones
+    # 2.49/2.51 (días reales). @ dirty 102.9 (pata USD), settle 10/06/2026.
+    ("TTC8", 5.0, 2, "ACT/365", date(2024, 10, 24), date(2027, 10, 24),
+     date(2026, 6, 10), 102.9, 0.0333, 102.2562, 100.6438, 0.6438, 1.31),
 ]
 _IDS = [a[0] for a in _ANCHORS]
 

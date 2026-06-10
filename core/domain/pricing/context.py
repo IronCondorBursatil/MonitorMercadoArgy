@@ -20,3 +20,6 @@ class PricingContext:
     indices: Optional[IndicesProvider] = None
     fx: Optional[FxProvider] = None
     tamar_forecast: Optional[float] = None
+    # Plazo de liquidación BYMA para la indexación CER de V.Téc: T+1 (24hs, default)
+    # o T+0 (CI). El ref CER es cer_reference_date(settlement_byma_date(ref, settle_lag)).
+    settle_lag: int = 1

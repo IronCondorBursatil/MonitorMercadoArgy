@@ -1,0 +1,50 @@
+{# Universo BYMA: 1 fila por título valor, cada moneda en su columna (primary vs
+   especiales). Shell de la tabla (meta + thead + 1er lote). El scroll infinito lo
+   maneja el centinela del partial `abm_universe_rows.html` (no hay paginado). #}
+{% if rows %}
+<div class="uni-meta">{{ total }} títulos
+  {%- if q %} · «{{ q }}»{% endif %}{% if cat %} · {{ cat }}{% endif %}</div>
+<div class="uni-tablewrap">
+  <table class="uni-table uni-table--grouped">
+    <thead>
+      <tr class="uni-grp-head">
+        <th rowspan="2">Ticker</th>{% if show_leg %}<th rowspan="2">Legislación</th>{% endif %}<th rowspan="2">ISIN</th>
+        <th rowspan="2" title="¿Está dado de alta en el catálogo de pricing? (se le calcula TIR/MD)">Alta?</th>
+        <th colspan="3" class="uni-grp uni-grp--prim">Primary</th>
+        <th colspan="3" class="uni-grp uni-grp--esp">Especiales</th>
+        <th rowspan="2">Categoría</th><th rowspan="2">Tipo</th>
+        <th rowspan="2">Panel</th><th rowspan="2">Emisor</th>
+        <th colspan="3" class="uni-grp uni-grp--mh" title="Monto operado del día (snapshot vivo) por moneda">Monto op. hoy</th>
+      </tr>
+      <tr class="uni-ccy-head">
+        <th class="uni-ccol uni-ccol--prim">Pesos</th><th class="uni-ccol uni-ccol--prim">MEP</th><th class="uni-ccol uni-ccol--prim">Cable</th>
+        <th class="uni-ccol uni-ccol--esp">Pesos</th><th class="uni-ccol uni-ccol--esp">MEP</th><th class="uni-ccol uni-ccol--esp">Cable</th>
+        {# ordenable: clic alterna mayor→menor / menor→mayor (uni_filters.js) #}
+        <th class="uni-ccol uni-ccol--mh uni-sortable" data-sort="uni-mh-ars" title="ordenar por monto ARS">ARS<span class="uni-sortarr"></span></th>
+        <th class="uni-ccol uni-ccol--mh uni-sortable" data-sort="uni-mh-mep" title="ordenar por monto MEP">MEP<span class="uni-sortarr"></span></th>
+        <th class="uni-ccol uni-ccol--mh uni-sortable" data-sort="uni-mh-cable" title="ordenar por monto CABLE">Cable<span class="uni-sortarr"></span></th>
+      </tr>
+      {# Filtro por columna (estilo blotter): selects auto-poblados (categóricas), texto
+         (contiene) o numérico (≥). Lo cablea static/js/uni_filters.js. #}
+      <tr class="uni-flt">
+        <th><input class="uni-fin" data-mode="text" placeholder="filtrar…"></th>
+        {% if show_leg %}<th><select class="uni-fsel" data-mode="select"></select></th>{% endif %}
+        <th><input class="uni-fin" data-mode="text" placeholder="ISIN"></th>
+        <th><select class="uni-fsel" data-mode="select"></select></th>
+        <th><input class="uni-fin" data-mode="text"></th><th><input class="uni-fin" data-mode="text"></th><th><input class="uni-fin" data-mode="text"></th>
+        <th><input class="uni-fin" data-mode="text"></th><th><input class="uni-fin" data-mode="text"></th><th><input class="uni-fin" data-mode="text"></th>
+        <th><select class="uni-fsel" data-mode="select"></select></th>
+        <th><select class="uni-fsel" data-mode="select"></select></th>
+        <th><select class="uni-fsel" data-mode="select"></select></th>
+        <th><input class="uni-fin" data-mode="text" placeholder="emisor"></th>
+        <th><input class="uni-fin uni-fnum" data-mode="num" placeholder="≥"></th><th><input class="uni-fin uni-fnum" data-mode="num" placeholder="≥"></th><th><input class="uni-fin uni-fnum" data-mode="num" placeholder="≥"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% include "fragments/abm_universe_rows.html" %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="uni-empty">Sin resultados{% if q %} para «{{ q }}»{% endif %}{% if cat %} en {{ cat }}{% endif %}.</div>
+{% endif %}

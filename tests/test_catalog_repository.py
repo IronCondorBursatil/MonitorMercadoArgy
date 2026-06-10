@@ -9,7 +9,7 @@ import math
 
 import pytest
 
-from config.settings import MASTER_XLSX
+from config.settings import settings
 from core.infrastructure.db.catalog_repository import CatalogRepository, ingest_from_excel
 from core.infrastructure.repositories import ExcelInstrumentsRepository
 
@@ -25,8 +25,8 @@ def _cfs(inst):
 
 @pytest.fixture(scope="module")
 def repos():
-    ingest_from_excel(MASTER_XLSX)  # re-seed SQLite desde el Excel
-    excel = ExcelInstrumentsRepository(MASTER_XLSX)
+    ingest_from_excel(str(settings.master_xlsx))  # re-seed SQLite desde el Excel
+    excel = ExcelInstrumentsRepository(str(settings.master_xlsx))
     catalog = CatalogRepository(auto_seed=False)
     return excel, catalog
 

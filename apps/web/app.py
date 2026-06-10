@@ -24,13 +24,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from apps.web.deps import get_repo, get_state
 from apps.web.routers import (
-    abm, bcra, bonds, cartera, cashflows, curva, escenarios, fci, header, options,
-    panels, stream,
+    abm, bcra, bonds, cartera, cashflows, catalog, curva, escenarios, fci, header,
+    options, panels, source, stream,
 )
 from apps.web.state import AppState
 from config.settings import settings
@@ -61,16 +62,15 @@ async def _refresh_loop(app: FastAPI) -> None:
     while True:
         await asyncio.sleep(settings.refresh_sec)
         try:
-            await app.state.hub.refresh_all()  # I/O async (no bloquea el event loop)
+            await app.state.hub.refresh_all()  # fuente live activa (BYMA/Data912), async
             use_case = GenerateMonitorReport(repo, provider)
             metrics = await asyncio.to_thread(use_case.execute, _ALL_TYPES)
             await app.state.app_state.update(metrics)
-            # Opciones: filtra el snapshot por origen y reconstruye la chain
-            # enriquecida fuera del event loop.
-            snap = app.state.hub.snapshot()
-            sources = app.state.hub.sources()
-            opt_rows = {s: r for s, r in snap.items() if sources.get(s) == "options"}
-            stk_rows = {s: r for s, r in snap.items() if sources.get(s) == "stocks"}
+            # Opciones (snapshot aparte): BYMA open /options por defecto — OI real +
+            # underlyingSymbol/optionType/maturityDate autoritativos (más profundidad);
+            # Data912 de fallback. El hub elige la fuente y resuelve los subyacentes;
+            # la chain enriquecida (parser + CRR + griegos + tasas) corre off-loop.
+            opt_rows, stk_rows = await app.state.hub.fetch_options(settings.options_source)
             items = await asyncio.to_thread(build_options, opt_rows, stk_rows)
             app.state.app_state.set_options(items)
         except asyncio.CancelledError:
@@ -120,17 +120,47 @@ def _reconcile_catalog(hub) -> int:
     return len(legs) + len(stocks) + ons
 
 
+def _backfill_legs() -> int:
+    """Completa patas cotizantes faltantes (soberanos + ON) por grupo/ISIN del universo
+    BYMA (sync, corre en to_thread). Devuelve cuántas patas se agregaron."""
+    from apps.web.instruments_abm import backfill_legs_from_universe
+    try:
+        res = backfill_legs_from_universe()
+        return sum(len(r.get("added", [])) for r in res)
+    except Exception:
+        logger.exception("backfill de patas (universo) falló")
+        return 0
+
+
 async def _startup_reconcile(app: FastAPI) -> None:
     """Al arranque: trae un snapshot de Data912 y reconcilia el catálogo —
     completa las patas de moneda (MEP/CABLE) de soberanos ya cargados (mismo bono)
     y da de alta las acciones como categoría 'Acciones'. Los tickers de renta fija
     genuinamente nuevos quedan para el alta manual (sidebar del ABM)."""
+    from core.infrastructure.byma.catalog_enrich import (
+        enrich_ficha_meta, enrich_isin_from_byma, enrich_isin_from_ficha,
+    )
+    from core.infrastructure.byma.universe import ingest_byma_catalog
+
     try:
         await app.state.hub.refresh_all()
         n = await asyncio.to_thread(_reconcile_catalog, app.state.hub)
-        if n:
+        # ISIN + metadata BYMA (emisor/tipo): primero del seed (instantáneo), luego
+        # ficha en vivo para los que quedaron sin ISIN (autoritativo, AL30/DICP/etc).
+        enriched = await asyncio.to_thread(enrich_isin_from_byma)
+        enriched += await asyncio.to_thread(enrich_isin_from_ficha)
+        # Campos ricos de la ficha (ley/moneda/amortización/interés/montos) → para
+        # el ABM y el catálogo de productos. Idempotente, best-effort.
+        await asyncio.to_thread(enrich_ficha_meta)
+        # Universo BYMA navegable (tabla byma_catalog) para el buscador del ABM.
+        universe = await asyncio.to_thread(ingest_byma_catalog)
+        # Completar patas cotizantes faltantes (soberanos + ON) deduciendo el grupo
+        # por el universo BYMA (mismo ISIN). Idempotente. Requiere byma_catalog cargado.
+        legs = await asyncio.to_thread(_backfill_legs)
+        if n or enriched or legs:
             get_repo().reload(reseed_from_excel=False)
-            logger.info("Startup: catálogo reconciliado (+%d filas: patas + acciones).", n)
+        logger.info("Startup: catálogo +%d filas, %d ISIN, %d especies BYMA, +%d patas.",
+                    n, enriched, universe, legs)
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -145,13 +175,18 @@ async def _price_history_loop(app: FastAPI) -> None:
     100% local → esta task es la única que escribe el store. Diario alcanza."""
     from datetime import date as _date
     from core.infrastructure.price_history import (
-        get_price_history_store, prime_from_data912, record_live_closes,
+        byma_prime_candidates, get_price_history_store, prime_from_byma_historico,
+        prime_from_data912, record_live_closes,
     )
+    from core.infrastructure.fci_history import get_fci_history_store, record_from_ard
 
     repo = get_repo()
     store = get_price_history_store()
+    fci_store = get_fci_history_store()
     provider = app.state.provider  # Data912MarketDataProvider (tiene fetch_bond_history)
     primed = False
+    byma_primed = not settings.byma_history_enabled
+    byma_attempted: set[str] = set()   # tickers ya intentados de BYMA (1× por proceso)
     while True:
         try:
             # El snapshot lo mantiene fresco `_refresh_loop` (cada 5s) + el reconcile
@@ -171,17 +206,48 @@ async def _price_history_loop(app: FastAPI) -> None:
                 # caído (got=0, sin excepción — es best-effort), reintentamos en el
                 # próximo tick en vez de quedarnos sin la historia profunda.
                 primed = got > 0
+            # Completar lo que Data912 no cubre (bopreales, letras, ON, patas MEP/CABLE)
+            # con las series históricas de BYMA open. El bloque Data912 de arriba ya
+            # corrió este tick, así que los tickers que siguen casi sin historia en el
+            # store son justamente los no cubiertos (si Data912 está caído, BYMA cubre
+            # todo — degradado pero correcto). Se intenta cada ticker 1× (byma_attempted):
+            # evita re-primar en bucle los que BYMA no tiene y no cuelga los que fallan
+            # en el mismo lote que un éxito. Listo cuando no queda nada sin intentar.
+            if not byma_primed:
+                pending = byma_prime_candidates(
+                    wanted, store, byma_attempted, settings.byma_history_min_days)
+                if pending:
+                    byma_attempted.update(pending)
+                    gotb = await asyncio.to_thread(
+                        prime_from_byma_historico, pending, store,
+                        max_days=settings.byma_history_max_days,
+                        max_workers=settings.byma_history_workers)
+                    logger.info(
+                        "Price history BYMA: +%d cierres de %d tickers sin cubrir por Data912.",
+                        gotb, len(pending))
+                else:
+                    byma_primed = True   # nada pendiente sin intentar → listo
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("price history loop iteration failed")
+        # FCI: acumula el corte diario de ArgentinaDatos (vcp/ccp/patrimonio) para
+        # derivar flujos reales (Δccp×VCP). Independiente del price history (try aparte).
+        try:
+            nf = await asyncio.to_thread(record_from_ard, fci_store, _date.today())
+            if nf:
+                logger.info("FCI history: +%d cortes de fondo acumulados.", nf)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("fci history accumulation failed")
         await asyncio.sleep(settings.price_history_sec)
 
 
 async def _bei_loop(app: FastAPI) -> None:
     """Loop dedicado de BEI (pesado: bootstrap + NSS fits). Corre 1× al arranque
     y luego cada bei_refresh_sec. Reemplaza el daemon _bei_refresh_loop."""
-    from apps.cli.monitors.bei import compute_bei_tables
+    from apps.cli.bei import compute_bei_tables
     from core.infrastructure.provider_hub import HubMarketDataProvider
     from core.use_cases.generate_report import GenerateMonitorReport
 
@@ -213,9 +279,25 @@ async def lifespan(app: FastAPI):
     from core.infrastructure.indices_provider import BCRAIndicesProvider
     from core.infrastructure.repositories import Data912MarketDataProvider
 
+    from core.infrastructure.byma.sources import make_source, Data912Source
+
     app.state.client = ResilientClient()
-    app.state.hub = ProviderHub(app.state.client)
+    # Fuente live inicial: settings.market_source (default byma_open). Si falla
+    # (p.ej. byma_realtime sin credenciales), cae a byma_open y luego a data912.
+    try:
+        initial_source = make_source(settings.market_source)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("market source %s no disponible (%s); usando byma_open.",
+                       settings.market_source, e)
+        try:
+            initial_source = make_source("byma_open")
+        except Exception:  # noqa: BLE001
+            initial_source = Data912Source()
+    app.state.hub = ProviderHub(app.state.client, active_source=initial_source)
     app.state.app_state = AppState()
+    app.state.app_state.set_data_source(app.state.hub.active_mode,
+                                        app.state.hub.active_label,
+                                        app.state.hub.is_delayed)
     repo = get_repo()  # warm: carga SQLite / siembra desde Excel
     # Providers para el popup de detalle (comparten caches class-level con el refresh).
     app.state.provider = Data912MarketDataProvider()
@@ -247,6 +329,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Monitor Renta Fija AR", lifespan=lifespan)
+# GZip: el dataset de /fci/data es grande (~varios MB en JSON) → comprime ~6-7×.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 app.include_router(panels.router)
 app.include_router(bonds.router)
@@ -257,8 +341,10 @@ app.include_router(escenarios.router)
 app.include_router(curva.router)
 app.include_router(fci.router)
 app.include_router(abm.router)
+app.include_router(catalog.router)
 app.include_router(options.router)
 app.include_router(header.router)
+app.include_router(source.router)
 app.include_router(stream.router)
 
 

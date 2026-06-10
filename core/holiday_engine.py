@@ -877,7 +877,7 @@ if __name__ == "__main__":
         print("=" * 60)
 
         print(f"\n  Horario BYMA: {BYMA_OPEN.strftime('%H:%M')} - {BYMA_CLOSE.strftime('%H:%M')}")
-        print(f"  Settlement default: T+1 (T+2 eliminado)")
+        print("  Settlement default: T+1 (T+2 eliminado)")
 
         # Control 1: Semana Santa 2026
         print("\n[1] Semana Santa 2026:")
@@ -940,6 +940,6 @@ if __name__ == "__main__":
 
         print(f"\nConfirmados (2+ fuentes): {(df['n_fuentes'] >= 2).sum()}")
         print(f"Solo 1 fuente (verificar): {(df['n_fuentes'] == 1).sum()}")
-        print(f"\nArchivos generados:")
+        print("\nArchivos generados:")
         print(f"  {EXCEL_PATH.absolute()}")
         print(f"  {CACHE_JSON.absolute()}")

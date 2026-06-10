@@ -211,12 +211,18 @@ PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreale
                "valor_relativo", "panel_lider", "futuros",
                "bei_tenor", "bei_sendero", "bei_pares"]
 
-# Paneles cuyas especies cotizan en 3 monedas (mismo bono): se les agrega el
-# filtro ARS/MEP/CABLE en el header. La moneda se deriva del sufijo del ticker.
-# Solo BONARES/GLOBALES: tienen las 3 patas (ARS/MEP/CABLE) limpias. Los BOPREAL
-# son casi todos sólo-MEP (sufijo D), así que el default ARS los ocultaría — si
-# se quisieran filtrar habría que elegirles otro default.
-CCY_FILTER_PANELS = {"bonares", "obligaciones_negociables"}
+# Paneles cuyas especies cotizan en 3 monedas (mismo bono): se les agrega el filtro
+# ARS/MEP/CABLE en el header (default MEP). La moneda se deriva del sufijo del ticker
+# (D=MEP, C=CABLE, resto=ARS). BOPREALes incluidos: cotizan en pesos (base BPO*),
+# MEP (…D) y cable (…C) — la pata pesos se linkea por ISIN (ver backfill_legs_from_universe).
+CCY_FILTER_PANELS = {"bonares", "obligaciones_negociables", "bopreales"}
+
+# Paneles con selector de plazo de liquidación CI (T+0) / 24hs (T+1). El precio y
+# todo lo que deriva de él (TIR/paridad/MD/V.Téc) se recalcula on-demand para el
+# plazo elegido desde el snapshot CI del hub (BYMA trae ambos plazos en una llamada).
+# BONARES (soberanos USD, 3 monedas) y CER (peso ajustado: el plazo además mueve el
+# ref de indexación CER de la V.Téc, no solo el descuento — ver _ci_metrics/settle_lag).
+SETTLE_FILTER_PANELS = {"bonares", "cer"}
 
 # Paneles donde se resalta la columna TIR (fondo accent, mismo efecto que la
 # `sortcol` del FCI) para distinguirla rápido: TODOS los paneles de bonos que
@@ -225,6 +231,12 @@ CCY_FILTER_PANELS = {"bonares", "obligaciones_negociables"}
 # dashboard y en el popup de compartir (la foto).
 _TIR_HL_PANELS = {pid for pid, (_t, _types, _cols) in PANELS.items()
                   if any(c.get("key") == "tir" for c in _cols)}
+# Columna a resaltar (fondo accent) por panel — en el dashboard Y en la foto. Por defecto
+# la TIR (soberanos/CER/ON/DL/TAMAR/VR…), pero TASA FIJA resalta la TNA: son instrumentos
+# a tasa fija (en general <1 año) que se comparan por tasa devengada nominal (TNA), no por
+# TIR. Panel sin entrada → sin resalte.
+_HL_COL_KEY = {pid: "tir" for pid in _TIR_HL_PANELS}
+_HL_COL_KEY["tasa_fija"] = "tna"
 
 
 def _ticker_ccy(ticker: str) -> str:
@@ -606,7 +618,27 @@ def _build_bei_rows(panel_id: str, state) -> List[dict]:
     return rows
 
 
-def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
+def _ci_metrics(panel_id: str, request: Request, hist_provider) -> Optional[list]:
+    """Métricas on-demand del plazo CI (T+0): corre el motor para los tipos del panel
+    leyendo el snapshot CI del hub. Todo en memoria (el hub ya tiene CI del refresh,
+    sin red extra). None si el panel no tiene tipos (no aplica)."""
+    from core.infrastructure.provider_hub import HubMarketDataProvider
+    from core.use_cases.generate_report import GenerateMonitorReport
+    from apps.web.deps import get_repo
+
+    types = PANELS[panel_id][1]
+    if not types:
+        return None
+    hub = request.app.state.hub
+    ci_provider = HubMarketDataProvider(hub, hist_provider, settle="CI")
+    # CI (T+0): settle_date=hoy descuenta TIR/MD desde hoy; settle_lag=0 mueve el ref
+    # CER de la V.Téc a T+0 también → todo el cálculo en consonancia con el precio CI.
+    return GenerateMonitorReport(get_repo(), ci_provider).execute(
+        list(types), settle_date=date.today(), settle_lag=0)
+
+
+def _build_rows(panel_id: str, state, provider=None, cols_override=None,
+                metrics_override=None) -> List[dict]:
     if panel_id == "valor_relativo":
         return _build_rv_rows(state)
     if panel_id == "panel_lider":
@@ -616,17 +648,25 @@ def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
     if panel_id not in PANELS:
         return []
     _title, types, cols = PANELS[panel_id]
+    if cols_override is not None:      # popup "compartir": fila con TODAS las columnas calculadas
+        cols = cols_override
     today = date.today()
     ccy_filterable = panel_id in CCY_FILTER_PANELS
-    metrics = [m for m in state.metrics()
-               if m.snapshot and m.snapshot.instrument and m.snapshot.instrument.instrument_type in types]
+    # metrics_override: métricas ya calculadas (p.ej. plazo CI on-demand) — ya son de
+    # los tipos del panel. Si no, se filtran las de AppState (plazo 24hs, default).
+    if metrics_override is not None:
+        metrics = [m for m in metrics_override
+                   if m.snapshot and m.snapshot.instrument]
+    else:
+        metrics = [m for m in state.metrics()
+                   if m.snapshot and m.snapshot.instrument and m.snapshot.instrument.instrument_type in types]
     metrics.sort(key=lambda m: (m.duration is None, m.duration or 0.0))
     rows = []
     for m in metrics:
         vals = _row_values(m, today)
         ccy = _ticker_ccy(vals["ticker"]) if ccy_filterable else None
         cells = []
-        tir_hl = panel_id in _TIR_HL_PANELS
+        hl_key = _HL_COL_KEY.get(panel_id)
         for c in cols:
             raw = vals.get(c["key"])
             dec = c.get("decimals", 2)
@@ -634,7 +674,7 @@ def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
             if c["key"] == "price" and ccy == "ARS":
                 dec = 0
             cls = _cell_class(raw, c["kind"])
-            if tir_hl and c["key"] == "tir":
+            if hl_key and c["key"] == hl_key:
                 cls = (cls + " tircol").strip()
             cells.append({
                 "text": _fmt(raw, c["kind"], dec),
@@ -651,7 +691,8 @@ def _build_rows(panel_id: str, state, provider=None) -> List[dict]:
 def index(request: Request, state=Depends(get_state)):
     panels = [{"id": pid, "title": PANELS[pid][0], "columns": PANELS[pid][2],
                "ccy_filter": pid in CCY_FILTER_PANELS,
-               "tir_hl": pid in _TIR_HL_PANELS,  # resalta la columna TIR (soberanos/ON)
+               "settle_filter": pid in SETTLE_FILTER_PANELS,  # selector CI / 24hs
+               "hl_key": _HL_COL_KEY.get(pid),  # columna a resaltar (TIR; TNA en tasa fija)
                "chartable": bool(PANELS[pid][1]),  # tiene MD/TIR → muestra botón Gráfico
                "rows": _build_rows(pid, state)} for pid in PANEL_ORDER]
     return _TEMPLATES.TemplateResponse(
@@ -691,12 +732,16 @@ def clear_default_layout():
 
 
 @router.get("/panels/{panel_id}/rows", response_class=HTMLResponse)
-def panel_rows(panel_id: str, request: Request, state=Depends(get_state),
+def panel_rows(panel_id: str, request: Request, settle: str = "24", state=Depends(get_state),
                provider=Depends(get_provider), rofex=Depends(get_rofex),
                fx=Depends(get_fx), indices=Depends(get_indices)):
     cols = PANELS.get(panel_id, (None, None, []))[2]
     if panel_id == "futuros":
         rows = _build_futuros_rows(rofex, fx, indices)
+    elif settle.upper() == "CI" and panel_id in SETTLE_FILTER_PANELS:
+        # Plazo CI (T+0): recalcular el panel on-demand con el snapshot CI del hub.
+        metrics = _ci_metrics(panel_id, request, provider)
+        rows = _build_rows(panel_id, state, provider, metrics_override=metrics or [])
     else:
         rows = _build_rows(panel_id, state, provider)
     return _TEMPLATES.TemplateResponse(
@@ -777,10 +822,82 @@ def panel_chart(panel_id: str, request: Request, ccy: str = "", state=Depends(ge
     )
 
 
-# --- Compartir (popup cuadrado p/ WhatsApp): tabla completa + curva al costado - #
-# Columnas que se ocultan SOLO en la imagen de compartir (para que las esenciales
-# —Ticker/Vto/Precio/Paridad/TIR/DM/VAR%/Vol— crezcan y se lean desde el celular).
-_SHARE_HIDE_KEYS = {"category", "days_next_coupon", "technical_value"}
+# --- Compartir (popup p/ WhatsApp): columnas de la foto --- #
+# El popup muestra el set de métricas CORE de _row_values en orden canónico, tomando las
+# etiquetas/decimales del panel cuando la columna ya existe ahí (preserva 'TIR/TEA', 'DM',
+# 'Var %', etc.). Se EXCLUYEN a propósito (decisión de David, 2026-06-05): 'short_name'
+# (Emisor — redundante con el ticker salvo en ON, y muy ancho) y las ventanas de rendimiento
+# Sem/1M/3M/YTD/1A (var_7d..var_1y — casi siempre vacías y comprimían la letra). Las
+# columnas que igual queden 100% vacías para las especies del panel (ej. 'Categoría' en
+# Tasa Fija) se descartan al vuelo en panel_share.
+_ALL_BOND_COLS = [
+    {"key": "ticker", "label": "Ticker", "kind": "text"},
+    {"key": "category", "label": "Categoría", "kind": "text"},
+    {"key": "vto", "label": "Vto", "kind": "date"},
+    {"key": "dias", "label": "Días", "kind": "number", "decimals": 0},
+    {"key": "days_next_coupon", "label": "Próx Cup", "kind": "number", "decimals": 0},
+    {"key": "price", "label": "Precio", "kind": "number", "decimals": 2},
+    {"key": "technical_value", "label": "V.Téc", "kind": "number", "decimals": 2},
+    {"key": "parity", "label": "Paridad", "kind": "percent", "decimals": 2},
+    {"key": "tir", "label": "TIR", "kind": "percent", "decimals": 2},
+    {"key": "tna", "label": "TNA", "kind": "percent", "decimals": 2},
+    {"key": "tem", "label": "TEM", "kind": "percent", "decimals": 2},
+    {"key": "duration", "label": "MD", "kind": "number", "decimals": 2},
+    {"key": "change_pct", "label": "Var%", "kind": "percent_signed", "decimals": 2},
+    {"key": "volume", "label": "Vol $", "kind": "volume"},
+]
+
+
+# Columnas que la foto OMITE por panel:
+#  · Soberanos hard-dollar (Bonares/Globales y Bopreales): se comparan por TIR (yield
+#    en USD) → TNA(365)/TEM(365) (tasa en pesos), V.Téc y Días al vto no aplican
+#    (decisión de David, 2026-06-08).
+#  · CER: se compara por TIR real → TNA/TEM (nominales) y V.Téc agregan ruido; Próx Cup
+#    tampoco aporta. Se conserva Días al vto (decisión de David, 2026-06-09).
+_SHARE_DROP_COLS = {"bonares": {"tna", "tem", "technical_value", "dias"},
+                    "bopreales": {"tna", "tem", "technical_value", "dias"},
+                    "cer": {"tna", "tem", "technical_value", "days_next_coupon"}}
+
+
+def _share_full_cols(full_cols: list, panel_id: str = "") -> list:
+    """Columnas del popup = set canónico completo (_ALL_BOND_COLS), tomando label/
+    decimales del panel cuando la columna ya existe ahí (preserva 'TIR/TEA', 'DM', etc.).
+    En soberanos hard-dollar se omiten TNA/TEM/V.Téc/Días (no aplican: se comparan por TIR)."""
+    by_key = {c["key"]: c for c in full_cols}
+    drop = _SHARE_DROP_COLS.get(panel_id, set())
+    out = []
+    for base in _ALL_BOND_COLS:
+        if base["key"] in drop:
+            continue
+        c = dict(base)
+        ov = by_key.get(base["key"])
+        if ov:
+            if ov.get("label"):
+                c["label"] = ov["label"]
+            if "decimals" in ov:
+                c["decimals"] = ov["decimals"]
+        out.append(c)
+    return out
+
+
+def _drop_empty_share_cols(cols: list, rows: list) -> tuple:
+    """Saca del popup las columnas (salvo la 1ª, el ticker) cuyas celdas están TODAS
+    vacías ('—') para las especies mostradas — evita headers en blanco."""
+    if not rows or len(cols) <= 1:
+        return cols, rows
+    drop = set()
+    for i in range(1, len(cols)):
+        if all(i >= len(r.get("cells", [])) or
+               (r["cells"][i].get("text") in (None, "", "—")) for r in rows):
+            drop.add(i)
+    if not drop:
+        return cols, rows
+    cols = [c for i, c in enumerate(cols) if i not in drop]
+    for r in rows:
+        cs = r.get("cells")
+        if cs:
+            r["cells"] = [cell for i, cell in enumerate(cs) if i not in drop]
+    return cols, rows
 
 # Bajada (subtítulo) por panel para la foto — da contexto al cliente.
 _PANEL_DESC = {
@@ -793,16 +910,23 @@ _PANEL_DESC = {
     "obligaciones_negociables": "Obligaciones Negociables · deuda corporativa USD",
 }
 
+# Reparto del alto gráfico:tabla en la foto, por panel (lo usa fitShareRatio del template:
+# alto_box = mult × alto_tabla). mult=0.5 → gráfico 1/3 · tabla 2/3 (default: curvas con
+# muchas especies, ej. CER). mult=1.0 → 1/2 y 1/2 (TASA FIJA: pocas filas, así el gráfico
+# no queda chico). Sin entrada → default 0.5.
+_SHARE_CHART_MULT = {"tasa_fija": 1.0}
+_SHARE_CHART_MULT_DEFAULT = 0.5
+
 
 @router.get("/panels/{panel_id}/share", response_class=HTMLResponse)
 def panel_share(panel_id: str, request: Request, ccy: str = "", state=Depends(get_state),
                 provider=Depends(get_provider), rofex=Depends(get_rofex),
                 fx=Depends(get_fx), indices=Depends(get_indices)):
-    """Popup 'compartir' cuadrado (1:1) para WhatsApp: tabla + curva TIR×MD al
-    costado (solo paneles chartables), ambos en la MONEDA elegida en el panel
-    (`ccy`, ej. MEP). Muestra todas las filas de esa moneda, pero recorta unas
-    columnas accesorias (`_SHARE_HIDE_KEYS`) para agrandar la letra. Es read-only:
-    no toca el dashboard (vive en #modal)."""
+    """Popup 'compartir' para WhatsApp: tabla + curva TIR×MD arriba (solo paneles
+    chartables), en la MONEDA elegida en el panel (`ccy`, ej. MEP). Muestra todas las
+    filas de esa moneda y —a diferencia del panel en pantalla— TODAS las columnas
+    calculadas para los instrumentos (set canónico `_ALL_BOND_COLS`; se descartan las
+    que quedan 100% vacías). Es read-only: no toca el dashboard (vive en #modal)."""
     # Futuros: popup propio con pestañas (Curva Rofex / Carry / Cobertura), no la
     # foto genérica (los futuros no tienen scatter TIR×MD). Liquidan T+0 (mismo día):
     # el day-count de TNA/TEA/crawl en _build_futuros_share cuenta días = vto − hoy
@@ -824,7 +948,16 @@ def panel_share(panel_id: str, request: Request, ccy: str = "", state=Depends(ge
     except Exception:  # holiday data ausente → omitimos la liq.
         settle = ""
     title, _types, full_cols = PANELS.get(panel_id, (panel_id, set(), []))
-    rows = _build_rows(panel_id, state, provider)
+    # El popup expone TODAS las columnas calculadas (no el subset curado del panel).
+    # Bonos (types no vacío → usan _row_values): expandimos al set canónico completo y
+    # reconstruimos las filas con esas columnas. Acciones/BEI/VR ya traen en sus filas
+    # todo lo que calculan, así que se usan tal cual.
+    if _types:
+        cols = _share_full_cols(full_cols, panel_id)
+        rows = _build_rows(panel_id, state, provider, cols_override=cols)
+    else:
+        cols = list(full_cols)
+        rows = _build_rows(panel_id, state, provider)
     ccy_set = {c.strip().upper() for c in ccy.split(",") if c.strip()} or None
     # Moneda: SOLO aplica en paneles multi-moneda (CCY_FILTER_PANELS). En el resto se
     # ignora el ?ccy (no tienen columna de moneda → evita títulos falsos tipo "CER · MEP").
@@ -839,21 +972,17 @@ def panel_share(panel_id: str, request: Request, ccy: str = "", state=Depends(ge
     # Filtra la tabla a la(s) moneda(s) elegida(s) (las filas sin 'ccy' quedan siempre).
     if ccy_set is not None:
         rows = [r for r in rows if r.get("ccy") is None or r["ccy"] in ccy_set]
-    # Recorta columnas accesorias: filtra el schema y las celdas (alineadas por índice).
-    keep = [i for i, c in enumerate(full_cols) if c.get("key") not in _SHARE_HIDE_KEYS]
-    cols = [full_cols[i] for i in keep]
-    if len(keep) != len(full_cols):
-        for r in rows:
-            cells = r.get("cells")
-            if cells and len(cells) == len(full_cols):
-                r["cells"] = [cells[i] for i in keep]
+    # Descarta columnas 100% vacías para estas especies (ej. Categoría en Tasa Fija,
+    # ventanas de rendimiento sin histórico) — nunca la 1ª (ticker).
+    cols, rows = _drop_empty_share_cols(cols, rows)
     datasets = _chart_payload(panel_id, state, ccy_set)
     y_label = "TNA" if panel_id == "tasa_fija" else "TIR"
     # Subtítulo de la foto: bajada del panel + fecha y liquidación (T+1 BYMA, ya arriba).
     resp = _TEMPLATES.TemplateResponse(
         request, "fragments/panel_share.html",
         {"title": title, "columns": cols, "rows": rows,
-         "tir_hl": panel_id in _TIR_HL_PANELS,
+         "hl_key": _HL_COL_KEY.get(panel_id),
+         "chart_mult": _SHARE_CHART_MULT.get(panel_id, _SHARE_CHART_MULT_DEFAULT),
          "desc": _PANEL_DESC.get(panel_id, ""), "ccy_label": ccy_label,
          "asof": today.strftime("%d/%m/%Y"), "settle": settle,
          "badge": ("%s vs Duración" % y_label),

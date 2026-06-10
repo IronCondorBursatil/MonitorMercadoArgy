@@ -32,8 +32,8 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 
-from apps.cli.monitors._common import build_use_case
-from config.settings import DATA_DIR
+from apps.cli._common import build_use_case
+from config.settings import settings
 from core.domain.inflation_path import monthly_inflation_path
 from core.domain.instrument_groups import CER, DUAL_TAMAR, TAMAR, TASA_FIJA
 from core.domain.yield_curve import (
@@ -115,7 +115,7 @@ _TENORS = [
     ("18M", 1.50), ("2Y", 2.00), ("3Y", 3.00),
 ]
 
-_HISTORY_CSV = os.path.join(DATA_DIR, "history", "bei_diario.csv")
+_HISTORY_CSV = os.path.join(str(settings.history_dir), "bei_diario.csv")
 _HISTORY_COLS = [
     "fecha", "tenor_label", "tenor_years",
     "tea_nominal", "tea_real", "tamar_fwd",

@@ -204,7 +204,6 @@ def test_nonleap_year_feb_has_28(year):
 @pytest.mark.parametrize("d_end", [28, 29, 30, 31])
 def test_month_end_variations_act365(d_end):
     # distintos fines de mes desde el día 1 — ACT/365 cuenta días reales
-    from datetime import timedelta
     start = date(2026, 1, 1)
     # enero tiene 31 días; usamos un mes con el día pedido
     end = date(2026, 7, d_end) if d_end <= 31 else date(2026, 7, 31)

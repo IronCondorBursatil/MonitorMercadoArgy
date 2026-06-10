@@ -1,5 +1,5 @@
 """Bootstrap for the BEI computation: cached Excel repo + use-case factory."""
-from config.settings import MASTER_XLSX
+from config.settings import settings
 from core.infrastructure.repositories import (
     Data912MarketDataProvider,
     ExcelInstrumentsRepository,
@@ -9,7 +9,7 @@ from core.use_cases.generate_report import GenerateMonitorReport
 _REPO_CACHE: dict[str, ExcelInstrumentsRepository] = {}
 
 
-def get_repository(path: str = MASTER_XLSX) -> ExcelInstrumentsRepository:
+def get_repository(path: str = str(settings.master_xlsx)) -> ExcelInstrumentsRepository:
     if path not in _REPO_CACHE:
         _REPO_CACHE[path] = ExcelInstrumentsRepository(path)
     return _REPO_CACHE[path]

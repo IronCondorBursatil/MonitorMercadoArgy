@@ -55,7 +55,7 @@ class VanillaStrategy:
             if total > 0 and payoff > 0 and 0 < elapsed <= total:
                 base_value = 100.0 * (payoff / 100.0) ** (elapsed / total)
                 if inst.is_cer and indices and inst.cer_base:
-                    settle = settlement_byma_date(ref, lag=1)
+                    settle = settlement_byma_date(ref, lag=ctx.settle_lag)
                     target_date = cer_reference_date(settle, inst.cer_lag)
                     cer_val = indices.get_cer(target_date)
                     if cer_val:
@@ -73,7 +73,7 @@ class VanillaStrategy:
 
         # Factor de indexación CER (NT N°8/2024 Eq. 13).
         if inst.is_cer and indices and inst.cer_base:
-            settle = settlement_byma_date(ref, lag=1)
+            settle = settlement_byma_date(ref, lag=ctx.settle_lag)
             target_date = cer_reference_date(settle, inst.cer_lag)
             cer_val = indices.get_cer(target_date)
             if cer_val:

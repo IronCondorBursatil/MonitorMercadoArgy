@@ -1,0 +1,25 @@
+{# Tabla de cauciones por plazo (curva de tasas de muy corto plazo). #}
+{% if rows %}
+<div class="cat-meta">{{ rows|length }} cauciones · ordenadas por plazo</div>
+<table class="cat-table">
+  <thead>
+    <tr><th>Símbolo</th><th>Subyacente</th><th>Moneda</th><th>Plazo (d)</th>
+        <th>Vencimiento</th><th>Tasa / Px</th><th>Monto</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.symbol }}</td>
+      <td class="uni-faint" style="text-align:left">{{ r.underlying or "—" }}</td>
+      <td class="num">{{ r.ccy or "—" }}</td>
+      <td class="num">{{ r.days if r.days is not none else "—" }}</td>
+      <td class="num">{{ r.maturity or "—" }}</td>
+      <td class="num">{% if r.rate is not none %}{{ "%.4f"|format(r.rate) }}{% else %}—{% endif %}</td>
+      <td class="num uni-faint">{% if r.volume %}{{ "{:,.0f}".format(r.volume) }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="cat-empty">Cauciones no disponibles ahora (mercado cerrado o sin datos).</div>
+{% endif %}

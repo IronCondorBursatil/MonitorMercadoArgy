@@ -69,6 +69,7 @@ class Instrument(BaseModel):
     payment_frequency: int = 2  # Annual coupons (2 = semestral, AR market default)
     day_count: str = "ACT/365.25"  # "30/360", "ACT/365", "ACT/365.25", "ACT/ACT"
     ley_aplicable: Optional[str] = None  # ON: "Argentina" / "Extranjera" — elige MEP vs CCL p/ la pata pesos
+    isin: Optional[str] = None  # clave del activo (BYMA); display-only, el motor lo ignora
 
     @field_validator("cashflows", mode="after")
     @classmethod
@@ -135,7 +136,7 @@ class Instrument(BaseModel):
         return "30/360" in (self.day_count or "") or self.is_bopreal
 
     @property
-    def day_count_enum(self) -> "DayCount":
+    def day_count_enum(self) -> "DayCount":  # noqa: F821 — forward-ref (import function-local rompe ciclo)
         """Convención de día-count para DESCONTAR (TIR/duration/PV). BOPREAL fuerza
         30/360 (espeja el fallback de `is_30_360`). Import function-local: rompe el
         ciclo models→daycount→cashflow_synth→models."""

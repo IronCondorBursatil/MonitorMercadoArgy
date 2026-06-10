@@ -12,13 +12,44 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class BymaCatalogORM(Base):
+    """Universo de especies de BYMA (referencia navegable/buscable, NO el catálogo de
+    pricing). Una fila por símbolo cotizante (~6.4k). Se llena del seed
+    `data/byma/titulos_final.csv` (symbol→ISIN/categoría/emisor/...). Tabla derivada:
+    se puede borrar y reingerir sin pérdida (≠ `instruments`, que es la verdad ABM)."""
+
+    __tablename__ = "byma_catalog"
+
+    symbol: Mapped[str] = mapped_column(String, primary_key=True)
+    ticker_pesos: Mapped[Optional[str]] = mapped_column(String, default=None)
+    isin: Mapped[Optional[str]] = mapped_column(String, default=None)
+    categoria: Mapped[Optional[str]] = mapped_column(String, default=None)   # Acciones/Cedears/ON/Tit.Públicos...
+    moneda: Mapped[Optional[str]] = mapped_column(String, default=None)      # ARS | MEP | cable
+    security_type: Mapped[Optional[str]] = mapped_column(String, default=None)  # CS|CD|CORP|GO|FUT
+    clase_liquidacion: Mapped[Optional[str]] = mapped_column(String, default=None)
+    cotiza: Mapped[Optional[int]] = mapped_column(default=None)
+    segmento: Mapped[Optional[str]] = mapped_column(String, default=None)
+    panel: Mapped[Optional[str]] = mapped_column(String, default=None)
+    ins_type: Mapped[Optional[str]] = mapped_column(String, default=None)    # EQUITY | BOND
+    emisor: Mapped[Optional[str]] = mapped_column(String, default=None)
+    sector: Mapped[Optional[str]] = mapped_column(String, default=None)      # futuro (ficha sociedad)
+    updated_at: Mapped[Optional[str]] = mapped_column(String, default=None)
+
+
+# Índices para el buscador (ticker/ISIN/emisor/categoría).
+Index("ix_byma_isin", BymaCatalogORM.isin)
+Index("ix_byma_categoria", BymaCatalogORM.categoria)
+Index("ix_byma_ticker_pesos", BymaCatalogORM.ticker_pesos)
+Index("ix_byma_emisor", BymaCatalogORM.emisor)
 
 
 class InstrumentORM(Base):
@@ -31,6 +62,9 @@ class InstrumentORM(Base):
     ticker_ccl: Mapped[Optional[str]] = mapped_column(String, default=None)
     short_name: Mapped[str] = mapped_column(String, default="")
     instrument_type: Mapped[str] = mapped_column(String, default="")
+    # ISIN (clave del activo en BYMA; mismo ISIN = mismo activo en sus monedas).
+    # Lo llena el enriquecimiento BYMA y/o la ABM; display-only (el motor lo ignora).
+    isin: Mapped[Optional[str]] = mapped_column(String, default=None)
     maturity_date: Mapped[Optional[date]] = mapped_column(default=None)
     emission_date: Mapped[Optional[date]] = mapped_column(default=None)
     cer_base: Mapped[Optional[float]] = mapped_column(default=None)

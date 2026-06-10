@@ -55,12 +55,13 @@ class FinancialEngine:
 
     @staticmethod
     def calculate_technical_value(snapshot: MarketSnapshot, indices_provider, fx_provider=None,
-                                  ref_date: Optional[date] = None) -> float:
+                                  ref_date: Optional[date] = None, settle_lag: int = 1) -> float:
         inst = snapshot.instrument
         if not inst:
             return 100.0
         ref = ref_date if ref_date is not None else date.today()
-        ctx = PricingContext(settle=ref, indices=indices_provider, fx=fx_provider)
+        ctx = PricingContext(settle=ref, indices=indices_provider, fx=fx_provider,
+                             settle_lag=settle_lag)
         return strategy_for(inst).technical_value(inst, ctx)
 
     @staticmethod

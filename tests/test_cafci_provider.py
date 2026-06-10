@@ -1,14 +1,10 @@
-"""Tests del `CAFCIProvider` — focus en el join catalogo↔matriz, el parseo
-de números-string, y el filtrado/orden/búsqueda de `list_funds`. Sin red ni
-disco: se inyecta un dataset class-level y se cierra el gate de fetch."""
-
-from datetime import date
+"""Tests del `_parse_payload` del CAFCIProvider — join catalogo↔matriz, parseo de
+números-string y conservación de los campos ricos. Sin red ni disco."""
 
 import pytest
 
-from core.infrastructure.cafci_provider import (
-    CAFCIProvider, _parse_payload, _to_float, _norm,
-)
+from core.domain.fci.derive import norm as _norm, to_float as _to_float
+from core.infrastructure.cafci_provider import _parse_payload
 
 
 SAMPLE = {
@@ -16,16 +12,35 @@ SAMPLE = {
         "fondos": [
             {
                 "id": 304, "nombre": "1810 Ahorro", "tipo_dinero": "Clásico",
-                "dias_liquidacion": 0, "valuacion": "D",
+                "dias_liquidacion": 0, "valuacion": "D", "estado": 1,
                 "sociedad_gerente": {"id": 241, "nombre": "Proahorro"},
+                "sociedad_depositaria": {"id": 116, "nombre": "Banco Credicoop"},
                 "moneda": {"id": 1, "nombre": "Peso Argentina"},
                 "tipo_renta": {"id": 4, "nombre": "Mercado de Dinero"},
+                "region": {"id": 1, "nombre": "Argentina"},
+                "horizonte": {"id": 1, "nombre": "Corto Plazo"},
+                "duration": {"id": 3, "nombre": "Menor o Igual a 1 Año"},
+                "mm_puro": False, "mm_indice": False,
+                "objetivo": "Cartera de bajo riesgo.", "inicio": "2000-09-14",
                 "clases": [
                     {"id": 308, "nombre": "1810 Ahorro",
-                     "moneda": {"id": 1, "nombre": "Peso Argentina"}},
+                     "moneda": {"id": 1, "nombre": "Peso Argentina"},
+                     "inversion_minima": 5000, "ticker_isin": "ARX", "ticker_bloomberg": "BBG1",
+                     "honorarios": {"ingreso": "0.0", "rescate": "0.5",
+                                    "administracion_gerente": "0.1",
+                                    "administracion_depositaria": "0.15",
+                                    "gasto_ordinario_gestion": "0.0"}},
                     {"id": 309, "nombre": "1810 Ahorro USD",
                      "moneda": {"id": 2, "nombre": "Dolar Estadounidense"}},
                 ],
+            },
+            {   # estado=0 (cerrado) → todo el fondo se descarta aunque su clase tenga precio
+                "id": 77, "nombre": "Fondo Cerrado", "estado": 0,
+                "sociedad_gerente": {"id": 9, "nombre": "X AM"},
+                "moneda": {"id": 1, "nombre": "Peso Argentina"},
+                "tipo_renta": {"id": 3, "nombre": "Renta Fija"},
+                "clases": [{"id": 600, "nombre": "Cerrado A",
+                            "moneda": {"id": 1, "nombre": "Peso Argentina"}}],
             },
             {
                 "id": 99, "nombre": "Delta Renta Fija", "tipo_dinero": None,
@@ -72,23 +87,13 @@ SAMPLE = {
                 "ytd": {"tna": "47.0", "directo": "18.0"},
                 "meses_12": {"tna": "55.0", "directo": "55.0"},
             },
+            "600": {  # clase con precio pero su fondo está cerrado (estado=0)
+                "valor_cuotaparte": "1.0", "fecha_valor": "2026-05-20",
+                "mes_1": {"tna": "10.0", "directo": "0.8"},
+            },
         },
     },
 }
-
-
-@pytest.fixture
-def provider():
-    """Provider con dataset inyectado y gate de fetch cerrado (no toca red)."""
-    parsed = _parse_payload(SAMPLE)
-    CAFCIProvider._dataset = parsed
-    CAFCIProvider._disk_loaded = True
-    CAFCIProvider._last_attempt = date.today()
-    CAFCIProvider._last_fail_ts = 0.0
-    yield CAFCIProvider()
-    CAFCIProvider._dataset = {"meta": {}, "funds": []}
-    CAFCIProvider._disk_loaded = False
-    CAFCIProvider._last_attempt = None
 
 
 class TestHelpers:
@@ -142,60 +147,34 @@ class TestParsePayload:
         assert parsed["funds"] == []
         assert parsed["meta"]["total"] == 0
 
-
-class TestListFunds:
-    def test_filter_by_tipo(self, provider):
-        out = provider.list_funds(tipo_renta="Mercado de Dinero")
-        assert sorted(f["clase_id"] for f in out) == [308, 309]
-
-    def test_filter_by_moneda(self, provider):
-        out = provider.list_funds(moneda="Peso Argentina")
-        assert sorted(f["clase_id"] for f in out) == [308, 500]
-
-    def test_sort_desc_by_period_metric(self, provider):
-        out = provider.list_funds(sort="mes_1", metric="tna", direction="desc")
-        assert [f["clase_id"] for f in out] == [500, 308, 309]  # 45 > 21.45 > 4.0
-
-    def test_sort_asc(self, provider):
-        out = provider.list_funds(sort="mes_1", metric="tna", direction="asc")
-        assert [f["clase_id"] for f in out] == [309, 308, 500]
-
-    def test_missing_values_sink_last(self, provider):
-        # dias_90 tna: 500=50, 308=24.82, 309=None → None último aunque sea desc.
-        out = provider.list_funds(sort="dias_90", metric="tna", direction="desc")
-        assert [f["clase_id"] for f in out] == [500, 308, 309]
-        # Y también último en asc.
-        out_asc = provider.list_funds(sort="dias_90", metric="tna", direction="asc")
-        assert out_asc[-1]["clase_id"] == 309
-
-    def test_search_accent_insensitive(self, provider):
-        assert sorted(f["clase_id"] for f in provider.list_funds(query="ahorro")) == [308, 309]
-        assert [f["clase_id"] for f in provider.list_funds(query="delta")] == [500]  # por sociedad
-
-    def test_limit(self, provider):
-        out = provider.list_funds(sort="mes_1", metric="tna", limit=2)
-        assert [f["clase_id"] for f in out] == [500, 308]
-
-    def test_invalid_sort_falls_back(self, provider):
-        # sort desconocido → mes_1; metric desconocido → tna. No explota.
-        out = provider.list_funds(sort="zzz", metric="zzz")
-        assert [f["clase_id"] for f in out] == [500, 308, 309]
+    def test_drops_inactive_fondos(self):
+        # clase 600 tiene precio en la matriz pero su fondo está estado=0 → no aparece.
+        parsed = _parse_payload(SAMPLE)
+        assert all(f["clase_id"] != 600 for f in parsed["funds"])
 
 
-class TestMetaAndDetail:
-    def test_meta_options_with_counts(self, provider):
-        meta = provider.get_meta()
-        tipos = {o["value"]: o["count"] for o in meta["tipo_renta_options"]}
-        assert tipos == {"Mercado de Dinero": 2, "Renta Fija": 1}
-        monedas = {o["value"]: o["count"] for o in meta["moneda_options"]}
-        assert monedas == {"Peso Argentina": 2, "Dolar Estadounidense": 1}
+class TestParsePayloadRich:
+    def test_keeps_rich_fields(self):
+        rec = next(f for f in _parse_payload(SAMPLE)["funds"] if f["clase_id"] == 308)
+        # honorarios → fee_admin = gerente(0.1)+depositaria(0.15)+gasto(0.0) = 0.25
+        assert rec["fee_admin"] == pytest.approx(0.25)
+        assert rec["fee_in"] == pytest.approx(0.0)
+        assert rec["fee_out"] == pytest.approx(0.5)
+        assert rec["inversion_minima"] == 5000
+        assert rec["ticker_isin"] == "ARX"
+        assert rec["ticker_bloomberg"] == "BBG1"
+        assert rec["depositaria"] == "Banco Credicoop"
+        assert rec["region"] == "Argentina"
+        assert rec["horizonte"] == "Corto Plazo"
+        assert rec["duration"] == "Menor o Igual a 1 Año"
+        assert rec["objetivo"] == "Cartera de bajo riesgo."
+        assert rec["inicio"] == "2000-09-14"
+        assert rec["mm_puro"] is False
 
-    def test_get_fund_roundtrip(self, provider):
-        rec = provider.get_fund(308)
-        assert rec is not None and rec["fondo_nombre"] == "1810 Ahorro"
-        # acepta string
-        assert provider.get_fund("500")["clase_id"] == 500
-
-    def test_get_fund_missing(self, provider):
-        assert provider.get_fund(99999) is None
-        assert provider.get_fund("not-an-int") is None
+    def test_missing_rich_fields_are_none_or_zero(self):
+        # fondo 99 (Delta) no trae honorarios/region/etc → degradan a None / 0.
+        rec = next(f for f in _parse_payload(SAMPLE)["funds"] if f["clase_id"] == 500)
+        assert rec["fee_admin"] == 0
+        assert rec["fee_out"] is None
+        assert rec["region"] is None
+        assert rec["inversion_minima"] is None

@@ -4,7 +4,6 @@ from typing import List, Optional
 
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from scipy.optimize import brentq, newton
 
 from core.domain.models import MarketSnapshot
 from core.holiday_engine import is_habil, settlement_byma

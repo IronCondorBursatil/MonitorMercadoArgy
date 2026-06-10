@@ -5,7 +5,6 @@ import os
 
 os.environ.setdefault("MONITOR_DISABLE_LOOPS", "1")
 
-from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient

@@ -1,0 +1,26 @@
+{# Cards de índices BYMA (MERVAL / BURCAP) con sparkline. #}
+{% if cards %}
+<div class="cat-index-grid">
+  {% for ix in cards %}
+  <div class="cat-idx">
+    <span class="nm">{{ ix.name }} <span class="uni-faint">({{ ix.code }})</span></span>
+    <span class="v">{% if ix.last is not none %}{{ "{:,.0f}".format(ix.last) }}{% else %}—{% endif %}</span>
+    {% if ix.change_pct is not none %}
+    <span class="chg {{ 'pos' if ix.change_pct >= 0 else 'neg' }}">
+      {{ "%+.2f"|format(ix.change_pct) }}% <span class="uni-faint">vs rueda previa</span>
+    </span>
+    {% else %}<span class="chg uni-faint">—</span>{% endif %}
+    {% if ix.spark %}
+    <svg viewBox="0 0 120 28" width="100%" height="28" preserveAspectRatio="none">
+      <polyline class="{{ 'neg' if ix.change_pct is not none and ix.change_pct < 0 else '' }}"
+                points="{{ ix.spark }}"></polyline>
+    </svg>
+    {% else %}
+    <div class="spark-ph">acumulando…</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="cat-empty">Índices no disponibles ahora.</div>
+{% endif %}

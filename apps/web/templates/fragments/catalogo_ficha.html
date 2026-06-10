@@ -1,0 +1,29 @@
+{# Ficha técnica rica de un instrumento (raw_fields['byma']['ficha']). #}
+{% if ficha %}
+<div class="cat-ficha">
+  <button class="close" type="button" onclick="fichaClose()" title="Cerrar">×</button>
+  <h4>Ficha técnica · {{ ticker }}</h4>
+  <dl>
+    {% if ficha.ley %}<dt>Ley</dt><dd>{{ ficha.ley }}</dd>{% endif %}
+    {% if ficha.moneda %}<dt>Moneda</dt><dd>{{ ficha.moneda }}</dd>{% endif %}
+    {% if ficha.tipo_especie %}<dt>Tipo</dt><dd>{{ ficha.tipo_especie }}</dd>{% endif %}
+    {% if ficha.tipo_obligacion %}<dt>Clasificación</dt><dd>{{ ficha.tipo_obligacion }}</dd>{% endif %}
+    {% if ficha.emisor %}<dt>Emisor</dt><dd>{{ ficha.emisor }}</dd>{% endif %}
+    {% if ficha.fecha_emision %}<dt>Emisión</dt><dd>{{ ficha.fecha_emision }}</dd>{% endif %}
+    {% if ficha.fecha_vencimiento %}<dt>Vencimiento</dt><dd>{{ ficha.fecha_vencimiento }}</dd>{% endif %}
+    {% if ficha.get('monto_nominal') is not none %}<dt>Monto nominal</dt><dd>{{ "{:,.0f}".format(ficha.monto_nominal) }}</dd>{% endif %}
+    {% if ficha.get('monto_residual') is not none %}<dt>Monto residual</dt><dd>{{ "{:,.0f}".format(ficha.monto_residual) }}</dd>{% endif %}
+    {% if ficha.get('denom_minima') is not none %}<dt>Denom. mínima</dt><dd>{{ ficha.denom_minima }}</dd>{% endif %}
+    {% if ficha.garantia %}<dt>Garantía</dt><dd>{{ ficha.garantia }}</dd>{% endif %}
+    {% if ficha.amortizacion %}<div class="long"><b>Amortización:</b> {{ ficha.amortizacion }}</div>{% endif %}
+    {% if ficha.interes %}<div class="long"><b>Interés:</b> {{ ficha.interes }}</div>{% endif %}
+  </dl>
+</div>
+{% elif ticker %}
+<div class="cat-ficha">
+  <button class="close" type="button" onclick="fichaClose()" title="Cerrar">×</button>
+  <h4>Ficha técnica · {{ ticker }}</h4>
+  <p class="uni-faint" style="margin:0">Sin ficha técnica cargada para «{{ ticker }}»
+     (se completa al arranque desde BYMA para los bonos con ISIN).</p>
+</div>
+{% endif %}

@@ -16,7 +16,7 @@ from apps.web.instruments_abm import (
     register_stocks,
     unknown_data912_tickers,
 )
-from config.settings import MASTER_XLSX, settings
+from config.settings import settings
 from core.infrastructure.db import engine as db_engine
 from core.infrastructure.db.catalog_repository import ingest_from_excel
 from core.infrastructure.schemas import Data912Row
@@ -31,7 +31,7 @@ def abm_db(tmp_path):
     """Engine apuntado a una .db temporal sembrada del master (no toca prod)."""
     db_engine.configure(tmp_path / "abm_test.db")
     try:
-        ingest_from_excel(MASTER_XLSX)
+        ingest_from_excel(str(settings.master_xlsx))
         yield
     finally:
         db_engine.configure(settings.catalog_db)
@@ -72,7 +72,7 @@ def test_abm_data912_endpoint_ok_y_vacio_sin_hub():
 def test_abm_data912_endpoint_lista_ticker_nuevo():
     with TestClient(app) as c:
         # inyecta un símbolo nuevo en el hub (los loops están off en tests)
-        app.state.hub._snapshot = {"ZZNEW9": _row("ZZNEW9", 99.0)}
+        app.state.hub._snap = {"24": {"ZZNEW9": _row("ZZNEW9", 99.0)}, "CI": {}}
         app.state.hub._source = {"ZZNEW9": "bonds"}
         r = c.get("/abm/data912")
         assert r.status_code == 200

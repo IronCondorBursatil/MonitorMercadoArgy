@@ -11,10 +11,12 @@ que corrompe SQLite mid-write):
   1. **Priming de Data912** `/historical/bonds/{ticker}` — historia profunda y
      fresca (a T-1) para lo que el endpoint cubre: soberanos (todas las patas) y
      CER viejos (DICP/TX26). Corre 1×/día en background (`prime_from_data912`).
-  2. **Acumulación diaria** del cierre del feed en vivo (`record_live_closes`) —
-     cubre TODO el universo del monitor con el tiempo (bopreales, LECAP, TAMAR,
-     DL, ON, CER nuevos), que el endpoint histórico NO tiene.
-  3. **CSV legacy** — sigue siendo un piso estático en el read-path del provider
+  2. **Priming de BYMA open** `seriesHistoricas/especies` (`prime_from_byma_historico`)
+     — completa lo que Data912 NO cubre (bopreales, letras, ON, patas MEP/CABLE, CER
+     nuevos): ~1 año por especie exacta, sin credenciales. Corre 1× tras el de Data912.
+  3. **Acumulación diaria** del cierre del feed en vivo (`record_live_closes`) —
+     mantiene TODO el universo al día rueda a rueda una vez primado.
+  4. **CSV legacy** — sigue siendo un piso estático en el read-path del provider
      (`Data912MarketDataProvider.fetch_historical_prices`), bajo el store.
 
 El **read-path** (`get_series`) es 100% local (cache en memoria, sin red) → no
@@ -30,7 +32,7 @@ import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from config.settings import settings
@@ -59,8 +61,13 @@ class PriceHistoryStore:
             "  ticker TEXT NOT NULL,"
             "  day    TEXT NOT NULL,"   # ISO 'YYYY-MM-DD'
             "  close  REAL NOT NULL,"
+            "  volume REAL,"            # monto operado del día (del feed vivo); NULL = sin dato
             "  PRIMARY KEY (ticker, day))"
         )
+        # Migración aditiva para DBs viejas (creadas sin la col `volume`). Idempotente.
+        cols = {r[1] for r in con.execute("PRAGMA table_info(price_history)")}
+        if "volume" not in cols:
+            con.execute("ALTER TABLE price_history ADD COLUMN volume REAL")
         return con
 
     def _ensure_cache(self) -> None:
@@ -95,38 +102,77 @@ class PriceHistoryStore:
                 return {}
             return dict(self._cache.get(t, {}))
 
-    def _write(self, rows: List[Tuple[str, date, float]]) -> int:
-        clean = [(t.upper().strip(), d, float(c))
-                 for t, d, c in rows if c is not None and c > 0]
+    def _write(self, rows) -> int:
+        # Filas (ticker, day, close[, volume]). `volume` opcional → None = no toca la
+        # col volume (COALESCE preserva la existente; un write close-only NO la borra).
+        clean = []
+        for row in rows:
+            t, d, c = row[0], row[1], row[2]
+            if c is None or c <= 0:
+                continue
+            v = row[3] if len(row) > 3 else None
+            v = float(v) if (v is not None and v >= 0) else None
+            clean.append((t.upper().strip(), d, float(c), v))
         if not clean:
             return 0
         with self._lock:
             try:
                 with closing(self._connect()) as con, con:
                     con.executemany(
-                        "INSERT INTO price_history (ticker, day, close) VALUES (?,?,?) "
-                        "ON CONFLICT(ticker, day) DO UPDATE SET close=excluded.close",
-                        [(t, d.isoformat(), c) for t, d, c in clean],
+                        "INSERT INTO price_history (ticker, day, close, volume) VALUES (?,?,?,?) "
+                        "ON CONFLICT(ticker, day) DO UPDATE SET close=excluded.close, "
+                        "volume=COALESCE(excluded.volume, price_history.volume)",
+                        [(t, d.isoformat(), c, v) for t, d, c, v in clean],
                     )
             except sqlite3.Error as e:
                 logger.warning("price_history: write failed (%s)", e)
                 return 0
             # Update incremental del cache (ya persistido en disco arriba). Si la
             # carga del cache falló (None), no lo tocamos: el próximo read reintenta
-            # la carga completa desde disco (que ya incluye este write).
+            # la carga completa desde disco (que ya incluye este write). El cache solo
+            # guarda close (el volumen lo lee `avg_volumes` directo de disco).
             self._ensure_cache()
             if self._cache is not None:
-                for t, d, c in clean:
+                for t, d, c, _v in clean:
                     self._cache.setdefault(t, {})[d] = c
         return len(clean)
+
+    def avg_volumes(self, tickers, days: int = 90) -> Dict[str, float]:
+        """`{ticker: monto operado promedio}` sobre los días con volumen registrado en
+        la ventana de `days` días corridos (~60 ruedas hábiles para days=90). Tickers
+        sin volumen acumulado se omiten. Lee directo de disco (no usa el cache de close)."""
+        tks = list(dict.fromkeys((t or "").upper().strip() for t in tickers if t))
+        if not tks:
+            return {}
+        since = (date.today() - timedelta(days=max(1, days))).isoformat()
+        out: Dict[str, float] = {}
+        try:
+            with closing(self._connect()) as con:
+                # Chunk de 900: el IN(...) tiene tope de ~999 variables en SQLite y la
+                # vista "cargar toda la categoría" puede pedir miles de tickers.
+                for i in range(0, len(tks), 900):
+                    batch = tks[i:i + 900]
+                    qmarks = ",".join("?" * len(batch))
+                    for tk, avgv in con.execute(
+                            f"SELECT ticker, AVG(volume) FROM price_history "
+                            f"WHERE ticker IN ({qmarks}) AND day >= ? AND volume IS NOT NULL "
+                            f"GROUP BY ticker", (*batch, since)):
+                        if avgv is not None:
+                            out[str(tk)] = float(avgv)
+        except sqlite3.Error as e:
+            logger.warning("price_history: avg_volumes failed (%s)", e)
+        return out
 
     def upsert(self, ticker: str, points: Dict[date, float]) -> int:
         """Backfill de una serie completa de un ticker (idempotente por (ticker, day))."""
         return self._write([(ticker, d, c) for d, c in points.items()])
 
-    def record_closes(self, closes: Dict[str, float], on_date: date) -> int:
-        """Acumula el cierre de muchos tickers en una fecha (un solo write batch)."""
-        return self._write([(t, on_date, c) for t, c in closes.items()])
+    def record_closes(self, closes: Dict[str, float], on_date: date,
+                      volumes: Optional[Dict[str, float]] = None) -> int:
+        """Acumula el cierre (y opcionalmente el monto operado) de muchos tickers en una
+        fecha (un solo write batch). `volumes` ausente → la col volume no se toca."""
+        vols = volumes or {}
+        return self._write([(t, on_date, c, vols.get(t)) for t, c in closes.items()])
 
 
 # --------------------------------------------------------------------------- #
@@ -178,6 +224,74 @@ def prime_from_data912(tickers, provider, store: PriceHistoryStore,
     return total
 
 
+def _norm_hist_ticker(t) -> str:
+    """Normaliza un ticker para el store de histórico: upper/strip + drop del alias
+    `_CER` de un dual (TXMJ8_CER → TXMJ8), igual que el read-path
+    (`fetch_historical_prices`). Sin esto, el priming guardaría bajo una clave muerta."""
+    tk = (t or "").upper().strip()
+    return tk[:-4] if tk.endswith("_CER") else tk
+
+
+def byma_prime_candidates(wanted, store: PriceHistoryStore, attempted,
+                          min_days: int) -> List[str]:
+    """Tickers a primar de BYMA: los de `wanted` con < `min_days` cierres en el store
+    que TODAVÍA no se intentaron (`attempted`). Normaliza (upper, sin `_CER`) y dedup.
+
+    El set `attempted` (intentar 1× por proceso) corta dos patologías: re-primar en
+    cada tick los tickers que BYMA no tiene (bonos nuevos sin historia en ningún lado)
+    y dejar colgados los que fallaron parcialmente en el mismo lote que un éxito —
+    ambos se intentan exactamente una vez. Un fallo transitorio se recupera al
+    reiniciar (best-effort: no vale la pena el estado para reintentar acotado)."""
+    out: List[str] = []
+    seen = {(a or "").upper().strip() for a in attempted}
+    for t in wanted:
+        tk = _norm_hist_ticker(t)
+        if not tk or tk in seen:
+            continue
+        seen.add(tk)
+        if len(store.get_series(tk)) < min_days:
+            out.append(tk)
+    return out
+
+
+def prime_from_byma_historico(tickers, store: PriceHistoryStore, *,
+                              max_days: int = 400, max_workers: int = 4,
+                              fetch=None) -> int:
+    """Backfill de cierres diarios vía **series históricas de BYMA open** para los
+    `tickers` dados — los que el `/historical/bonds` de Data912 NO cubre (bopreales,
+    letras, ON, patas MEP/CABLE, CER nuevos). UPSERT al store. Devuelve cierres
+    escritos. `fetch` (symbol, max_days) → {date: close} inyectable para tests.
+
+    Best-effort por ticker: un fallo de red no aborta el resto. Pensado para correr
+    1× en background (la historia BYMA llega ~1 año; el feed vivo la mantiene al día).
+
+    Fuente según `settings.byma_history_source`: 'chart' (default — endpoint chart
+    OHLCV, 1 llamada/ticker, cubre patas D/C y letras) o 'series' (POST
+    seriesHistoricas, paginado 25d). `fetch` explícito gana sobre ambos (tests)."""
+    if fetch is None:
+        if settings.byma_history_source == "series":
+            from core.infrastructure.byma.series_historicas import fetch_history as fetch
+        else:
+            from core.infrastructure.byma.chart_history import fetch_history as fetch
+    uniq = list(dict.fromkeys(_norm_hist_ticker(t) for t in tickers if t))
+    uniq = [t for t in uniq if t]
+    if not uniq:
+        return 0
+
+    def _one(tk: str) -> int:
+        try:
+            points = fetch(tk, max_days=max_days)
+        except Exception:  # noqa: BLE001 — best-effort por ticker
+            return 0
+        return store.upsert(tk, points) if points else 0
+
+    total = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for n in ex.map(_one, uniq):
+            total += n
+    return total
+
+
 def record_live_closes(snapshot_rows: dict, store: PriceHistoryStore,
                        on_date: date) -> int:
     """Acumula el "cierre" de hoy de todo el snapshot vivo del hub (`{symbol: row}`
@@ -189,8 +303,14 @@ def record_live_closes(snapshot_rows: dict, store: PriceHistoryStore,
     arranque; para los no cubiertos, si el server para antes del cierre ese día queda
     en un valor intradía (impacto chico: hoy nunca es base de una ventana)."""
     closes: Dict[str, float] = {}
+    volumes: Dict[str, float] = {}
     for sym, row in (snapshot_rows or {}).items():
         c = getattr(row, "c", None)
         if c and c > 0:
             closes[sym] = float(c)
-    return store.record_closes(closes, on_date)
+            # `row.v` = monto operado del día (del feed). El UPSERT por (ticker,día) deja
+            # la última escritura ≈ el total operado al cierre → base del promedio.
+            v = getattr(row, "v", None)
+            if v is not None and v > 0:
+                volumes[sym] = float(v)
+    return store.record_closes(closes, on_date, volumes=volumes)

@@ -1,0 +1,23 @@
+{# Tabla SENEBI-ON (universo ON bilateral; filtrable por ticker). #}
+{% if rows %}
+<div class="cat-meta">{{ total }} ONs SENEBI{% if q %} · «{{ q }}»{% endif %}
+  {%- if total > rows|length %} · mostrando {{ rows|length }}{% endif %}</div>
+<table class="cat-table">
+  <thead>
+    <tr><th>Símbolo</th><th>Moneda</th><th>Vencimiento</th><th>Días</th><th>Último</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.symbol }}</td>
+      <td class="num">{{ r.ccy or "—" }}</td>
+      <td class="num">{{ r.maturity or "—" }}</td>
+      <td class="num">{{ r.days if r.days is not none else "—" }}</td>
+      <td class="num">{% if r.last is not none %}{{ "%.2f"|format(r.last) }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="cat-empty">Sin resultados SENEBI{% if q %} para «{{ q }}»{% endif %}.</div>
+{% endif %}

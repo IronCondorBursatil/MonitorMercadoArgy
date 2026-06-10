@@ -63,6 +63,20 @@ class TestLecapSynth:
             "— ¿regresó el bug de días/30?"
         )
 
+    def test_s15s6_empty_base_defaults_to_30_360(self):
+        """S15S6 (LECAP, TEM 1.99%, emis 2026-05-29, vto 2026-09-15) con base VACÍA →
+        usa 30/360 (default) → payoff 107.21 (matchea Balanz). Cubre el alta sin base."""
+        row = {
+            "clase": "LECAP",
+            "tem_licit": 0.0199,
+            "fecha_emision": date(2026, 5, 29),
+            "fecha_pago": date(2026, 9, 15),
+            "base calculo": "",
+        }
+        cfs = synth_cashflows(row)
+        assert len(cfs) == 1 and cfs[0].date == date(2026, 9, 15)
+        assert abs(cfs[0].amortization - 107.21) < 0.01, cfs[0].amortization
+
     def test_actual_day_count_when_base_says_act(self):
         """Si base_calculo contiene 'act' (act/360, act/365), usar días corridos."""
         row = {

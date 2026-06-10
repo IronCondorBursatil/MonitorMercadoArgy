@@ -34,18 +34,21 @@ import logging
 import os
 import threading
 import time
-import unicodedata
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
-from config.settings import DATA_DIR
+from config.settings import settings
+# Helpers/endpoints viven en core.domain.fci (fuente única): _to_float parsea los
+# números-string de CAFCI; _ARD_FCI_CATEGORIAS son los endpoints del fallback ArgentinaDatos.
+from core.domain.fci import ARD_FCI_ENDPOINTS as _ARD_FCI_CATEGORIAS
+from core.domain.fci.derive import to_float as _to_float
 from core.infrastructure._http import http_get_json
 
 logger = logging.getLogger(__name__)
 
 
 _CAFCI_URL  = "https://estadisticas.cafci.org.ar/comparador-de-fondos.json"
-_CAFCI_JSON = os.path.join(DATA_DIR, "history", "cafci_diario.json")
+_CAFCI_JSON = os.path.join(str(settings.history_dir), "cafci_diario.json")
 
 # Periods present in matriz.clases[*] (no 1-day point upstream — shortest is 7d).
 _PERIODS = ("dias_7", "mes_1", "dias_90", "dias_180", "ytd", "meses_12")
@@ -54,41 +57,17 @@ _PERIODS = ("dias_7", "mes_1", "dias_90", "dias_180", "ytd", "meses_12")
 # doesn't hammer the upstream (success gates for the rest of the day instead).
 _RETRY_COOLDOWN_S = 60.0
 
-# ArgentinaDatos FCI — fallback cuando estadisticas.cafci.org.ar está caído
-# y no hay snapshot en disco. Schema: [{fondo, tipo, fecha, vcp, ccp, patrimonio, horizonte}]
-# Cubre las 5 categorías estándar (exluye 'otros' y 'variables' que tienen schema distinto).
-_ARD_FCI_CATEGORIAS = {
-    "Mercado de Dinero": "https://argentinadatos.com/v1/finanzas/fci/mercadoDinero/ultimo",
-    "Renta Variable":    "https://argentinadatos.com/v1/finanzas/fci/rentaVariable/ultimo",
-    "Renta Fija":        "https://argentinadatos.com/v1/finanzas/fci/rentaFija/ultimo",
-    "Renta Mixta":       "https://argentinadatos.com/v1/finanzas/fci/rentaMixta/ultimo",
-    "Retorno Total":     "https://argentinadatos.com/v1/finanzas/fci/retornoTotal/ultimo",
-}
-
-
-def _to_float(v: Any) -> Optional[float]:
-    """CAFCI returns numbers as strings ("230993.537"). Parse leniently."""
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-
-
-def _norm(s: Any) -> str:
-    """Lowercase + strip accents for accent-insensitive name search."""
-    if s is None:
-        return ""
-    t = unicodedata.normalize("NFKD", str(s))
-    return "".join(c for c in t if not unicodedata.combining(c)).lower()
-
 
 def _parse_payload(payload: dict) -> dict:
-    """Join catalogo (metadata) + matriz (daily returns) into a flat record list.
+    """Join catalogo (metadata) + matriz (daily returns) into a flat per-class record.
 
-    Only classes present in `matriz` (i.e. with a current valuation) are kept —
-    closed/unpriced classes have catalog metadata but no returns.
+    Conserva, además de los campos base, los **campos ricos** que CAFCI ya manda en el
+    mismo request y que antes se descartaban: comisiones (`honorarios` → fee_admin/in/out),
+    `inversion_minima`, `horizonte`, `duration`, `region`, `objetivo`, `sociedad_depositaria`,
+    `inicio`, tickers ISIN/Bloomberg, `mm_puro`/`mm_indice`. Los usa el panel FCI (detalle/ficha).
+
+    Solo se conservan clases con valuación vigente (presentes en `matriz`) de fondos con
+    estado activo (`estado in {1, None}`); cerradas/inactivas se descartan.
     """
     catalogo = payload.get("catalogo") or {}
     matriz = payload.get("matriz") or {}
@@ -97,8 +76,14 @@ def _parse_payload(payload: dict) -> dict:
 
     funds: List[dict] = []
     for f in fondos:
+        if f.get("estado") not in (1, "1", None):
+            continue
         tipo_renta = (f.get("tipo_renta") or {}).get("nombre")
         soc = (f.get("sociedad_gerente") or {}).get("nombre")
+        dep = (f.get("sociedad_depositaria") or {}).get("nombre")
+        region = (f.get("region") or {}).get("nombre")
+        horizonte = (f.get("horizonte") or {}).get("nombre")
+        duration = (f.get("duration") or {}).get("nombre")
         fondo_moneda = f.get("moneda") or {}
         for cl in (f.get("clases") or []):
             cid = str(cl.get("id"))
@@ -106,6 +91,12 @@ def _parse_payload(payload: dict) -> dict:
             if not rend:
                 continue
             moneda = (cl.get("moneda") or fondo_moneda or {}).get("nombre")
+            hon = cl.get("honorarios") or {}
+            fee_admin = sum(
+                x for x in (_to_float(hon.get("administracion_gerente")),
+                            _to_float(hon.get("administracion_depositaria")),
+                            _to_float(hon.get("gasto_ordinario_gestion"))) if x is not None
+            )
             funds.append({
                 "fondo_id": f.get("id"),
                 "clase_id": cl.get("id"),
@@ -114,9 +105,23 @@ def _parse_payload(payload: dict) -> dict:
                 "tipo_renta": tipo_renta,
                 "moneda": moneda,
                 "sociedad": soc,
+                "depositaria": dep,
                 "tipo_dinero": f.get("tipo_dinero"),
                 "dias_liquidacion": f.get("dias_liquidacion"),
                 "valuacion": f.get("valuacion"),
+                "region": region,
+                "horizonte": horizonte,
+                "duration": duration,
+                "mm_puro": f.get("mm_puro"),
+                "mm_indice": f.get("mm_indice"),
+                "objetivo": f.get("objetivo"),
+                "inicio": f.get("inicio"),
+                "fee_admin": round(fee_admin, 4),
+                "fee_in": _to_float(hon.get("ingreso")),
+                "fee_out": _to_float(hon.get("rescate")),
+                "inversion_minima": cl.get("inversion_minima"),
+                "ticker_isin": cl.get("ticker_isin"),
+                "ticker_bloomberg": cl.get("ticker_bloomberg"),
                 "vcp": _to_float(rend.get("valor_cuotaparte")),
                 "fecha_valor": rend.get("fecha_valor"),
                 "rend": {
@@ -292,84 +297,6 @@ class CAFCIProvider:
                 len(ard_funds),
             )
 
-    # ------------------------------------------------------------------ #
-    # Public accessors
-    # ------------------------------------------------------------------ #
-
-    def get_meta(self) -> dict:
-        """Snapshot meta + filter option lists (with counts) for the UI."""
-        self._ensure_loaded()
-        funds = self._dataset.get("funds", [])
-        meta = dict(self._dataset.get("meta", {}))
-
-        def _options(key: str) -> List[dict]:
-            counts: Dict[str, int] = {}
-            for f in funds:
-                v = f.get(key)
-                if v:
-                    counts[v] = counts.get(v, 0) + 1
-            return [{"value": k, "count": counts[k]} for k in sorted(counts)]
-
-        meta["tipo_renta_options"] = _options("tipo_renta")
-        meta["moneda_options"] = _options("moneda")
-        return meta
-
-    def list_funds(
-        self,
-        tipo_renta: Optional[str] = None,
-        moneda: Optional[str] = None,
-        query: Optional[str] = None,
-        sort: str = "mes_1",
-        direction: str = "desc",
-        metric: str = "tna",
-        limit: Optional[int] = None,
-    ) -> List[dict]:
-        """Filtered + sorted fund list. Sort is by `metric` (tna|directo) of the
-        `sort` period; funds missing that value sink to the bottom regardless of
-        direction."""
-        self._ensure_loaded()
-        funds = self._dataset.get("funds", [])
-
-        if sort not in _PERIODS:
-            sort = "mes_1"
-        if metric not in ("tna", "directo"):
-            metric = "tna"
-
-        q = _norm(query) if query else None
-        out = []
-        for f in funds:
-            if tipo_renta and f.get("tipo_renta") != tipo_renta:
-                continue
-            if moneda and f.get("moneda") != moneda:
-                continue
-            if q and q not in _norm(f.get("fondo_nombre")) \
-                    and q not in _norm(f.get("clase_nombre")) \
-                    and q not in _norm(f.get("sociedad")):
-                continue
-            out.append(f)
-
-        reverse = direction != "asc"
-
-        def _key(f):
-            v = (f.get("rend", {}).get(sort) or {}).get(metric)
-            # Missing values always last: pair a presence flag with the value so
-            # ordering stays correct for both asc and desc.
-            if v is None:
-                return (1, 0.0)
-            return (0, -v if reverse else v)
-
-        out.sort(key=_key)
-        if limit and limit > 0:
-            out = out[:limit]
-        return out
-
-    def get_fund(self, clase_id) -> Optional[dict]:
-        self._ensure_loaded()
-        try:
-            cid = int(clase_id)
-        except (TypeError, ValueError):
-            return None
-        for f in self._dataset.get("funds", []):
-            if f.get("clase_id") == cid:
-                return f
-        return None
+    # Read-path del panel FCI: `apps/web/fci_service.py` llama `_ensure_loaded()` y
+    # lee `_dataset` directo (build_fci_dataset). La vieja API SSR del provider
+    # (get_meta / list_funds / get_fund) se retiró por no usarse.

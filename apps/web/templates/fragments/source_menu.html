@@ -1,0 +1,38 @@
+{# Selector de fuente de datos (dropdown nativo <details> → sin JS, anda en toda
+   página vía base.html). Se reemplaza a sí mismo (outerHTML) al cambiar de fuente. #}
+<details class="source-dd" id="source-wrap">
+  <summary title="Fuente de cotizaciones en vivo">
+    FUENTE: {{ label or active }}
+    {% if delayed %}<span class="src-badge src-delayed">20m</span>{% else %}<span class="src-badge src-live">vivo</span>{% endif %}
+  </summary>
+  <div class="source-menu">
+    {% for m in modes %}
+      <button type="button"
+              class="cfg-item{% if m.mode == active %} on{% endif %}"
+              hx-post="/source/select" hx-vals='{"mode": "{{ m.mode }}"}'
+              hx-target="#source-wrap" hx-swap="outerHTML"
+              {% if not m.available %}disabled title="{{ m.note }}"{% endif %}>
+        {{ m.label }}{% if not m.available %} 🔒{% endif %}
+      </button>
+    {% endfor %}
+
+    <div class="cfg-sep"></div>
+
+    {% if realtime_ready %}
+      <div class="src-creds-ok">✓ Clave BYMA guardada</div>
+      <button type="button" class="cfg-action"
+              hx-post="/source/credentials/clear"
+              hx-target="#source-wrap" hx-swap="outerHTML">🗑 Borrar clave</button>
+    {% else %}
+      <form class="src-creds" hx-post="/source/credentials"
+            hx-target="#source-wrap" hx-swap="outerHTML">
+        <div class="src-creds-title">Tiempo real — clave BYMADATA</div>
+        <input name="user" type="text" placeholder="Usuario" autocomplete="off" autocapitalize="off">
+        <input name="password" type="password" placeholder="Contraseña" autocomplete="off">
+        <button type="submit" class="cfg-action src-creds-save">Guardar y activar tiempo real</button>
+      </form>
+    {% endif %}
+
+    {% if error %}<div class="src-err">{{ error }}</div>{% endif %}
+  </div>
+</details>

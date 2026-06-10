@@ -17,7 +17,7 @@ en `to_thread` desde el refresh loop async y se cachea en `AppState.options`.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Iterable, Optional
 
@@ -30,6 +30,17 @@ from core.domain.options.roots import underlying_for
 from core.domain.options.symbols import parse_ticker, resolve_strike
 
 logger = logging.getLogger(__name__)
+
+
+def _expiry_from_iso(s: Optional[str]) -> Optional[date]:
+    """Parsea un vencimiento ISO 'YYYY-MM-DD' (maturityDate de BYMA). None si falta
+    o no parsea → el caller cae al cálculo por código de mes."""
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(str(s)[:10])
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass(frozen=True)
@@ -113,7 +124,11 @@ def build_options(options_rows: dict, stocks_rows: dict,
         meta = parse_ticker(sym)
         if not meta:
             continue
-        underlying = underlying_for(meta.root)
+        # Subyacente: preferir el `underlyingSymbol` AUTORITATIVO de BYMA (panel
+        # /options) sobre el mapeo root→ticker de roots.py. Así los contratos cuyo
+        # root no está en roots.py (VIST, TGNO4, …) sobreviven si tenemos su spot.
+        # Data912 no trae el campo → cae al mapeo histórico (back-compat).
+        underlying = getattr(row, "opt_underlying", None) or underlying_for(meta.root)
         if not underlying:
             skipped_root.add(meta.root)
             continue
@@ -126,7 +141,12 @@ def build_options(options_rows: dict, stocks_rows: dict,
         strike = resolve_strike(meta.strike_str, spot)
         if strike is None or strike <= 0:
             continue
-        expiry = resolve_expiry_date(meta.month, today=today)
+        # Tipo (C/V): preferir optionType de BYMA; si no, el del ticker.
+        kind = getattr(row, "opt_kind", None) or meta.kind
+        # Vencimiento: preferir maturityDate de BYMA (exacto); si no, derivarlo del
+        # código de mes (3er viernes). Un ISO inválido cae al fallback.
+        expiry = _expiry_from_iso(getattr(row, "opt_expiry", None)) \
+            or resolve_expiry_date(meta.month, today=today)
         t_days = days_to_expiry(expiry, today)
         T = time_to_expiry(expiry, today)
 
@@ -141,19 +161,23 @@ def build_options(options_rows: dict, stocks_rows: dict,
         else:
             mid = None
 
-        iv = iv_implied(mid, spot, strike, r, q, T, meta.kind, N=N) if mid else None
-        greeks = (compute_greeks(spot, strike, r, q, iv, T, meta.kind, N=N)
+        iv = iv_implied(mid, spot, strike, r, q, T, kind, N=N) if mid else None
+        greeks = (compute_greeks(spot, strike, r, q, iv, T, kind, N=N)
                   if iv else Greeks(None, None, None, None, None))
-        rates = compute_rates(bid, spot, strike, meta.kind, t_days, last=last)
+        rates = compute_rates(bid, spot, strike, kind, t_days, last=last)
 
         contract = OptionContract(
             ticker=meta.ticker, root=meta.root, underlying=underlying,
-            kind=meta.kind, strike=strike, month=meta.month,
+            kind=kind, strike=strike, month=meta.month,
             month_code=meta.month_code, expiry=expiry,
         )
+        # Open interest: el REAL de BYMA (`oi`) si vino; si no, el q_op de Data912
+        # (nº de trades — proxy histórico, no OI verdadero).
+        oi_val = getattr(row, "oi", None)
+        open_interest = float(oi_val) if oi_val is not None else float(row.q_op or 0.0)
         out.append(OptionItem(
             contract=contract, spot=spot, bid=bid, ask=ask, last=last, mid=mid,
-            volume=float(row.v or 0.0), open_interest=float(row.q_op or 0.0),
+            volume=float(row.v or 0.0), open_interest=open_interest,
             pct_change=row.pct_change,
             iv=iv, greeks=greeks, rates=rates, t_days=t_days,
         ))

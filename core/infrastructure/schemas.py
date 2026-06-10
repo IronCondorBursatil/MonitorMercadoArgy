@@ -20,6 +20,16 @@ class Data912Row(BaseModel):
     v: Optional[float] = None            # ARS notional traded today
     q_op: Optional[int] = None           # number of trades today
     pct_change: Optional[float] = None
+    # --- Metadata de opciones (solo el panel BYMA /options la trae; None en el
+    # resto). Permite a la chain usar datos AUTORITATIVOS en vez de derivar todo
+    # del ticker: `oi` = open interest REAL (no el q_op=nº de trades), y el
+    # subyacente/tipo/vto vienen de la API → contratos con root no mapeado en
+    # roots.py sobreviven (más profundidad). Data912 deja estos campos en None
+    # → la chain cae al parser de ticker (comportamiento previo). ---
+    oi: Optional[float] = None           # openInterest (interés abierto real)
+    opt_kind: Optional[str] = None       # "C" (call) | "V" (put), de optionType
+    opt_underlying: Optional[str] = None # underlyingSymbol (ticker del subyacente)
+    opt_expiry: Optional[str] = None     # maturityDate ISO 'YYYY-MM-DD'
 
     @field_validator("symbol")
     @classmethod

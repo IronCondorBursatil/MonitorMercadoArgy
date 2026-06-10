@@ -1,26 +1,18 @@
 {% extends "base.html" %}
+{% block title %}FCI · Fondos — Monitor Renta Fija AR{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="/static/css/fci.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+{% endblock %}
 {% block content %}
 <main style="display:block">
-  <section class="panel" style="margin:14px">
-    <div class="panel-head">
-      <span>FCI · FONDOS (CAFCI{% if meta.fecha_base %} · {{ meta.fecha_base }}{% endif %})</span>
-    </div>
-    <form class="fci-filters" hx-get="/fci/rows" hx-target="#fci-rows" hx-swap="innerHTML"
-          hx-trigger="change, keyup delay:400ms from:input[name='q']">
-      <select name="tipo"><option value="">Todos los tipos</option>
-        {% for t in tipos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select>
-      <select name="moneda"><option value="">Todas las monedas</option>
-        {% for m in monedas %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select>
-      <input name="q" placeholder="Buscar fondo / sociedad…">
-      <select name="sort">
-        {% for p in periods %}<option value="{{ p }}" {{ 'selected' if p == 'mes_1' else '' }}>orden: {{ labels[p] }}</option>{% endfor %}</select>
-      <select name="metric"><option value="tna">TNA</option><option value="directo">Directo</option></select>
-    </form>
-    <div id="fci-rows">{% include "fragments/fci_rows.html" %}</div>
-  </section>
+  <div class="fci-wrap">
+    <div class="fci-strip" id="fci-strip"></div>
+    <div class="vtabs" id="vtabs"></div>
+    <div id="view"></div>
+    <p class="note" id="srcnote"></p>
+  </div>
 </main>
-<style>
-  .fci-filters { display:flex; gap:8px; padding:11px 13px; flex-wrap:wrap; }
-  th.sortcol, td.sortcol { background: var(--accent-light); }
-</style>
+<script src="/static/js/fci.js" defer></script>
 {% endblock %}

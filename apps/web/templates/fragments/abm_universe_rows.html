@@ -1,0 +1,35 @@
+{# Filas del universo BYMA (scroll infinito): un lote de <tr> + un centinela que
+   carga el lote siguiente al entrar en viewport. Lo usa tanto el shell (1er lote,
+   embebido en el <tbody>) como el endpoint de append (page>0, reemplaza al
+   centinela vía outerHTML). El centinela lleva su propio q/cat/page → autocontenido. #}
+{% for r in rows %}
+<tr>
+  <td class="uni-tk{% if r.has_ficha %} uni-tk--ficha{% endif %}"
+      title="{% if r.has_ficha %}tiene ficha técnica — copiar{% else %}copiar{% endif %}"
+      onclick="uniCopy(this)">{{ r.base or "—" }}</td>
+  {% if show_leg %}<td class="uni-leg">{{ r.legislacion or "—" }}</td>{% endif %}
+  <td class="uni-isin">{{ r.isin or "—" }}</td>
+  <td class="uni-alta uni-alta--{{ 'yes' if r.loaded else 'no' }}" data-f="{{ 'Sí' if r.loaded else 'No' }}"
+      title="{{ '✓ dado de alta — se le calcula TIR/MD' if r.loaded else 'sin alta — agregalo para calcular TIR' }}">{{ '✓' if r.loaded else '—' }}</td>
+  <td class="uni-cell uni-sep" onclick="uniCopy(this)">{{ r.primary.pesos or "—" }}</td>
+  <td class="uni-cell" onclick="uniCopy(this)">{{ r.primary.mep or "—" }}</td>
+  <td class="uni-cell" onclick="uniCopy(this)">{{ r.primary.cable or "—" }}</td>
+  <td class="uni-cell uni-esp uni-sep" onclick="uniCopy(this)">{{ r.especial.pesos or "—" }}</td>
+  <td class="uni-cell uni-esp" onclick="uniCopy(this)">{{ r.especial.mep or "—" }}</td>
+  <td class="uni-cell uni-esp" onclick="uniCopy(this)">{{ r.especial.cable or "—" }}</td>
+  <td>{{ r.categoria or "—" }}</td>
+  <td class="uni-faint">{{ r.security_type or "—" }}</td>
+  <td class="uni-faint">{{ r.panel or "—" }}</td>
+  <td class="uni-emisor" title="{{ r.emisor or '' }}">{{ r.emisor or "—" }}</td>
+  <td class="uni-vol num uni-sep uni-mh-ars" data-v="{{ r.mh_ars or 0 }}">{{ r.mh_ars_f or "—" }}</td>
+  <td class="uni-vol num uni-mh-mep" data-v="{{ r.mh_mep or 0 }}">{{ r.mh_mep_f or "—" }}</td>
+  <td class="uni-vol num uni-mh-cable" data-v="{{ r.mh_cable or 0 }}">{{ r.mh_cable_f or "—" }}</td>
+</tr>
+{% endfor %}
+{% if has_next %}
+<tr class="uni-more"
+    hx-get="/abm/universe?q={{ q|urlencode }}&cat={{ cat|urlencode }}&page={{ page + 1 }}"
+    hx-trigger="intersect once" hx-swap="outerHTML">
+  <td colspan="{{ 17 if show_leg else 16 }}" class="uni-loading">Cargando más…</td>
+</tr>
+{% endif %}

@@ -62,10 +62,27 @@ class Settings(BaseSettings):
     # Bases .db FUERA de OneDrive: el sync corrompe SQLite/DuckDB mid-write.
     db_dir: Path = Path(os.environ.get("LOCALAPPDATA", str(_BASE_DIR))) / "monitor"
     catalog_db: Path = db_dir / "catalog.db"
-    analytics_duckdb: Path = db_dir / "analytics.duckdb"
     # Cierres diarios por ticker (variaciones Sem/1M/3M/YTD/1A). Se auto-mantiene
     # (priming Data912 historical + acumulación del feed vivo) — ver price_history.py.
     price_history_db: Path = db_dir / "price_history.db"
+    # Histórico FCI (vcp/ccp/patrimonio por fondo) p/ flujos reales (Δccp×VCP). Se
+    # auto-mantiene acumulando el corte diario de ArgentinaDatos — ver fci_history.py.
+    fci_history_db: Path = db_dir / "fci_history.db"
+    # Cierres diarios de índices BYMA p/ la franja de 5 ruedas del catálogo. M/G se
+    # backfillean del chart; los 16 acumulan el cierre de /index-price — ver index_history.py.
+    index_history_db: Path = db_dir / "index_history.db"
+    index_ruedas: int = 5               # ventana del sparkline de índices (ruedas)
+
+    # Fuente de cotizaciones live (hot-path). Default BYMA open (público, ~20min
+    # demora); el usuario puede pasar a 'byma_realtime' (clave .env) o 'data912'
+    # (fallback) en runtime desde la UI. Override por env MONITOR_MARKET_SOURCE.
+    market_source: str = "byma_open"  # 'byma_open' | 'byma_realtime' | 'data912'
+    # Fuente de la chain de opciones. 'byma' = panel open /options (OI real +
+    # underlyingSymbol/optionType/maturityDate autoritativos, roots-independiente
+    # → más profundidad); 'data912' = endpoint arg_options (fallback automático).
+    options_source: str = "byma"      # 'byma' | 'data912'
+    # Catálogo BYMA (symbol→ISIN/emisor/tipo) para enriquecer la base de títulos.
+    byma_catalog_csv: Path = _BASE_DIR / "data" / "byma" / "titulos_final.csv"
 
     host: str = "127.0.0.1"
     port: int = 8000
@@ -74,21 +91,22 @@ class Settings(BaseSettings):
     # Mantenimiento del store de precios: prime 1× + acumula cierre del feed. Diario
     # alcanza (la historia cambia 1×/rueda); la última escritura del día ≈ cierre.
     price_history_sec: int = 3600
+    # Priming complementario vía series históricas de BYMA open para los tickers que
+    # Data912 /historical NO cubre (bopreales, letras, ON, patas MEP/CABLE). Corre 1×.
+    byma_history_enabled: bool = True
+    byma_history_max_days: int = 400    # ~13 meses: cubre 1A (365d) + tolerancia
+    byma_history_min_days: int = 20     # < N ruedas en el store → primar de BYMA
+    byma_history_workers: int = 4       # concurrencia (cortés con BYMA open)
+    # Fuente del backfill BYMA: 'chart' (endpoint chart OHLCV, 1 llamada/ticker,
+    # rango largo, cubre patas D/C y letras) o 'series' (POST seriesHistoricas,
+    # solo cierre, paginado 25d). Chart es estrictamente mejor (verificado en vivo).
+    byma_history_source: str = "chart"  # 'chart' | 'series'
 
     def model_post_init(self, __context) -> None:
         self.db_dir.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()
-
-# --------------------------------------------------------------------------- #
-# Alias legacy (str) — mantener hasta la limpieza de Fase 5. Los consumidores
-# actuales (cartera_store, bei, cafci/indices providers, server, _common,
-# data_quality_check) importan estos nombres como strings.
-# --------------------------------------------------------------------------- #
-BASE_DIR = str(settings.base_dir)
-DATA_DIR = str(settings.data_dir)
-MASTER_XLSX = str(settings.master_xlsx)
 
 # --------------------------------------------------------------------------- #
 # Logging centralizado

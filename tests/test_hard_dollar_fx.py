@@ -154,6 +154,45 @@ def test_dollar_linked_still_uses_official_not_mep_ccl():
     assert tir_official == pytest.approx(tir_ref, abs=1e-9)
 
 
+# Letras del Tesoro DOLAR_LINKED soberanas (zero-coupon, bullet 100 al vto).
+# (ticker, isin, vto, precio_pesos_dirty, usd_implícito, tir_efectiva) — refs Balanz
+# @ FX mayorista 1446.1064, settle 10/06/2026.
+_DL_SOBERANOS = [
+    ("D31M7", "AR0637963668", date(2027, 3, 31), 140200.0, 96.95, 0.0392),
+    ("D31L6", "AR0769584159", date(2026, 7, 31), 143290.0, 99.0868, 0.0679),
+]
+
+
+@pytest.mark.parametrize("tk,isin,vto,peso,usd,tir_ref", _DL_SOBERANOS,
+                         ids=[a[0] for a in _DL_SOBERANOS])
+def test_dollar_linked_soberano_matches_balanz(tk, isin, vto, peso, usd, tir_ref):
+    """Con el FX de la foto (mayorista 1446.1064) y el precio pesos dirty, settle
+    10/06/2026 → USD = pesos/FX, TIR efectiva = Balanz. Confirma además que es
+    FX-dependiente (pata pesos /oficial, no USD directa)."""
+    from core.domain.pricing.context import PricingContext
+    from core.domain.pricing.strategies import DolarLinkedStrategy
+
+    class FxFoto:
+        def get_mayorista_venta(self):
+            return 1446.1064
+
+    settle = date(2026, 6, 10)
+    inst = Instrument(
+        ticker=tk, short_name=f"Letra Tesoro DL {tk}", instrument_type="DOLAR_LINKED",
+        maturity_date=vto, emission_date=date(2026, 5, 29), payment_frequency=1,
+        day_count="ACT/365.25", cashflows=(Cashflow(vto, 100.0, 0.0),), isin=isin,
+    )
+    snap = MarketSnapshot(instrument=inst, price=peso)
+    tir = FinancialEngine.calculate_tir(snap, IdxStub(), FxFoto(), settle_date=settle)
+    assert tir == pytest.approx(tir_ref, abs=1.5e-4), f"{tk} TIR {tir}"
+    strat = DolarLinkedStrategy()
+    got_usd = strat._usd_price(inst, peso, PricingContext(settle=settle, fx=FxFoto()))
+    assert got_usd == pytest.approx(usd, abs=0.01)
+    # FX-dependiente: con otro mayorista (1408) la TIR cambia (no es USD-leg directa)
+    tir_alt = FinancialEngine.calculate_tir(snap, IdxStub(), FxStub(), settle_date=settle)
+    assert tir_alt != pytest.approx(tir, abs=1e-3)
+
+
 def test_fx_provider_exposes_mep_ccl_accessors():
     """DolarAPIProvider mapea MEP=bolsa, CCL=contadoconliqui (offer=venta)."""
     from core.infrastructure.fx_provider import DolarAPIProvider

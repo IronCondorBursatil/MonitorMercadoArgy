@@ -96,7 +96,7 @@ Monitores - Data912/
 ├── agents.md                           # Este documento
 │
 ├── apps/
-│   ├── cli/monitors/
+│   ├── cli/
 │   │   ├── _common.py                  # bootstrap: repo Excel cacheado + build_use_case()
 │   │   └── bei.py                      # BEI extendido (NT3/2019 + NT8/2024) — compute_bei_tables() para el server
 │   └── web/
@@ -382,7 +382,7 @@ Helper interno: `_resolve_settle(instrument_type, override)` — `override if ov
 
 ## CACHE Y PERFORMANCE
 
-- **Repositorio Excel**: singleton vía [`apps/cli/monitors/_common.py::get_repository`](apps/cli/monitors/_common.py). `_by_type` dict para lookups O(1).
+- **Repositorio Excel**: singleton vía [`apps/cli/_common.py::get_repository`](apps/cli/_common.py). `_by_type` dict para lookups O(1).
 - **Snapshots Data912 live**: cache class-level con TTL 3s — coalesce las ~8 llamadas internas por ciclo de refresh en una sola round-trip a los 3 endpoints (`arg_notes`, `arg_bonds`, `arg_corp`). TTL < `REFRESH_SEC` garantiza data fresca entre ciclos.
 - **Stock OHLC histórico** (Panel Líder): cache instance-level por ticker; prefetch paralelo al boot (8 workers) para evitar blow-up del primer ciclo.
 - **Bond OHLC histórico** (popup): proxy `_BOND_HISTORY_CACHE` con TTL 600s por ticker. Validación con `HISTORICAL_SUPPORTED_TICKERS` (rechazo temprano con 400 para tickers no soportados upstream — sino se gastan ~4s esperando un 502).
@@ -535,7 +535,7 @@ REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limi
 - [ ] ¿Agregaste un instrumento? Solo en `data/instruments_master.xlsx` (vía ABM web o edición directa).
 - [ ] ¿Cambió un flujo? Hoja `Cashflows` (o `Cashflows_Fija`).
 - [ ] ¿Nuevo cálculo financiero? `FinancialEngine` en `core/domain/services.py`. Cashflow synth nuevo → dispatch en `core/domain/cashflow_synth.py`.
-- [ ] ¿Nuevo monitor CLI? Script en `apps/cli/monitors/`, tipo en `instrument_groups.py`.
+- [ ] ¿Nuevo monitor CLI? Script en `apps/cli/`, tipo en `instrument_groups.py`.
 - [ ] ¿Nuevo panel web? Schema en `_get_columns`, registro en `Snapshot.__init__`, builder dentro de `_refresh_*` (server.py), `.grid-stack-item` en `index.html` con `gs-id`.
 - [ ] ¿Nueva fuente de datos? Justificar por qué no se puede con Data912; si es índice/referencia, modelo análogo a `BCRAIndicesProvider`; usar `core/infrastructure/_http.py::http_get_json` para el cliente HTTP.
 - [ ] ¿Cambio de UI? Bumpear `?v=N` en `style.css` / `app.js` / `gridstack` imports de `index.html` para invalidar cache.

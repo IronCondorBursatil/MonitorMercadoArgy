@@ -38,21 +38,23 @@ core/domain/
     registry.py        strategy_for(inst) — tabla predicado→strategy (mata la escalera if/elif).
     metrics.py tamar.py stubs.py   métricas popup / payoff BONTE TAMAR / ZeroTamar.
   cashflow_synth.py portfolio.py scenarios.py yield_curve.py inflation_path.py   (sin cambios)
+  fci/         dataset del panel FCI (puro, testeable): derive.py (subcategoría estilo fonditos + AUM join ArgentinaDatos + unificación de clases x fondo) · hist.py (cuotaparte reconstruida de retornos reales / real de fci_history) · lens.py (devaluación A3500 + inflación CER por período) · dataset.py (build_fci_dataset → forma que consume static/js/fci.js). Composición NO se sintetiza; flujos solo reales.
 core/infrastructure/
   db/        engine.py (SQLite+WAL, reconfigurable p/ tests) · models.py (ORM 2.0, + sheet/raw_fields del ABM) · catalog_repository.py (CatalogRepository, drop-in del ExcelRepo; reseed_with_meta)
-  analytics/duck.py    cer_asof / avg_tamar (DuckDB sobre los CSV de history)
   async_http.py circuit_breaker.py provider_hub.py   ingesta async (httpx + breaker + hub). ProviderHub.refresh_all + HubMarketDataProvider CABLEADOS al refresh loop.
   schemas.py           Data912Row (validación Pydantic en el borde de ingesta)
   _http.py             http_get_json SYNC (httpx pooled) — read-path de los 5 providers sync (FX/indices/REM/CAFCI/argentinadatos + histórico), corren en to_thread fuera del event loop
   repositories.py indices_provider.py fx_provider.py futures_provider.py rem_provider.py cafci_provider.py
   price_history.py     store SQLite auto-mantenido de cierres diarios (rendimientos Sem/1M/3M/YTD/1A): priming Data912 /historical/bonds + acumulación del feed vivo; read-path local (merge con el CSV legacy)
+  fci_history.py       store SQLite (fuera de OneDrive) de vcp/ccp/patrimonio por fondo (ArgentinaDatos), acumulado a diario por el loop → flujo neto real Δccp×VCP (`net_flow_series`). cafci_provider._parse_payload conserva los campos ricos de CAFCI (honorarios/horizonte/duration/region/tickers/min/objetivo)
   repositories.build_instrument()   parser de fila → Instrument, COMPARTIDO por el loader Excel y el ABM SQLite
 apps/web/
   app.py               FastAPI + lifespan (refresh loop con hub.refresh_all async + BEI loop, motor vía to_thread). MONITOR_DISABLE_LOOPS en tests.
   state.py deps.py      AppState (snapshot vivo + revision/wait_for_change p/ SSE) + Depends (get_repo→CatalogRepository, get_state, get_hub, ...)
-  routers/             panels (12 paneles + /bond detalle), bonds, cartera, bcra, cashflows, escenarios, curva, fci, abm, stream (SSE)
+  routers/             panels (12 paneles + /bond detalle), bonds, cartera, bcra, cashflows, escenarios, curva, fci (página + /fci/data JSON), abm, stream (SSE)
+  fci_service.py       junta CAFCI enriquecido + AUM + macro (lens A3500/CER) + flujos (fci_history) → dataset memoizado de /fci/data
   templates/           base.html + pages/* + fragments/* (Jinja + HTMX)
-  static/css/app.css   diseño Balanz (light/dark) · static/vendor/gridstack
+  static/css/app.css   diseño Balanz (light/dark) · static/css/fci.css · static/vendor/gridstack · static/js/fci.js (app cliente del panel FCI: 5 vistas + detalle, Chart.js)
   bond_detail.py instruments_abm.py cartera_store.py   (reusados por los routers)
 run.py scripts/ tests/ data/ config/
 ```
@@ -63,10 +65,16 @@ run.py scripts/ tests/ data/ config/
 `await hub.refresh_all()` trae Data912 async con breaker+pool, luego el motor corre
 `GenerateMonitorReport.execute` vía `to_thread` leyendo el snapshot del hub → `AppState`),
 `_bei_loop` (`compute_bei_tables`) y `_price_history_loop` (mantiene el store de cierres
-diarios para los rendimientos: priming Data912 + acumulación del feed). Cada panel es un `<tbody hx-get="/panels/{id}/rows">`
+diarios para los rendimientos: priming Data912 + acumulación del feed; **además acumula el corte
+diario de ArgentinaDatos en `fci_history` para los flujos reales del panel FCI**). Cada panel es un `<tbody hx-get="/panels/{id}/rows">`
 que renderiza un fragmento SSR desde `AppState`; el auto-refresh es **event-driven por SSE**
 (`/stream` pushea `refresh` por ciclo; `hx-trigger="load, sse:refresh, every 15s"` con el
 polling como fallback). El detalle es un modal (`/bond/{t}/detail` + `/bond/{t}/metrics`).
+
+**Panel FCI** (excepción al SSR): `GET /fci` sirve una página que carga `static/js/fci.js`
+(app cliente vanilla, 5 vistas + detalle con Chart.js), que hace `fetch('/fci/data')`. El dataset
+lo arma `fci_service.get_fci_dataset` (memoizado por corte/día, servido con GZip) combinando CAFCI
+enriquecido + AUM ArgentinaDatos + lente A3500/CER + flujos reales de `fci_history`.
 
 ## Invariantes (no romper)
 
@@ -112,5 +120,6 @@ README). **Las skills se auto-disparan al arrancar Claude Code** (no en caliente
   event loop) y tienen cache propio con TTL; el hot-path real (Data912, 4 endpoints cada 5s) ya
   está en el hub async. Migrarlos a `ResilientClient` (y retirar `_http.py`) es bajo valor / alto
   riesgo — queda como cola opcional.
-- Charts/sparklines adicionales (Chart.js); más cobertura de tests de routers.
+- Charts/sparklines adicionales (Chart.js) — ya usado en el panel FCI (`static/js/fci.js`); extender a otros paneles. Más cobertura de tests de routers.
+- **FCI composición de cartera**: única pieza no disponible (CAFCI ficha gateada / worker de fonditos pago). El panel la omite hasta conseguir fuente. Flujos: reales vía `fci_history` a medida que acumula ruedas; lente 3m/6m/12m se completa cuando el bootstrap de ~400d de CER/A3500 backfillee.
 Ver `mejora.md`.

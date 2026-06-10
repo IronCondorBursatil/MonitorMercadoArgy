@@ -26,7 +26,10 @@ logger = logging.getLogger(__name__)
 def init_db() -> None:
     """Crea las tablas si faltan. Si la tabla `instruments` existe pero le faltan
     columnas nuevas (sheet/raw_fields del ABM), la recrea — la .db es solo un
-    cache derivado del Excel, así que dropear y re-sembrar es seguro."""
+    cache derivado del Excel, así que dropear y re-sembrar es seguro.
+
+    `isin` se agrega de forma **aditiva** (ALTER), NO destructiva: las altas de la
+    ABM (ON/Acciones) viven solo en la DB y un drop las perdería."""
     eng = get_engine()
     Base.metadata.create_all(eng)
     insp = inspect(eng)
@@ -36,6 +39,11 @@ def init_db() -> None:
             logger.info("catalog schema drift: recreando tablas (faltan columnas nuevas).")
             Base.metadata.drop_all(eng)
             Base.metadata.create_all(eng)
+        elif "isin" not in cols:
+            # Migración aditiva: preserva los datos existentes (incl. altas ABM).
+            logger.info("catalog: agregando columna isin (ALTER, sin recrear).")
+            with eng.begin() as conn:
+                conn.exec_driver_sql("ALTER TABLE instruments ADD COLUMN isin VARCHAR")
 
 
 def _num(x: Optional[float]) -> float:
@@ -62,6 +70,7 @@ def instrument_to_orm(inst: Instrument, sheet: Optional[str] = None,
         ticker=inst.ticker, ticker_mep=ticker_mep, ticker_ccl=ticker_ccl,
         short_name=inst.short_name,
         instrument_type=inst.instrument_type,
+        isin=getattr(inst, "isin", None),
         maturity_date=inst.maturity_date, emission_date=inst.emission_date,
         cer_base=inst.cer_base, cer_lag=inst.cer_lag, category=inst.category,
         floor_rate_monthly=inst.floor_rate_monthly, spread_rate=inst.spread_rate,
@@ -116,7 +125,7 @@ def _orm_to_domain(orm: InstrumentORM) -> Instrument:
         cer_base=orm.cer_base, cer_lag=orm.cer_lag, category=orm.category,
         floor_rate_monthly=orm.floor_rate_monthly, spread_rate=orm.spread_rate,
         cer_spread=orm.cer_spread, payment_frequency=orm.payment_frequency,
-        day_count=orm.day_count,
+        day_count=orm.day_count, isin=getattr(orm, "isin", None),
         # ley_aplicable vive en raw_fields (no es columna ORM) — la lee el motor para
         # elegir MEP (ley AR) vs CCL (Extranjera) en la pata pesos de ONs hard-dollar.
         ley_aplicable=(orm.raw_fields or {}).get("ley_aplicable") or None,

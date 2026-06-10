@@ -60,7 +60,7 @@
       <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
       <nav>
         <a href="/">Bonos</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
-        <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/options">Opciones</a><a href="/abm">ABM</a>
+        <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/options">Opciones</a><a href="/catalogo">Catálogo</a><a href="/abm">ABM</a>
         {# CONFIG de paneles: elegir qué cuadros ver / restaurar los cerrados con X.
            El menú lo arma el JS del dashboard (index.html); en otras páginas el
            link lleva al dashboard. #}
@@ -68,6 +68,11 @@
           <a href="/" id="nav-config-btn">CONFIG</a>
           <div class="panel-config-menu" id="panel-config-menu"></div>
         </span>
+        {# Selector de fuente de datos (BYMA open / realtime / Data912). Se
+           autocarga por HTMX → presente en todas las páginas. #}
+        <details class="source-dd" id="source-wrap"
+                 hx-get="/source/menu" hx-trigger="load"
+                 hx-target="#source-wrap" hx-swap="outerHTML"></details>
         <button class="theme-btn" onclick="toggleTheme()" title="Cambiar tema">◑</button>
       </nav>
     </div>

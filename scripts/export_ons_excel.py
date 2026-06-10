@@ -8,7 +8,12 @@ negociables`, filtro MEP) y los enriquece con los términos del catálogo SQLite
 Uso:  py -3.12 scripts/export_ons_excel.py            (server en localhost:8000)
 """
 from __future__ import annotations
-import os, re, sys, html, json, sqlite3
+import os
+import re
+import sys
+import html
+import json
+import sqlite3
 from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

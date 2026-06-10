@@ -57,12 +57,26 @@ class ResilientClient:
                        headers: Optional[dict] = None, timeout: Optional[float] = None):
         """GET → JSON con breaker + semáforo + retry transitorio. Propaga
         CircuitOpenError si el breaker del host está abierto (caller usa stale)."""
+        return await self._request_json("GET", url, retries=retries, headers=headers,
+                                        timeout=timeout)
+
+    async def post_json(self, url: str, *, json=None, source: Optional[str] = None,
+                        retries: int = 1, headers: Optional[dict] = None,
+                        timeout: Optional[float] = None):
+        """POST (body JSON) → JSON con breaker + semáforo + retry transitorio.
+        Mismo contrato que get_json (BYMA usa POST en casi todos sus endpoints)."""
+        return await self._request_json("POST", url, json=json, retries=retries,
+                                        headers=headers, timeout=timeout)
+
+    async def _request_json(self, method: str, url: str, *, json=None, retries: int = 1,
+                            headers: Optional[dict] = None, timeout: Optional[float] = None):
         breaker, sem = self._host_guard(url)
         async with breaker:
             async with sem:
                 for attempt in range(retries + 1):
                     try:
-                        resp = await self._client.get(url, headers=headers, timeout=timeout)
+                        resp = await self._client.request(
+                            method, url, json=json, headers=headers, timeout=timeout)
                         resp.raise_for_status()
                         return resp.json()
                     except httpx.HTTPStatusError as e:

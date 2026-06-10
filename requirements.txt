@@ -21,7 +21,6 @@ httpx
 jinja2
 python-multipart
 sse-starlette
-duckdb
 SQLAlchemy>=2
 pydantic>=2
 pydantic-settings
@@ -30,3 +29,4 @@ optionlab                # analytics avanzados de estrategias de opciones (P(pro
 # --- dev ---
 pytest
 hypothesis              # property-based testing (invariantes de pricing/day-count)
+ruff                    # linter (config en pyproject.toml): F/E/W, sin reformateo masivo

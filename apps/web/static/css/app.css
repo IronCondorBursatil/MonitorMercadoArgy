@@ -110,6 +110,16 @@ main { padding: 14px; display: grid; gap: 14px;
 .ph-cam svg { display: block; }
 .ph-cam:disabled { opacity: .5; cursor: progress; }
 .ccy-filter { display: inline-flex; gap: 3px; flex: 0 0 auto; margin: 0 2px; }
+/* Plazo de liquidación: UN solo botón que alterna 24hs (default) ↔ CI. Cuando está
+   en CI se ilumina (accent) + efecto "presionado" para señalar que cambió el plazo. */
+.settle-toggle { background: transparent; color: #c7d0ee; border: 1px solid var(--panel-border);
+            border-radius: 6px; padding: 4px 8px; cursor: pointer; font: 600 11px var(--font-body);
+            letter-spacing: .3px; white-space: nowrap; min-width: 40px; text-align: center;
+            margin: 0 2px; flex: 0 0 auto; transition: background .12s, color .12s, box-shadow .12s; }
+.settle-toggle:hover { background: rgba(255,255,255,.12); color: #fff; }
+.settle-toggle.active { background: var(--accent); color: #fff; border-color: var(--accent);
+            box-shadow: inset 0 1px 3px rgba(0,0,0,.35); }   /* CI activo: color + hundido */
+.settle-toggle:active { transform: translateY(1px); }         /* feedback táctil al clic */
 
 /* desplegable de columnas del Config — mismo look que el CONFIG global (.cfg-item).
    position: fixed (posicionado por JS) → escapa el overflow:hidden del panel, no se corta. */
@@ -234,7 +244,7 @@ table.cf tr.past { opacity: .5; } table.cf tr.next { background: var(--accent-li
 
 /* ---- Popup "compartir" (cuadrado 1:1 p/ WhatsApp): tabla completa + curva ---- */
 .share-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.share-card { width: min(94vw, 1320px); height: min(96vh, 1040px);
+.share-card { width: min(94vw, 1320px); height: auto;
               background: var(--panel-bg); border: 1px solid var(--panel-border);
               border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
               box-shadow: 0 25px 50px -12px rgba(6,20,59,.5); }
@@ -255,16 +265,26 @@ table.cf tr.past { opacity: .5; } table.cf tr.next { background: var(--accent-li
    Una tabla ancha (muchas columnas) + scatter no entran legibles lado a lado en
    un cuadrado; apilados ambos usan todo el ancho y se leen bien. */
 .share-body { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
-.share-table-col { flex: 1 1 0; min-width: 0; min-height: 0; padding: 6px 14px 10px;
-                   display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.share-body.no-chart .share-table-col { flex: 1 1 0; }
-.share-chart-col { order: -1; flex: 1 1 0; min-width: 0; min-height: 0; padding: 10px 14px 2px;
+/* Foto estilo mockup ×1.5: la tabla usa letra grande FIJA (~19.5px, vía layoutTable) y
+   alto NATURAL; la card crece a lo alto (el overlay scrollea, la foto sale más larga).
+   El gráfico va arriba (order:-1) y fitShareRatio() le fija el alto = CHART_MULT × alto
+   del listado, por panel (0.5 → gráfico 1/3 · tabla 2/3, default ej. CER; 1.0 → 1/2 y 1/2,
+   tasa fija). Por eso los cols son flex:0 0 auto (alto por contenido, no reparto fijo). */
+.share-table-col { flex: 0 0 auto; min-width: 0; padding: 6px 14px 12px;
+                   display: flex; align-items: center; justify-content: center; overflow: visible; }
+.share-body.no-chart .share-table-col { flex: 0 0 auto; }
+.share-chart-col { order: -1; flex: 0 0 auto; min-width: 0; padding: 10px 14px 4px;
                    border-bottom: 1px solid var(--panel-border); display: flex; }
-.share-chart-box { position: relative; width: 100%; height: 100%; }
+.share-chart-box { position: relative; width: 100%; height: 320px; }   /* JS (fitShareRatio) fija el alto real = mitad del de la tabla */
 .share-table-wrap { display: flex; gap: 20px; align-items: center; justify-content: center;
                     font-size: 13px; width: 100%; }
 .share-tbl { width: auto; border-collapse: collapse; font-size: 1em; }
 .share-tbl th, .share-tbl td { text-align: center; white-space: nowrap; }
+/* El thead global de los paneles alinea a la IZQ las 2 primeras columnas
+   (`thead th:first-child/nth-child(2)`, línea ~175). En la FOTO queremos todo
+   centrado para que el header quede sobre su valor; subimos la especificidad
+   (0,2,2 > 0,1,2) para ganarle solo en la tabla de compartir. */
+.share-tbl thead th:first-child, .share-tbl thead th:nth-child(2) { text-align: center; }
 .share-tbl th { padding: .24em .45em; font-size: .82em; font-weight: 700; color: var(--text);
                 text-transform: uppercase; letter-spacing: .3px; background: var(--panel-bg);
                 border-bottom: 2px solid var(--panel-border); }
@@ -382,4 +402,38 @@ table.scen tr.mine td { color: var(--accent); font-weight: 600; }
 .grid-stack-item-content.panel { padding: 0; }
 .panel-body { overflow: auto; flex: 1 1 auto; }
 .grid-stack-item-content .panel-head { flex: 0 0 auto; }
+/* El resize vive sólo en el borde derecho + esquina se (ver init en index.html),
+   así que el fondo queda libre: barra horizontal un poco más gruesa y con realce al
+   hover para agarrarla cómoda (el thumb se ve fino por el padding, pero el área de
+   agarre es de 13px). */
+.panel-body::-webkit-scrollbar { height: 13px; width: 13px; }
+.panel-body::-webkit-scrollbar-thumb { background: var(--scroll-thumb); background-clip: padding-box;
+                                       border: 3px solid transparent; border-radius: 9px; }
+.panel-body::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; }
+
+/* ---- Selector de fuente de datos (BYMA open/realtime/Data912) ---- */
+.source-dd { position: relative; display: inline-flex; }
+.source-dd > summary { list-style: none; cursor: pointer; color: #c7d0ee;
+            font: 600 12.5px var(--font-body); padding: 5px 9px; border-radius: 7px;
+            display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.source-dd > summary::-webkit-details-marker { display: none; }
+.source-dd > summary:hover,
+.source-dd[open] > summary { background: rgba(255,255,255,.12); color: #fff; }
+.src-badge { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 6px; letter-spacing: .3px; }
+.src-delayed { background: #b45309; color: #fff; }
+.src-live { background: #16a34a; color: #fff; }
+.source-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 300;
+            background: var(--panel-bg); color: var(--text); border: 1px solid var(--panel-border);
+            border-radius: 8px; box-shadow: var(--shadow-panel); padding: 6px; min-width: 200px; }
+.source-menu .cfg-item:disabled { opacity: .5; cursor: not-allowed; }
+.src-err { color: #dc2626; font-size: 10.5px; padding: 4px 9px; max-width: 220px; }
+.src-creds { display: flex; flex-direction: column; gap: 5px; padding: 4px 6px 2px; }
+.src-creds-title { font-size: 10px; color: var(--text-dim); text-transform: uppercase;
+                   letter-spacing: .3px; }
+.src-creds input { width: 100%; box-sizing: border-box; padding: 5px 7px; border-radius: 6px;
+                   border: 1px solid var(--panel-border); background: var(--panel-bg);
+                   color: var(--text); font: 12px var(--font-body); }
+.src-creds-save { background: var(--accent); color: #fff; text-align: center; margin-top: 2px; }
+.src-creds-save:hover { filter: brightness(1.08); background: var(--accent); }
+.src-creds-ok { font-size: 11px; color: #16a34a; padding: 3px 9px; font-weight: 600; }
 

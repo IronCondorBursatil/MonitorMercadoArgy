@@ -39,7 +39,13 @@ class GenerateMonitorReport:
         self.repo = instruments_repo
         self.provider = market_provider
 
-    def execute(self, instrument_types: List[str]) -> List[InstrumentMetrics]:
+    def execute(self, instrument_types: List[str],
+                settle_date: Optional[date] = None,
+                settle_lag: int = 1) -> List[InstrumentMetrics]:
+        """Fija la liquidación del plazo elegido EN CONSONANCIA:
+          - `settle_date`: fecha de descuento de TIR/MD (None → T+1; CI → date.today()).
+          - `settle_lag`: plazo BYMA para la indexación CER de V.Téc (1=24hs, 0=CI).
+        Default (None, 1) = convención 24hs actual (sin cambios)."""
         indices = BCRAIndicesProvider(excel_repo=self.repo)
         fx = DolarAPIProvider()
 
@@ -70,7 +76,8 @@ class GenerateMonitorReport:
                     continue
                 snapshot.instrument = inst
                 futures.append(executor.submit(
-                    self._enrich_metrics, inst, snapshot, indices, fx, mep_offer, cable_offer))
+                    self._enrich_metrics, inst, snapshot, indices, fx, mep_offer,
+                    cable_offer, settle_date, settle_lag))
 
             results = [f.result() for f in futures]
 
@@ -79,21 +86,26 @@ class GenerateMonitorReport:
     @staticmethod
     def _sovereign_ars_usd_price(inst: Instrument, snapshot: MarketSnapshot,
                                  mep_offer, cable_offer) -> Optional[float]:
-        """Para la pata ARS de un soberano (BONAR/GLOBAL sin sufijo D/C, que cotiza
-        en pesos) devuelve el precio USD implícito = pesos ÷ offer (MEP si BONAR,
-        CABLE si GLOBAL). None si no aplica o falta el dólar — entonces se usa el
-        precio tal cual (las métricas en ese caso quedan como antes)."""
-        if not snapshot.price or inst.instrument_type not in ("BONAR", "GLOBAL"):
+        """Para la pata PESOS de un soberano hard-dollar (BONAR/GLOBAL/BOPREAL que
+        cotiza en pesos) devuelve el precio USD implícito = pesos ÷ offer. GLOBAL
+        (ley NY) usa CABLE; BONAR y BOPREAL (ley local) usan MEP. None si no aplica o
+        falta el dólar — entonces se usa el precio tal cual.
+
+        La pata pesos se detecta por NO terminar en D/C (MEP/CABLE ya cotizan en USD):
+        BONAR/GLOBAL pesos = sin sufijo (AL30); BOPREAL pesos = base BPO* (BPOC7)."""
+        if not snapshot.price or inst.instrument_type not in ("BONAR", "GLOBAL", "BOPREAL"):
             return None
         if (inst.ticker or "").upper().endswith(("D", "C")):
             return None  # patas MEP/CABLE ya cotizan en USD
-        div = mep_offer if inst.instrument_type == "BONAR" else cable_offer
+        div = cable_offer if inst.instrument_type == "GLOBAL" else mep_offer  # BONAR/BOPREAL → MEP
         if not div or div <= 0:
             return None
         return snapshot.price / div
 
     def _enrich_metrics(self, inst: Instrument, snapshot: MarketSnapshot, indices, fx,
-                        mep_offer=None, cable_offer=None) -> Optional[InstrumentMetrics]:
+                        mep_offer=None, cable_offer=None,
+                        settle_date: Optional[date] = None,
+                        settle_lag: int = 1) -> Optional[InstrumentMetrics]:
         # Per-instrument failures must not abort the whole batch — one bad
         # cashflow row would silently take down every panel under the
         # consolidated execute(). Return None on failure; execute() already
@@ -123,16 +135,21 @@ class GenerateMonitorReport:
                 pricing_snap = snapshot.model_copy(update={"price": usd_px})
 
             metrics = InstrumentMetrics(snapshot=snapshot)
-            metrics.tir = FinancialEngine.calculate_tir(pricing_snap, indices_provider=indices, fx_provider=fx)
+            # settle_date: T+0 (CI) o T+1/default (24hs) → el descuento de TIR/MD usa
+            # la MISMA liquidación que el precio. settle_lag mueve el ref CER de la V.Téc
+            # al mismo plazo (ref de accrued = hoy en ambos, calibración Balanz intacta).
+            metrics.tir = FinancialEngine.calculate_tir(
+                pricing_snap, indices_provider=indices, fx_provider=fx, settle_date=settle_date)
             metrics.technical_value = FinancialEngine.calculate_technical_value(
-                pricing_snap, indices_provider=indices, fx_provider=fx,
+                pricing_snap, indices_provider=indices, fx_provider=fx, settle_lag=settle_lag,
             )
 
             if metrics.technical_value and pricing_snap.price:
                 metrics.parity = pricing_snap.price / metrics.technical_value
 
             if metrics.tir is not None:
-                metrics.duration = FinancialEngine.calculate_duration(pricing_snap, metrics.tir)
+                metrics.duration = FinancialEngine.calculate_duration(
+                    pricing_snap, metrics.tir, settle_date=settle_date)
 
             metrics.variance_7d = FinancialEngine.calculate_pct_change(snapshot.price, px_7d)
             metrics.variance_30d = FinancialEngine.calculate_pct_change(snapshot.price, px_30d)

@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover
     Old = None
 
 from core.infrastructure.repositories import ExcelInstrumentsRepository
-from config.settings import MASTER_XLSX
+from config.settings import settings
 
 
 class MockIndices:
@@ -83,7 +83,7 @@ def _close(a, b, tol=1e-7):
 
 @pytest.fixture(scope="module")
 def instruments():
-    return ExcelInstrumentsRepository(MASTER_XLSX).get_all_instruments()
+    return ExcelInstrumentsRepository(str(settings.master_xlsx)).get_all_instruments()
 
 
 @pytest.mark.skipif(Old is None, reason="legacy engine not available")

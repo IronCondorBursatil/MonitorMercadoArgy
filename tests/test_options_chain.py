@@ -5,9 +5,11 @@ from core.domain.options.chain import build_options, underlyings_summary, months
 from core.infrastructure.schemas import Data912Row
 
 
-def _row(symbol, c=0.0, px_bid=0.0, px_ask=0.0, v=0.0, q_op=0, pct_change=0.0):
+def _row(symbol, c=0.0, px_bid=0.0, px_ask=0.0, v=0.0, q_op=0, pct_change=0.0,
+         oi=None, opt_kind=None, opt_underlying=None, opt_expiry=None):
     return Data912Row(symbol=symbol, c=c, px_bid=px_bid, px_ask=px_ask,
-                      v=v, q_op=q_op, pct_change=pct_change)
+                      v=v, q_op=q_op, pct_change=pct_change, oi=oi, opt_kind=opt_kind,
+                      opt_underlying=opt_underlying, opt_expiry=opt_expiry)
 
 
 def test_build_options_basic():
@@ -49,6 +51,30 @@ def test_build_skips_missing_spot():
     opts = {"GFGC68806J": _row("GFGC68806J", c=480, px_bid=475, px_ask=480)}
     items = build_options(opts, {}, N=20)
     assert items == []
+
+
+def test_build_uses_byma_underlying_for_unmapped_root():
+    """Con underlyingSymbol de BYMA, un root NO mapeado en roots.py (VIS→VIST)
+    sobrevive — la profundidad que el camino Data912 perdía silenciosamente."""
+    opts = {"VISC8000AG": _row("VISC8000AG", c=120, px_bid=115, px_ask=125,
+                               oi=987, opt_kind="C", opt_underlying="VIST",
+                               opt_expiry="2026-08-21")}
+    stocks = {"VIST": _row("VIST", c=9000)}
+    items = build_options(opts, stocks, r=0.0, N=20)
+    assert len(items) == 1
+    it = items[0]
+    assert it.underlying == "VIST"
+    assert it.kind == "C"
+    assert it.open_interest == 987.0              # OI REAL de BYMA (no el q_op)
+    assert it.expiry.isoformat() == "2026-08-21"  # maturityDate exacta
+
+
+def test_open_interest_falls_back_to_q_op_without_byma_oi():
+    """Fila estilo Data912 (sin oi) → open_interest cae a q_op (back-compat)."""
+    opts = {"GFGC68806J": _row("GFGC68806J", c=480, px_bid=475, px_ask=480, q_op=1324)}
+    stocks = {"GGAL": _row("GGAL", c=7220)}
+    items = build_options(opts, stocks, r=0.0, N=20)
+    assert items[0].open_interest == 1324.0
 
 
 def test_underlyings_summary_sorts_by_volume():

@@ -31,7 +31,7 @@
         <div class="share-table-col">
           <div class="share-table-wrap">
             <table class="share-tbl">
-              <thead><tr>{% for c in columns %}<th class="{{ 'tircol' if tir_hl and c['key'] == 'tir' else '' }}">{{ c.label }}</th>{% endfor %}</tr></thead>
+              <thead><tr>{% for c in columns %}<th class="{{ 'tircol' if c['key'] == hl_key else '' }}">{{ c.label }}</th>{% endfor %}</tr></thead>
               <tbody>
                 {% for r in rows %}
                 <tr>{% for c in r.cells %}<td class="{{ c.cls }}">{{ c.text }}</td>{% endfor %}</tr>
@@ -245,13 +245,27 @@
         if (restoreBtn) restoreBtn.addEventListener("click", function () { removed = {}; applyRemovals(); });
       }
 
-      // ---- Acomodar la tabla en su zona: si es muy larga la parte en columnas
-      //      lado a lado (estilo diario) y escala el font para que TODA entre. ---
+      // ---- Foto estilo mockup ×1.5: una sola tabla con letra grande FIJA (~19.5px,
+      //      = ×1.5 del 13px base) y alto NATURAL; la card crece a lo alto (el overlay
+      //      scrollea, la foto sale más larga). El gráfico va arriba; fitShareRatio() le
+      //      fija el alto = CHART_MULT × alto del listado (del server, por panel):
+      //      0.5 → gráfico 1/3 · tabla 2/3 (default, ej. CER); 1.0 → 1/2 y 1/2 (tasa fija). ----
+      var CHART_MULT = {{ chart_mult|default(0.5) }};
+      function fitShareRatio() {
+        var tcol = card.querySelector(".share-table-col");
+        var ccol = card.querySelector(".share-chart-col");
+        var box = card.querySelector(".share-chart-box");
+        if (!tcol || !ccol || !box) return;                  // sin gráfico no hay ratio que fijar
+        var Ht = tcol.getBoundingClientRect().height;         // alto del listado
+        var extra = ccol.getBoundingClientRect().height - box.getBoundingClientRect().height;  // padding/borde del chart-col
+        if (Ht > 0) box.style.height = Math.max(120, CHART_MULT * Ht - extra).toFixed(1) + "px";
+        if (chart) chart.resize();                            // el canvas re-escala a su nuevo alto
+      }
       function layoutTable() {
         var col = card.querySelector(".share-table-col");
         var wrap = card.querySelector(".share-table-wrap");
         if (!col || !wrap) return;
-        // 1) consolidar todo en la 1ª tabla (deshace un split previo de un re-fit)
+        // consolidar todo en la 1ª tabla (deshace un split previo)
         var tables = wrap.querySelectorAll("table.share-tbl");
         var main = tables[0]; if (!main) return;
         var body = main.querySelector("tbody");
@@ -260,54 +274,20 @@
           for (var j = 0; j < rs.length; j++) body.appendChild(rs[j]);
           tables[i].remove();
         }
-        main.style.width = ""; main.style.height = "";   // limpia estirados previos (re-fit)
-        wrap.style.fontSize = "13px";
-        var availW = col.clientWidth - 28, availH = col.clientHeight - 24;
-        var natW = main.offsetWidth, natH = main.offsetHeight;
-        if (natW <= 0 || natH <= 0) return;
-        // 2) Elegimos el MAYOR nº de columnas (1-4) cuyo listado, escalado para LLENAR
-        //    el ALTO, todavía entra en el ancho. Así la fuente la limita el alto (renglones
-        //    llenos, letra grande) y NO el ancho (renglones estirados con letra chica).
-        //    Pocos renglones (soberanos, 14) → 1 columna; CER (26) → 2; ON → 3-4.
-        var totalRows = body.querySelectorAll("tr").length, gap0 = 20, n = 1;
-        for (var cn = 4; cn >= 1; cn--) {
-          var rpc = Math.ceil(totalRows / cn);
-          var wN = cn * natW + (cn - 1) * gap0;
-          var hN = natH * (rpc + 1) / (totalRows + 1);          // alto del sub-listado (+header)
-          if (wN / hN <= availW / availH) { n = cn; break; }
-        }
-        // 3) repartir las filas en n tablas lado a lado
-        if (n > 1) {
-          var allRows = Array.prototype.slice.call(body.querySelectorAll("tr"));
-          var per = Math.ceil(allRows.length / n);
-          for (var g = 1; g < n; g++) {
-            var t = document.createElement("table");
-            t.className = "share-tbl";
-            t.appendChild(main.querySelector("thead").cloneNode(true));
-            t.appendChild(document.createElement("tbody"));
-            wrap.appendChild(t);
-          }
-          var groups = wrap.querySelectorAll("table.share-tbl");
-          for (var gi = 0; gi < groups.length; gi++) groups[gi].querySelector("tbody").innerHTML = "";
-          for (var r = 0; r < allRows.length; r++)
-            groups[Math.min(n - 1, Math.floor(r / per))].querySelector("tbody").appendChild(allRows[r]);
-        }
-        // 4) escalar el font (tablas a ancho natural) para que entre todo en el hueco
-        wrap.style.fontSize = "13px";
-        var w = wrap.scrollWidth, h = wrap.scrollHeight;
-        if (w <= 0 || h <= 0) return;
-        var k = Math.min(availW / w, availH / h);
-        wrap.style.fontSize = Math.max(5, Math.min(40, 13 * k * 0.99)).toFixed(2) + "px";
-        // 5) estirar cada tabla para llenar el ancho (mismo ancho que el chart)
-        var gap = 20, groupsF = wrap.querySelectorAll("table.share-tbl");
-        var groupW = (availW - gap * (groupsF.length - 1)) / groupsF.length;
-        for (var gf = 0; gf < groupsF.length; gf++) groupsF[gf].style.width = groupW.toFixed(1) + "px";
-        // 6) estirar cada tabla a TODO el alto disponible → filas más altas (misma
-        //    fuente, ya fijada arriba) y el listado llega hasta el fondo de la imagen.
-        for (var gh = 0; gh < groupsF.length; gh++) groupsF[gh].style.height = availH + "px";
+        main.style.width = ""; main.style.height = "";        // medir a ancho natural
+        // Letra grande fija (~×1.5). Si la tabla no entra a lo ancho, se reduce sólo lo
+        // necesario. El alto queda natural → la card crece (la foto sale más larga).
+        var availW = col.clientWidth - 28, TARGET = 19.5;
+        wrap.style.fontSize = TARGET + "px";
+        var natW = main.scrollWidth;
+        var fs = (natW > availW && natW > 0) ? Math.max(8, TARGET * availW / natW) : TARGET;
+        wrap.style.fontSize = fs.toFixed(2) + "px";
+        main.style.width = availW + "px";                     // estira la tabla a TODO el ancho (= ancho del gráfico)
+        fitShareRatio();                                      // gráfico arriba = 1/3 del alto
       }
       requestAnimationFrame(function () { requestAnimationFrame(layoutTable); });
       setTimeout(layoutTable, 80);
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutTable);
 
       // ---- Guardar PNG (html2canvas; en el clon pasamos a layout en bloque con
       //      alturas explícitas y dejamos el canvas del chart tal cual — cross-browser).
@@ -317,8 +297,19 @@
         saveBtn.disabled = true;
         layoutTable();
         var bg = getComputedStyle(card).backgroundColor || (dark ? "#0f1b3a" : "#ffffff");
-        var side = card.offsetWidth || 1120;
-        var scale = Math.max(2, Math.min(6, Math.round(3000 / side)));   // ~3000px de lado
+        var side = Math.max(card.offsetWidth, card.offsetHeight) || 1120;   // lado largo (la card ahora crece a lo alto)
+        // Foto ~8K en el lado largo (antes ~3000px). El gráfico se re-renderiza a dpr alto
+        // (= scale) para que el scatter/curva salgan nítidos a esa resolución; se restaura
+        // al terminar (el dpr en pantalla es ~2.5, no hace falta tan alto en vivo).
+        var scale = Math.max(3, Math.min(12, Math.round(7680 / side)));
+        var prevDpr = null;
+        if (chart) { prevDpr = chart.options.devicePixelRatio; chart.options.devicePixelRatio = scale; chart.resize(); }
+        function restore() {
+          if (chart && prevDpr != null) { chart.options.devicePixelRatio = prevDpr; chart.resize(); }
+          saveBtn.disabled = false;
+        }
+        // 2 rAF: dejar que el chart.resize() a dpr alto se pinte antes de capturar.
+        requestAnimationFrame(function () { requestAnimationFrame(function () {
         html2canvas(card, {
           scale: scale, backgroundColor: bg, useCORS: true, logging: false,
           // En el clon (no en el vivo) reemplazo el <canvas> del gráfico por un
@@ -368,7 +359,8 @@
             setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
           }, "image/png");
         }).catch(function (err) { console.error("share", err); alert("Error generando la imagen: " + err); })
-          .finally(function () { saveBtn.disabled = false; });
+          .finally(restore);
+        })});
       });
     })();
   </script>

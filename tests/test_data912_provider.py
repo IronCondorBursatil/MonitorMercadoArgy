@@ -1,7 +1,6 @@
 """Tests del `Data912MarketDataProvider` — focus en dedup logging state
 machine y cache merge (no wipe on outage)."""
 
-import time
 from unittest.mock import patch
 
 import pytest

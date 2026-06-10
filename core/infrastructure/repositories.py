@@ -232,12 +232,16 @@ def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Ins
     ley_raw = _first_present(row, ("ley_aplicable", "ley aplicable", "ley"))
     ley = str(ley_raw).strip() if (ley_raw is not None and not _isna(ley_raw)) else None
 
+    isin_raw = _first_present(row, ("isin", "codigoisin", "codigo_isin"))
+    isin = str(isin_raw).strip().upper() if (isin_raw is not None and not _isna(isin_raw)) else None
+
     return Instrument(
         ticker=raw_ticker, short_name=short, instrument_type=itype,
         maturity_date=m_date, emission_date=e_date, cashflows=cashflows,
         cer_base=cer_b, cer_lag=lag_val, category=category,
         floor_rate_monthly=floor, spread_rate=spread, cer_spread=cer_spread_val,
         payment_frequency=freq, day_count=day_count, ley_aplicable=ley or None,
+        isin=isin or None,
     )
 
 

@@ -19,6 +19,9 @@ class AppState:
         self._bei: Optional[dict] = None  # tablas crudas de compute_bei_tables
         self._options: list = []          # list[OptionItem] del último refresh (vacío hasta que arme)
         self._options_by_ticker: Dict[str, object] = {}
+        # Fuente de datos activa (mode/label/delayed) — la setea el lifespan y el
+        # endpoint de switch; el header la muestra.
+        self._data_source: Dict[str, object] = {"mode": "", "label": "", "delayed": False}
         self._lock = asyncio.Lock()
         # Notificación para SSE (§7.4): cada update incrementa _revision y
         # despierta a los suscriptores de /stream (push event-driven vs polling).
@@ -72,10 +75,23 @@ class AppState:
     def bei_tables(self) -> Optional[dict]:
         return self._bei
 
+    def set_data_source(self, mode: str, label: str, delayed: bool) -> None:
+        """Setea la fuente de datos activa (un solo escritor a la vez)."""
+        self._data_source = {"mode": mode, "label": label, "delayed": bool(delayed)}
+
+    def data_source(self) -> Dict[str, object]:
+        return dict(self._data_source)
+
     def set_options(self, items: list) -> None:
-        """Setea la chain enriquecida de opciones (escrita por el refresh loop)."""
-        self._options = items or []
-        self._options_by_ticker = {it.ticker: it for it in self._options}
+        """Setea la chain enriquecida de opciones (escrita por el refresh loop).
+
+        Construye el índice ANTES de publicar las referencias: los lectores
+        (option()/options(), que corren en el thread pool de FastAPI) ven siempre
+        un dict completo y coherente, nunca uno a medio llenar."""
+        items = items or []
+        by_ticker = {it.ticker: it for it in items}
+        self._options = items
+        self._options_by_ticker = by_ticker
 
     def options(self) -> list:
         return self._options

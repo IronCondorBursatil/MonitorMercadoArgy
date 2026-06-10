@@ -7,7 +7,6 @@ que vimos en Balanz para S29Y6 (TNA 21.09%).
 from datetime import date
 
 import numpy as np
-import pytest
 
 from core.domain.models import Cashflow, Instrument, MarketSnapshot
 from core.domain.services import FinancialEngine
