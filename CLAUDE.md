@@ -15,8 +15,10 @@ Bopreales, Futuros DLR, BEI, Panel Líder) + Cartera + ABM. Precios de **Data912
 # Python 3.12 del sistema (el de Programs; `py -3.12` resuelve a él). El antiguo
 # "Microsoft Store Python" ya NO existe en esta máquina — ver memoria env_python_interpreter.
 $py = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"   # o simplemente: py -3.12
+& $py -m pip install -r requirements.lock   # instalación reproducible (versiones fijas)
 & $py run.py                          # levanta uvicorn → http://localhost:8000
-& $py -m pytest tests/ -q             # tests (137)
+& $py -m pytest tests/ -q             # tests (~1270)
+pwsh scripts/check.ps1                # GATE: ruff + pytest (antes de cerrar branch)
 & $py scripts/ingest_master.py        # Excel → SQLite (cuando editás el master a mano)
 ```
 
@@ -91,6 +93,30 @@ enriquecido + AUM ArgentinaDatos + lente A3500/CER + flujos reales de `fci_histo
   refresca el cache en memoria desde SQLite. Para cambiar datos ya en la DB: ABM o migración explícita, no re-seed.
 - **Intérprete Python**: usar `py -3.12` / `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`. Ver memoria `env_python_interpreter`. (El viejo "Store Python" ya no existe; sus deps se reinstalaron acá.)
 - **OneDrive**: nada de venv ni `.db` dentro del proyecto.
+- **Schema del catálogo = FORWARD-ONLY**: `init_db` reconcilia con el ORM agregando
+  columnas faltantes (`ALTER ADD COLUMN`), **nunca** dropea — un drop borraría las altas
+  ABM (que viven solo en la DB). Para transformar datos existentes: migración versionada
+  (`CURRENT_SCHEMA_VERSION` + `schema_meta`), jamás recrear. Ver `db/catalog_repository.py`.
+
+## Robustez / Operaciones
+
+- **Backup del catálogo**: snapshot online (consistente con WAL) 1×/día al arrancar,
+  rota a `settings.backup_keep` (7) en `%LOCALAPPDATA%\monitor\backups`. Restore:
+  `scripts/restore_catalog.py`. Ver `core/infrastructure/db/backup.py`.
+- **Verificación TLS por host** (`core/infrastructure/_tls.py`): se **verifica por
+  defecto** (anti-MITM); solo saltea los hosts con cadena rota (endpoints BYMA
+  addin/open — verificado en vivo). Override `MONITOR_TLS_NO_VERIFY_HOSTS`. NO volver a
+  poner `verify=False` global.
+- **Observabilidad**: si el refresh loop falla, `AppState.record_error` lo registra y el
+  header lo muestra (badge `/health/badge` verde/ámbar/rojo) + `/api/health` da
+  `status`/`is_stale`/`last_error`. La app sigue sirviendo el último snapshot bueno.
+- **Gate de calidad**: `scripts/check.ps1` (ruff + pytest). Correrlo antes de cerrar
+  branch. `requirements.lock` = instalación reproducible.
+- **Fecha fija en tests** (`tests/_clock.py`): los tests de equivalencia/golden usan
+  una fecha de referencia fija (no `date.today()`) para no caducar. Override
+  `MONITOR_TEST_REF_DATE=YYYY-MM-DD|today`.
+- **Secretos**: credenciales BYMA del usuario en `.env` (gitignored). El client OAuth
+  del addin (no secreto, sale del `.xll` público) en `settings.byma_client_*`.
 
 ## Flujo Superpowers (método de trabajo)
 
