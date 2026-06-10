@@ -20,7 +20,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_fx, get_indices, get_state
-from config.settings import settings
 from core.infrastructure.argentinadatos_provider import get_provider as get_argdatos
 
 router = APIRouter()
@@ -107,6 +106,6 @@ def header_cards(request: Request, fx=Depends(get_fx), indices=Depends(get_indic
 def health_badge(request: Request, state=Depends(get_state)):
     """Indicador de frescura para el header (O1): verde = al día, ámbar = datos
     viejos, rojo = último refresh con error. Se poll-ea cada 15s desde base.html →
-    presente en todas las páginas. Stale = sin refresh en 6 ciclos."""
-    st = state.status(stale_after_s=settings.refresh_sec * 6)
+    presente en todas las páginas. Umbral centralizado en AppState.status()."""
+    st = state.status()
     return _TEMPLATES.TemplateResponse(request, "fragments/header_status.html", {"st": st})

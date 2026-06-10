@@ -363,9 +363,8 @@ app.include_router(stream.router)
 
 @app.get("/api/health")
 def health(repo=Depends(get_repo), state=Depends(get_state)):
-    # Stale si el último refresh es más viejo que 6 ciclos (tolera blips transitorios
-    # del breaker sin alarmar). status() trae age/is_stale/last_error.
-    st = state.status(stale_after_s=settings.refresh_sec * 6)
+    # Umbral de staleness centralizado en AppState.status() (6 ciclos de refresh).
+    st = state.status()
     return {
         "status": "ok" if st["ok"] else "degraded",
         "instruments": len(repo.get_all_instruments()),

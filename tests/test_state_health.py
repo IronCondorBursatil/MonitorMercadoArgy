@@ -44,16 +44,34 @@ def test_age_beyond_threshold_is_stale():
     asyncio.run(run())
 
 
-def test_record_error_is_observable_and_bumps_revision():
+def test_record_error_is_observable_without_sse_notify():
+    """F2 (review): record_error NO debe bumpear revision — cada fallo de ciclo
+    despertaba a todos los paneles SSE para re-fetchear data sin cambios (~12K
+    requests/min en outage con K paneles); el badge se entera por su propio polling."""
     async def run():
         st = AppState()
         await st.update([])            # revision → 1, ok
         await st.record_error("boom: data912 timeout")
-        assert st.revision == 2, "un error debe notificar a los suscriptores SSE"
+        assert st.revision == 1, "un fallo de ciclo no debe despertar a los paneles SSE"
         s = st.status(stale_after_s=30)
         assert s["last_error"].startswith("boom")
         assert s["last_error_at"] is not None
         assert s["ok"] is False, "con error pendiente, ok=False aunque la data sea reciente"
+    asyncio.run(run())
+
+
+def test_error_pair_is_atomic():
+    """F7 (review): el par (mensaje, timestamp) debe publicarse como UNA asignación
+    (tupla) — un lector concurrente nunca ve mensaje seteado con timestamp None."""
+    async def run():
+        st = AppState()
+        await st.record_error("x")
+        s = st.status(stale_after_s=30)
+        # par consistente: o ambos seteados o ambos None
+        assert (s["last_error"] is None) == (s["last_error_at"] is None)
+        # la implementación expone el par como un solo atributo (asignación atómica)
+        assert not hasattr(st, "_last_error"), \
+            "el par debe vivir en UN atributo (p.ej. _error) para lectura atómica"
     asyncio.run(run())
 
 
@@ -72,3 +90,21 @@ def test_error_message_is_bounded():
     st = AppState()
     asyncio.run(st.record_error("x" * 5000))
     assert len(st.status(stale_after_s=30)["last_error"]) <= 300
+
+
+def test_status_default_threshold_comes_from_settings():
+    """F9 (review): el umbral de staleness vive en UN lugar (default de status()
+    desde settings), no copiado en cada endpoint (app.py health + header badge)."""
+    from config.settings import settings
+
+    async def run():
+        st = AppState()
+        await st.update([])
+        s = st.status()                      # sin arg → default centralizado
+        assert s["is_stale"] is False
+        # umbral efectivo = refresh_sec * 6 (la convención existente)
+        future = datetime.now() + timedelta(seconds=settings.refresh_sec * 6 + 1)
+        assert st.status(now=future)["is_stale"] is True
+        just_under = datetime.now() + timedelta(seconds=settings.refresh_sec * 6 - 1)
+        assert st.status(now=just_under)["is_stale"] is False
+    asyncio.run(run())
