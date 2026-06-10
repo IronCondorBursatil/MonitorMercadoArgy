@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from apps.web.app import app
 from apps.web.routers import panels
+from apps.web.routers import panels_schema   # column schemas (movidos de panels)
 from core.domain.models import Cashflow, Instrument, MarketSnapshot, InstrumentMetrics
 
 
@@ -67,7 +68,7 @@ def test_build_rows_for_cer_panel():
 
 def test_bonares_panel_has_return_columns_colored():
     # Soberanos USD/Bopreales llevan las ventanas de rendimiento (Sem/1M/3M/YTD/1A).
-    labels = [c["label"] for c in panels._SOBERANO_USD_COLS]
+    labels = [c["label"] for c in panels_schema._SOBERANO_USD_COLS]
     assert labels[labels.index("%Día") + 1: labels.index("Vol $")] == \
         ["Sem", "1M", "3M", "YTD", "1A"]
 
@@ -84,26 +85,26 @@ def test_bonares_panel_has_return_columns_colored():
     assert "—" in cells                                # YTD sin dato → "—" sin color
 
     # Dólar Linked NO las lleva (sin histórico): mismas columnas que _BONARES_COLS.
-    assert panels.PANELS["dolar_linked"][2] is panels._BONARES_COLS
-    assert "Sem" not in [c["label"] for c in panels._BONARES_COLS]
+    assert panels.PANELS["dolar_linked"][2] is panels_schema._BONARES_COLS
+    assert "Sem" not in [c["label"] for c in panels_schema._BONARES_COLS]
 
 
 def test_share_popup_drops_inapplicable_cols_for_soberanos_only():
     """La foto de soberanos hard-dollar (bonares/bopreales) omite TNA/TEM/V.Téc/Días
     (se comparan por TIR); Tasa Fija conserva TNA/TEM (su métrica core)."""
     for pid in ("bonares", "bopreales"):
-        keys = {c["key"] for c in panels._share_full_cols(panels._SOBERANO_USD_COLS, pid)}
+        keys = {c["key"] for c in panels._share_full_cols(panels_schema._SOBERANO_USD_COLS, pid)}
         assert keys.isdisjoint({"tna", "tem", "technical_value", "dias"})
         assert "tir" in keys and "ticker" in keys           # lo core se conserva
     # Tasa Fija las conserva (no está en _SHARE_DROP_COLS)
-    tf_keys = {c["key"] for c in panels._share_full_cols(panels._TASA_FIJA_COLS, "tasa_fija")}
+    tf_keys = {c["key"] for c in panels._share_full_cols(panels_schema._TASA_FIJA_COLS, "tasa_fija")}
     assert {"tna", "tem"} <= tf_keys
 
 
 def test_share_popup_drops_inapplicable_cols_for_cer():
     """La foto CER omite V.Téc/TNA/TEM/Próx Cup (CER se compara por TIR real; esas
     columnas agregan ruido) pero conserva Días, Precio, Paridad, TIR y DM."""
-    keys = {c["key"] for c in panels._share_full_cols(panels._CER_COLS, "cer")}
+    keys = {c["key"] for c in panels._share_full_cols(panels_schema._CER_COLS, "cer")}
     assert keys.isdisjoint({"technical_value", "tna", "tem", "days_next_coupon"})
     assert {"ticker", "dias", "price", "parity", "tir", "duration"} <= keys
 
