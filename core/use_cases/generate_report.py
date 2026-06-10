@@ -8,6 +8,7 @@ from core.domain.models import Instrument, InstrumentMetrics, MarketSnapshot
 from core.domain.services import FinancialEngine
 from core.infrastructure.fx_provider import DolarAPIProvider
 from core.infrastructure.indices_provider import BCRAIndicesProvider
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class GenerateMonitorReport:
         tickers = [i.ticker for i in all_instruments]
         snapshots_dict = self.provider.fetch_snapshots(tickers)
 
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=settings.engine_workers) as executor:
             futures = []
             for inst in all_instruments:
                 snapshot = snapshots_dict.get(inst.ticker)
