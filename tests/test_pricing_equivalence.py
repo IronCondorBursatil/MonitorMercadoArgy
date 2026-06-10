@@ -25,12 +25,13 @@ except Exception:  # pragma: no cover
 
 from core.infrastructure.repositories import ExcelInstrumentsRepository
 from config.settings import settings
+from tests._clock import ref_date  # fecha fija anti-decaimiento (M0.1)
 
 
 class MockIndices:
     """IndicesProvider determinista. CER monótono creciente; TAMAR constante."""
     def __init__(self):
-        today = date.today()
+        today = ref_date()
         # Serie reciente para el fallback "future = última observada".
         self._cache_tamar = {today - timedelta(days=i): 30.0 for i in range(0, 6)}
 
@@ -89,13 +90,13 @@ def instruments():
 @pytest.mark.skipif(Old is None, reason="legacy engine not available")
 def test_pricing_equivalence_all_instruments(instruments):
     idx, fx = MockIndices(), MockFx()
-    settle = date.today() + timedelta(days=1)
-    ref = date.today()
+    settle = ref_date() + timedelta(days=1)
+    ref = ref_date()
     mismatches = []
 
     for inst in instruments:
         for price in (95.0, 130.0, 158.2):
-            snap = MarketSnapshot(instrument=inst, price=price, last_update=date.today())
+            snap = MarketSnapshot(instrument=inst, price=price, last_update=ref_date())
 
             checks = {
                 "tir": (
@@ -133,7 +134,7 @@ def test_pricing_equivalence_all_instruments(instruments):
 @pytest.mark.skipif(Old is None, reason="legacy engine not available")
 def test_metrics_equivalence(instruments):
     idx = MockIndices()
-    ref = date.today()
+    ref = ref_date()
     mismatches = []
     for inst in instruments:
         # `days_coupon` y `current_yield` se sacaron a propósito: son métricas de
@@ -178,9 +179,9 @@ def test_recompute_and_tir_from_price_smoke(instruments):
     """Los wrappers que el legacy no puede correr (usan dataclasses.replace) al
     menos no crashean en el motor nuevo y son consistentes con calculate_*."""
     idx, fx = MockIndices(), MockFx()
-    settle = date.today() + timedelta(days=1)
+    settle = ref_date() + timedelta(days=1)
     for inst in instruments:
-        snap = MarketSnapshot(instrument=inst, price=120.0, last_update=date.today())
+        snap = MarketSnapshot(instrument=inst, price=120.0, last_update=ref_date())
         # tir_from_price == calculate_tir con ese precio
         t1 = New.calculate_tir(snap, idx, fx, settle_date=settle)
         t2 = New.tir_from_price(snap, 120.0, idx, fx, settle_date=settle)
