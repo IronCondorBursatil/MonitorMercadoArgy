@@ -49,11 +49,31 @@ class MockFx:
         return 1100.0
 
 
+class _FrozenDate(date):
+    """Subclase de date con today() fijo a ref_date(): congela el `date.today()`
+    interno del motor LEGACY (que importa `from datetime import date`). Constructores
+    y comparaciones se heredan intactos — solo cambia today()."""
+    @classmethod
+    def today(cls):
+        rd = ref_date()
+        return cls(rd.year, rd.month, rd.day)
+
+
 @pytest.fixture(autouse=True)
-def _clear_pricing_caches():
-    """El avg TAMAR se cachea por (start,end,forecast) SIN identidad del provider.
-    Otros tests (bond_detail, cartera) computan con índices reales y dejan el cache
-    sucio → acá forzamos recomputo con MockIndices. Limpia motor nuevo + legacy."""
+def _frozen_clock_and_clean_caches(monkeypatch):
+    """Anti-decaimiento COMPLETO (F1): congela el "hoy" de AMBOS motores a ref_date —
+    el nuevo vía MONITOR_AS_OF (core/domain/clock.py: avg TAMAR, project_cer_at,
+    síntesis de cashflows) y el legacy parcheando su símbolo `date` con _FrozenDate.
+    Sin esto, el settle congelado (M0.1) no alcanzaba: la ventana de promedio TAMAR
+    (`past_end = min(today, ...)`) y la extrapolación CER derivaban con el reloj real
+    y los valores del test cambiaban con la fecha de corrida.
+
+    Además limpia los caches de pricing: el avg TAMAR se cachea por
+    (start,end,forecast) SIN identidad del provider — otros tests (bond_detail,
+    cartera) computan con índices reales y dejarían el cache sucio. Al salir, el
+    day-check de los caches (keyed por today) los auto-invalida para los módulos
+    siguientes (vuelven al today real)."""
+    monkeypatch.setenv("MONITOR_AS_OF", ref_date().isoformat())
     from core.domain import conventions
     from core.domain.pricing import tamar
     tamar._AVG_TAMAR_CACHE.clear()
@@ -62,11 +82,22 @@ def _clear_pricing_caches():
     conventions._SETTLE_CACHE_DAY = None
     if Old is not None:
         import tests._legacy_engine as L
+        monkeypatch.setattr(L, "date", _FrozenDate)
         L._AVG_TAMAR_CACHE.clear()
         L._AVG_TAMAR_DAY = None
         L._SETTLE_CACHE.clear()
         L._SETTLE_CACHE_DAY = None
     yield
+
+
+def test_both_engines_see_frozen_today():
+    """Guard del congelamiento: si alguien des-congela un motor, esto falla antes
+    de que la equivalencia se vuelva date-dependent en silencio."""
+    from core.domain.clock import today as domain_today
+    assert domain_today() == ref_date(), "motor nuevo: MONITOR_AS_OF no aplicado"
+    if Old is not None:
+        import tests._legacy_engine as L
+        assert L.date.today() == ref_date(), "motor legacy: date.today() sin congelar"
 
 
 def _close(a, b, tol=1e-7):

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from dateutil.relativedelta import relativedelta
 
+from core.domain.clock import today as _domain_today
 from core.domain.models import Cashflow
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,9 @@ def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
     Day-count según `base calculo`: ACT/365, ACT/365.25, 30/360 o igual-período.
     """
     coupon_rate = _parse_coupon_rate(
-        row.get("cupon anual %", row.get("cupon")), asof=date.today()
+        # clock inyectable (F1): el asof del step-up congelable vía MONITOR_AS_OF —
+        # sin esto el universo sintetizado por los tests deriva con el reloj real.
+        row.get("cupon anual %", row.get("cupon")), asof=_domain_today()
     )
     if coupon_rate is None:
         return []

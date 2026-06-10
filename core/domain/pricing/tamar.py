@@ -17,6 +17,7 @@ import threading
 from datetime import date, timedelta
 from typing import Optional
 
+from core.domain.clock import today as _domain_today
 from core.domain.conventions import days_30_360, tamar_tem
 from core.domain.xirr import _JULIAN_YEAR
 
@@ -25,7 +26,7 @@ def project_cer_at(target_date: date, indices_provider) -> Optional[float]:
     """Extrapolación COMPUESTA del índice CER a una fecha futura: toma el
     crecimiento de los últimos 30 días y lo capitaliza `(1+g)^meses`. Coarse para
     duals TXMJ* (vencen 2-3 años), pero su TIR queda acotada por el rail TAMAR."""
-    today = date.today()
+    today = _domain_today()   # clock inyectable (F1): congelable vía MONITOR_AS_OF
     cer_today = indices_provider.get_cer(today)
     cer_30_ago = indices_provider.get_cer(today - timedelta(days=30))
     if not cer_today or not cer_30_ago or cer_30_ago <= 0:
@@ -59,7 +60,7 @@ def avg_tamar_tna(
     global _AVG_TAMAR_DAY
     if period_end <= period_start:
         return None
-    today = date.today()
+    today = _domain_today()   # clock inyectable (F1): congelable vía MONITOR_AS_OF
     key = (period_start, period_end, forecast_tna)
     with _AVG_TAMAR_LOCK:
         if _AVG_TAMAR_DAY != today:
