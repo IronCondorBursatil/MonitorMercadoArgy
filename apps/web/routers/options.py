@@ -13,7 +13,6 @@ y calcula payoff/griegos en el browser (mismo modelo que en los mocks).
 """
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -23,6 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from apps.web.json_script import json_for_script
 from apps.web.deps import get_state
 from core.domain.options.analytics import run_analytics
 from core.domain.options.chain import months_for, underlyings_summary
@@ -61,7 +61,7 @@ def _chain_data(items: list, underlying: str, month: str) -> dict:
     if 0 <= atm_idx < len(rows):
         rows[atm_idx]["is_atm"] = True
     return {"rows": rows, "spot": spot, "n": len(items_u),
-            "chain_json": json.dumps([it.to_dict() for it in items_u])}
+            "chain_json": json_for_script([it.to_dict() for it in items_u])}
 
 
 # ── Página principal ────────────────────────────────────────────────────────
@@ -118,8 +118,8 @@ def options_smile(request: Request, u: str = Query(""), v: str = Query(""),
     return _TEMPLATES.TemplateResponse(
         request, "fragments/options_smile.html",
         {"underlying": u, "month": v,
-         "pts_call_json": json.dumps(pts_call),
-         "pts_put_json": json.dumps(pts_put)},
+         "pts_call_json": json_for_script(pts_call),
+         "pts_put_json": json_for_script(pts_put)},
     )
 
 

@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
+from apps.web.json_script import json_for_script
 from apps.web.deps import get_fx, get_indices, get_provider, get_rofex, get_state
 from config.settings import settings
 from core.holiday_engine import settlement_byma_date
@@ -46,15 +47,6 @@ _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.paren
 _LAYOUT_FILE = str(Path(str(settings.catalog_db)).parent / "dashboard_layout.json")
 
 
-def _json_for_script(obj) -> str:
-    """json.dumps seguro para embeber en un <script>: escapa < > & y los separadores
-    de línea U+2028/U+2029 a \\uXXXX. Siguen siendo JSON válido (parsean al mismo
-    valor) pero ya no pueden cerrar el tag ni romper el parser JS (mitiga XSS, S4)."""
-    return (json.dumps(obj, ensure_ascii=False)
-            .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-            .replace(" ", "\\u2028").replace(" ", "\\u2029"))
-
-
 def _read_default_layout() -> str:
     """JSON del layout default escapado para embeber en <script>, o 'null'. Se
     re-serializa (no se devuelve el archivo crudo) para neutralizar un payload
@@ -62,7 +54,7 @@ def _read_default_layout() -> str:
     try:
         with open(_LAYOUT_FILE, "r", encoding="utf-8") as f:
             obj = json.loads(f.read())
-        return _json_for_script(obj)
+        return json_for_script(obj)
     except (OSError, ValueError):
         return "null"
 
@@ -655,7 +647,7 @@ def panel_chart(panel_id: str, request: Request, ccy: str = "", state=Depends(ge
     y_label = "TNA" if panel_id == "tasa_fija" else "TIR"
     return _TEMPLATES.TemplateResponse(
         request, "fragments/panel_chart.html",
-        {"title": title, "datasets_json": json.dumps(datasets), "y_label": y_label},
+        {"title": title, "datasets_json": json_for_script(datasets), "y_label": y_label},
     )
 
 
@@ -772,7 +764,7 @@ def panel_share(panel_id: str, request: Request, ccy: str = "", state=Depends(ge
         data = _build_futuros_share(rofex, fx, indices, state)
         resp = _TEMPLATES.TemplateResponse(
             request, "fragments/futuros_share.html",
-            {"contracts_json": json.dumps(data.get("contracts", [])),
+            {"contracts_json": json_for_script(data.get("contracts", [])),
              "spot_txt": (f"{data['spot']:,.2f}" if data.get("spot") else "—"),
              "has_peso_curve": data.get("has_peso_curve", False)},
         )
@@ -823,7 +815,7 @@ def panel_share(panel_id: str, request: Request, ccy: str = "", state=Depends(ge
          "desc": _PANEL_DESC.get(panel_id, ""), "ccy_label": ccy_label,
          "asof": today.strftime("%d/%m/%Y"), "settle": settle,
          "badge": ("%s vs Duración" % y_label),
-         "datasets_json": json.dumps(datasets), "has_chart": bool(datasets),
+         "datasets_json": json_for_script(datasets), "has_chart": bool(datasets),
          "y_label": y_label},
     )
     # No cachear: el popup/export se actualiza seguido; evita que el navegador sirva
