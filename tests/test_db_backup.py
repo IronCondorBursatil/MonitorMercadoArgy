@@ -8,7 +8,6 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-import pytest
 
 from core.infrastructure.db.backup import backup_db, restore_db, list_backups
 

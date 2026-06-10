@@ -2,7 +2,7 @@
 
 import csv
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 
 from config.settings import settings
 from core.domain.models import Instrument

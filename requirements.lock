@@ -1,0 +1,42 @@
+# Lockfile — versiones EXACTAS verificadas funcionando (2026-06, Python 3.12).
+#
+# Reproducibilidad: requirements.txt deja las versiones abiertas (cómodo para
+# actualizar), pero un reinstalo en otra máquina podía traer una versión nueva con
+# breaking changes. Este lock fija el estado conocido-bueno. Para reproducir:
+#   py -3.12 -m pip install -r requirements.lock
+#
+# Como no hay venv (límite OneDrive), NO es un `pip freeze` del sistema (173 paquetes,
+# casi todos ajenos): se fijan solo las deps del proyecto + las transitivas que
+# afectan runtime (anyio/starlette/certifi). Regenerar tras validar nuevas versiones.
+
+# --- núcleo financiero ---
+numpy==2.4.6
+scipy==1.17.1
+pandas==2.3.3
+python-dateutil==2.9.0.post0
+holidays==0.44
+pandas-market-calendars==5.3.2
+openpyxl==3.1.5
+websockets==16.0
+
+# --- web / async ---
+fastapi==0.136.3
+uvicorn==0.48.0
+httpx==0.28.1
+jinja2==3.1.6
+python-multipart==0.0.29
+sse-starlette==3.4.4
+starlette==1.1.0          # transitiva (fastapi/sse-starlette) — pinned: afecta routing/SSE
+anyio==4.13.0             # transitiva (httpx/starlette) — pinned: afecta el event loop
+certifi==2026.2.25        # transitiva (httpx) — pinned: bundle de CAs p/ verificación TLS
+
+# --- datos / orm ---
+SQLAlchemy==2.0.50
+pydantic==2.13.4
+pydantic-settings==2.14.1
+optionlab==1.6.0
+
+# --- dev ---
+pytest==9.0.3
+hypothesis==6.155.2
+ruff==0.15.16

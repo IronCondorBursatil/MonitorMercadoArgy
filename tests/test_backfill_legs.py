@@ -3,7 +3,6 @@
 Solo soberanos + ON (paneles ccy-filter); los instrumentos pesos (CER/Tasa Fija/...)
 NO se tocan (serían fila basura). Reusa save_instrument (consolida + re-keya)."""
 
-from datetime import date
 
 from config.settings import settings
 from core.domain.models import Instrument

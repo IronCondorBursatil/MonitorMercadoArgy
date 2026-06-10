@@ -66,7 +66,7 @@ def test_enrich_ficha_meta_persists_and_is_idempotent():
 
 def test_enrich_ficha_meta_skips_rows_without_isin():
     _seed_instrument(ticker="NOISIN", isin=None)
-    n = enrich_ficha_meta(fetch_fn=lambda s: _AL30_FICHA)
+    enrich_ficha_meta(fetch_fn=lambda s: _AL30_FICHA)
     with SessionLocal() as s:
         o = s.get(InstrumentORM, "NOISIN")
         assert (o.raw_fields or {}).get("byma", {}).get("ficha") is None

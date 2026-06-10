@@ -33,7 +33,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from config.settings import settings
 

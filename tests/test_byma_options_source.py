@@ -5,7 +5,6 @@ y que los subyacentes salen del feed live del hub; y que ante BYMA vacío cae a
 Data912. Sin red (httpx.MockTransport)."""
 
 import asyncio
-import json
 
 import httpx
 

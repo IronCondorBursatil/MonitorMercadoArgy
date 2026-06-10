@@ -1,7 +1,6 @@
 """Familias del catálogo de productos BYMA (core.infrastructure.byma.catalog_products):
 cauciones, SENEBI-ON e índices MERVAL/BURCAP. Sin red (cliente fake / fetch inyectable)."""
 
-from datetime import date
 
 from core.infrastructure.byma.catalog_products import (
     fetch_cauciones, fetch_index_prices, fetch_senebi_on, index_snapshot,
