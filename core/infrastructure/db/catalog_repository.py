@@ -14,6 +14,7 @@ import math
 from typing import Dict, List, Optional
 
 from sqlalchemy import delete, inspect, select
+from sqlalchemy.exc import OperationalError
 
 from core.domain.interfaces import IInstrumentsRepository
 from core.domain.models import Cashflow, Instrument
@@ -80,14 +81,37 @@ def _migrate_table_add_columns(eng, table) -> None:
         ddl = f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {type_sql}'
         default = getattr(col.default, "arg", None) if col.default is not None else None
         if default is not None and not callable(default):
-            lit = f"'{default}'" if isinstance(default, str) else str(default)
+            if isinstance(default, str):
+                # Literal SQL: duplicar comillas simples ('' es el escape de SQLite).
+                # Sin esto, un default futuro tipo "won't" rompe el DDL en el boot.
+                lit = "'" + default.replace("'", "''") + "'"
+            else:
+                lit = str(default)
             ddl += f" DEFAULT {lit}"
             if not col.nullable:
                 ddl += " NOT NULL"
-        with eng.begin() as conn:
-            conn.exec_driver_sql(ddl)
+        try:
+            with eng.begin() as conn:
+                conn.exec_driver_sql(ddl)
+        except OperationalError as e:
+            # Carrera benigna entre dos procesos migrando la misma DB (script +
+            # server arrancando): el otro ya agregó la columna — objetivo cumplido.
+            # Cualquier otro fallo de ALTER sí debe propagar (drift no manejable).
+            if "duplicate column" not in str(e).lower():
+                raise
+            logger.info("catalog: columna %s.%s ya agregada por otro proceso (carrera benigna).",
+                        table.name, col.name)
+            continue
         logger.info("catalog: ALTER %s ADD COLUMN %s (migración aditiva, sin pérdida).",
                     table.name, col.name)
+
+
+# Engine ya inicializado/migrado en este proceso. init_db() se llama ~39 veces
+# (cada operación ABM lo invoca defensivamente); tras la primera corrida exitosa
+# sobre un engine dado, el resto son no-op — sin re-inspección de schema ni el
+# write txn del stamp por click. `configure()` crea un engine NUEVO (los tests
+# redirigen la DB así), lo que invalida el flag por identidad.
+_INITIALIZED_ENGINE = None
 
 
 def init_db() -> None:
@@ -98,12 +122,18 @@ def init_db() -> None:
     ON/Acciones viven solo acá, no en el Excel semilla). Un `drop_all` ante drift de
     schema las borraría irreversiblemente, así que está prohibido — toda evolución de
     schema es aditiva. Para transformaciones de datos (no solo columnas nuevas), usar
-    una migración explícita versionada, jamás recrear."""
+    una migración explícita versionada, jamás recrear.
+
+    Idempotente y barata: corre una vez por engine (ver _INITIALIZED_ENGINE)."""
+    global _INITIALIZED_ENGINE
     eng = get_engine()
+    if eng is _INITIALIZED_ENGINE:
+        return
     Base.metadata.create_all(eng)
     for table in Base.metadata.sorted_tables:
         _migrate_table_add_columns(eng, table)
     _stamp_schema_version(eng, CURRENT_SCHEMA_VERSION)
+    _INITIALIZED_ENGINE = eng
 
 
 def _num(x: Optional[float]) -> float:
