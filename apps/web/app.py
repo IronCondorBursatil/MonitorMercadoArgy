@@ -75,8 +75,11 @@ async def _refresh_loop(app: FastAPI) -> None:
             app.state.app_state.set_options(items)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as e:  # noqa: BLE001
             logger.exception("refresh loop iteration failed")
+            # Observabilidad (O1): registrar el fallo para que el header lo muestre.
+            # La app sigue sirviendo el último snapshot bueno (stale), pero visible.
+            await app.state.app_state.record_error(f"{type(e).__name__}: {e}")
 
 
 def _ensure_obligaciones_negociables() -> int:
@@ -360,11 +363,14 @@ app.include_router(stream.router)
 
 @app.get("/api/health")
 def health(repo=Depends(get_repo), state=Depends(get_state)):
+    # Stale si el último refresh es más viejo que 6 ciclos (tolera blips transitorios
+    # del breaker sin alarmar). status() trae age/is_stale/last_error.
+    st = state.status(stale_after_s=settings.refresh_sec * 6)
     return {
-        "status": "ok",
+        "status": "ok" if st["ok"] else "degraded",
         "instruments": len(repo.get_all_instruments()),
         "metrics_cached": len(state.metrics()),
-        "last_refresh": state.last_refresh.isoformat() if state.last_refresh else None,
+        **st,
     }
 
 

@@ -57,7 +57,11 @@
   <header>
     <div class="header-top">
       <h1>MONITOR · Renta Fija AR</h1>
-      <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
+      {# Indicador de frescura (O1): poll a /health/badge cada 15s → verde/ámbar/rojo
+         según el estado del refresh loop. Presente en todas las páginas. #}
+      <span class="meta-wrap" hx-get="/health/badge" hx-trigger="load, every 15s" hx-swap="innerHTML">
+        <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
+      </span>
       <nav>
         <a href="/">Bonos</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
         <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/options">Opciones</a><a href="/catalogo">Catálogo</a><a href="/abm">ABM</a>

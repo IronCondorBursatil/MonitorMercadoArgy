@@ -53,6 +53,11 @@ header .meta { color: #c7d0ee; font-size: 12px; display: flex; align-items: cent
 header .live { width: 8px; height: 8px; border-radius: 50%; background: var(--live);
                box-shadow: 0 0 6px var(--live); animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+/* Indicador de frescura (O1): ámbar = datos viejos, rojo = error de refresh. */
+header .meta-stale { color: #e8b339; }
+header .meta-err { color: #ef6b6b; }
+header .live-stale { background: #e8b339; box-shadow: 0 0 6px #e8b339; }
+header .live-err { background: #ef6b6b; box-shadow: 0 0 6px #ef6b6b; }
 header nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 header nav a { color: #c7d0ee; text-decoration: none; font-size: 12.5px; font-weight: 600;
               padding: 5px 10px; border-radius: 6px; }

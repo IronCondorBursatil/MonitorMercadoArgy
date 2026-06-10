@@ -1,0 +1,8 @@
+{# Indicador de frescura (O1). title= da el detalle al hover. #}
+{%- if st.last_error -%}
+  <span class="meta meta-err" title="Último refresh con error: {{ st.last_error }}{% if st.last_error_at %} · {{ st.last_error_at[:19] }}{% endif %}"><span class="live live-err"></span>sin datos</span>
+{%- elif st.is_stale -%}
+  <span class="meta meta-stale" title="Datos viejos · último refresh: {{ st.last_refresh[:19] if st.last_refresh else 'nunca' }}"><span class="live live-stale"></span>datos viejos</span>
+{%- else -%}
+  <span class="meta" title="Al día"><span class="live"></span>act {{ st.last_refresh[11:19] if st.last_refresh else '' }}</span>
+{%- endif -%}

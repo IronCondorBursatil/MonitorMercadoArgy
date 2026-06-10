@@ -16,6 +16,10 @@ class AppState:
         self._metrics: List[InstrumentMetrics] = []
         self._by_ticker: Dict[str, InstrumentMetrics] = {}
         self._last_refresh: Optional[datetime] = None
+        # Observabilidad (O1): último error del refresh loop. La app sigue sirviendo
+        # el último snapshot bueno ante un fallo, pero ahora es visible (header/health).
+        self._last_error: Optional[str] = None
+        self._last_error_at: Optional[datetime] = None
         self._bei: Optional[dict] = None  # tablas crudas de compute_bei_tables
         self._options: list = []          # list[OptionItem] del último refresh (vacío hasta que arme)
         self._options_by_ticker: Dict[str, object] = {}
@@ -38,7 +42,37 @@ class AppState:
             self._metrics = metrics
             self._by_ticker = by_ticker
             self._last_refresh = datetime.now()
+            self._last_error = None          # un refresh exitoso limpia el error previo
+            self._last_error_at = None
         await self._notify()
+
+    async def record_error(self, msg: str) -> None:
+        """Registra un fallo de ciclo de refresh y notifica a los suscriptores SSE
+        (para que el header muestre el estado). NO borra el último snapshot bueno —
+        se sigue sirviendo data stale, pero ahora es observable."""
+        self._last_error = str(msg)[:300]
+        self._last_error_at = datetime.now()
+        await self._notify()
+
+    def status(self, *, stale_after_s: float, now: Optional[datetime] = None) -> dict:
+        """Estado de frescura para health/header: edad del último refresh, si está
+        stale (más viejo que `stale_after_s` o nunca refrescado) y el último error.
+        `now` se inyecta en tests."""
+        now = now or datetime.now()
+        age = (now - self._last_refresh).total_seconds() if self._last_refresh else None
+        is_stale = age is None or age > stale_after_s
+        return {
+            "last_refresh": self._last_refresh.isoformat() if self._last_refresh else None,
+            "age_seconds": age,
+            "is_stale": is_stale,
+            "last_error": self._last_error,
+            "last_error_at": self._last_error_at.isoformat() if self._last_error_at else None,
+            "ok": (not is_stale) and self._last_error is None,
+        }
+
+    @property
+    def last_error(self) -> Optional[str]:
+        return self._last_error
 
     async def _notify(self) -> None:
         async with self._cond:
