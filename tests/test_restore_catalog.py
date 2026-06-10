@@ -6,7 +6,6 @@ su cache en memoria. El guard prueba el puerto del server y aborta (salvo --forc
 from __future__ import annotations
 
 import socket
-import threading
 
 from scripts.restore_catalog import _server_running, main
 
