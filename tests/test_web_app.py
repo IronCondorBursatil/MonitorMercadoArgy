@@ -14,7 +14,10 @@ def test_health_boots_and_loads_catalog():
         r = client.get("/api/health")
         assert r.status_code == 200
         data = r.json()
-        assert data["status"] == "ok"
+        # Bajo test los loops no corren → nunca hubo refresh → "degraded" (O1).
+        # En operación normal pasa a "ok" tras el primer ciclo (≤5s).
+        assert data["status"] in ("ok", "degraded")
+        assert data["is_stale"] is True                  # never refreshed
         assert data["instruments"] >= 80, data           # ~91 instrumentos seedeados
         assert "last_refresh" in data and "metrics_cached" in data
 

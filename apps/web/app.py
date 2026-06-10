@@ -280,7 +280,7 @@ async def lifespan(app: FastAPI):
     from core.infrastructure.fx_provider import DolarAPIProvider
     from core.infrastructure.futures_provider import RofexProvider
     from core.infrastructure.indices_provider import BCRAIndicesProvider
-    from core.infrastructure.repositories import Data912MarketDataProvider
+    from core.infrastructure.data912_provider import Data912MarketDataProvider
 
     from core.infrastructure.byma.sources import make_source, Data912Source
 

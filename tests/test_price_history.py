@@ -191,7 +191,7 @@ def test_fetch_historical_prices_strips_cer_alias(monkeypatch):
     """La pata CER de un dual (TXMJ8_CER) cotiza/se acumula bajo el símbolo de
     mercado (TXMJ8); el lookup de histórico debe stripear el sufijo igual que
     fetch_snapshots, sino devuelve vacío."""
-    from core.infrastructure import repositories as repo_mod
+    from core.infrastructure import data912_provider as repo_mod
 
     prov = repo_mod.Data912MarketDataProvider()
     monkeypatch.setattr(prov, "_load_history", lambda: {})
@@ -207,7 +207,7 @@ def test_fetch_historical_prices_strips_cer_alias(monkeypatch):
 def test_provider_merges_csv_and_store(monkeypatch):
     """fetch_historical_prices mergea el CSV legacy (piso) con el store (gana en
     fechas solapadas) — verificado con un store inyectado vía el singleton."""
-    from core.infrastructure import repositories as repo_mod
+    from core.infrastructure import data912_provider as repo_mod
 
     prov = repo_mod.Data912MarketDataProvider()
     monkeypatch.setattr(prov, "_load_history",

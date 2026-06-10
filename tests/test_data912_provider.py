@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.infrastructure.repositories import Data912MarketDataProvider
+from core.infrastructure.data912_provider import Data912MarketDataProvider
 
 
 @pytest.fixture(autouse=True)

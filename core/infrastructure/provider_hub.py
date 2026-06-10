@@ -259,7 +259,7 @@ class HubMarketDataProvider(IMarketDataProvider):
         self._hub = hub
         self._settle = settle  # plazo de los precios live ('24' | 'CI')
         if history_provider is None:
-            from core.infrastructure.repositories import Data912MarketDataProvider
+            from core.infrastructure.data912_provider import Data912MarketDataProvider
             history_provider = Data912MarketDataProvider()
         self._hist = history_provider
 
