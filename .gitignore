@@ -14,8 +14,8 @@ venv/
 # Generated artifacts (PNG outputs, caches)
 data/monitor_*.png
 data/feriados_ar_cache.json
-apps/cli/monitors/*.png
-apps/cli/monitors/*.json
+apps/cli/*.png
+apps/cli/*.json
 
 # OS / IDE
 .DS_Store
@@ -26,6 +26,10 @@ Thumbs.db
 # Backups manuales de Excel / data
 *.bak
 *.bak[0-9]
+
+# Material de referencia BYMA (addin Excel, PDFs, scripts de auditoría) — 9.6 MB,
+# fuente del pipeline que genera data/byma/titulos_final.csv; no se versiona.
+BYMADATA_EXCEL/
 
 # Artefactos de Playwright MCP (snapshots/console de pruebas de UI)
 .playwright-mcp/
