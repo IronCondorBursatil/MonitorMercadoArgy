@@ -16,6 +16,7 @@ from typing import Dict, Optional
 import httpx
 
 from core.infrastructure._http_constants import TRANSIENT_HTTP_CODES as _TRANSIENT
+from core.infrastructure._tls import should_verify
 from core.infrastructure.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
@@ -32,12 +33,21 @@ class ResilientClient:
         transport: Optional[httpx.AsyncBaseTransport] = None,
         user_agent: str = "monitor/2.0",
     ):
+        # Verificación TLS por host (ver _tls.py): verificada por defecto, sin verificar
+        # solo para hosts con cadena rota (BYMA addin). Dos clientes pooled; se elige por
+        # URL. Si se inyecta un transport (tests con MockTransport), se usa para ambos —
+        # la verificación es irrelevante bajo mock.
+        _limits = httpx.Limits(max_keepalive_connections=20, max_connections=100,
+                               keepalive_expiry=30)
+        _to = httpx.Timeout(timeout, connect=2.0, pool=2.0)
+        _hdrs = {"User-Agent": user_agent}
         self._client = httpx.AsyncClient(
-            limits=httpx.Limits(max_keepalive_connections=20, max_connections=100,
-                                keepalive_expiry=30),
-            timeout=httpx.Timeout(timeout, connect=2.0, pool=2.0),
+            limits=_limits, timeout=_to, headers=_hdrs,
+            transport=transport or httpx.AsyncHTTPTransport(retries=1, verify=True),
+        )
+        self._client_noverify = httpx.AsyncClient(
+            limits=_limits, timeout=_to, headers=_hdrs,
             transport=transport or httpx.AsyncHTTPTransport(retries=1, verify=False),
-            headers={"User-Agent": user_agent},
         )
         self._breakers: Dict[str, CircuitBreaker] = {}
         self._sems: Dict[str, asyncio.Semaphore] = {}
@@ -71,11 +81,12 @@ class ResilientClient:
     async def _request_json(self, method: str, url: str, *, json=None, retries: int = 1,
                             headers: Optional[dict] = None, timeout: Optional[float] = None):
         breaker, sem = self._host_guard(url)
+        client = self._client if should_verify(url) else self._client_noverify
         async with breaker:
             async with sem:
                 for attempt in range(retries + 1):
                     try:
-                        resp = await self._client.request(
+                        resp = await client.request(
                             method, url, json=json, headers=headers, timeout=timeout)
                         resp.raise_for_status()
                         return resp.json()
@@ -95,3 +106,4 @@ class ResilientClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+        await self._client_noverify.aclose()

@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     options_source: str = "byma"      # 'byma' | 'data912'
     # Catálogo BYMA (symbol→ISIN/emisor/tipo) para enriquecer la base de títulos.
     byma_catalog_csv: Path = _BASE_DIR / "data" / "byma" / "titulos_final.csv"
+    # Client OAuth del addin BYMA. NO es un secreto del usuario: está embebido en el
+    # .xll PÚBLICO de BYMA (las credenciales del usuario van aparte, en .env). Se
+    # centraliza acá (en vez de hardcodeado en infra) y se puede override por env
+    # MONITOR_BYMA_CLIENT_ID / MONITOR_BYMA_CLIENT_SECRET.
+    byma_client_id: str = "excel-addin-bd-client-pkg"
+    byma_client_secret: str = "20V4nt3k203xc31"
 
     host: str = "127.0.0.1"
     port: int = 8000

@@ -21,6 +21,8 @@ from typing import Dict, Optional, Protocol, Tuple
 
 import httpx
 
+from config.settings import settings
+
 from core.infrastructure.async_http import ResilientClient
 from core.infrastructure.byma.field_map import SETTLE_24, SETTLE_CI, byma_row_to_quote, settle_of
 from core.infrastructure.circuit_breaker import CircuitOpenError
@@ -196,8 +198,10 @@ class BymaRealtimeSource:
     TOKEN_URL = "https://www.bymadata.com.ar/generic-oauth-core/oauth/token"
     API_BASE = "https://addin.bymadata.com.ar/vanoms-be-core/rest/api"
     # client del addin (embebidos en el .xll; ver GUIA_BYMADATA.md §4).
-    CLIENT_ID = "excel-addin-bd-client-pkg"
-    CLIENT_SECRET = "20V4nt3k203xc31"
+    # Defaults desde settings (centralizado/override por env); NO secreto — ver
+    # settings.byma_client_secret. Las credenciales del usuario van por .env.
+    CLIENT_ID = settings.byma_client_id
+    CLIENT_SECRET = settings.byma_client_secret
 
     # (endpoint, body flag, plazos, bucket). `getLeadingEquity` es en realidad el
     # endpoint general de market-data del addin: toma TODOS los flags de panel

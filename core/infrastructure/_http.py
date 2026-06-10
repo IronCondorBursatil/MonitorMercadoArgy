@@ -25,18 +25,24 @@ import time
 import httpx
 
 from core.infrastructure._http_constants import TRANSIENT_HTTP_CODES as _TRANSIENT_HTTP_CODES
+from core.infrastructure._tls import should_verify
 
 logger = logging.getLogger(__name__)
 
-# Upstreams (data912, BCRA, dolarapi) son APIs JSON públicas con cadenas TLS a
-# veces incompletas → verify=False (igual que el comportamiento previo).
+# Verificación TLS POR HOST (ver _tls.py): se verifica por defecto (seguro) y solo se
+# saltea para los hosts con cadena rota (BYMA addin/open). Dos clientes pooled — uno
+# verificado, uno no — seleccionados por URL. Antes era verify=False global, lo que
+# dejaba toda la data de mercado expuesta a MITM aunque sus cadenas son válidas.
 # Pool: hasta 4 endpoints Data912 en paralelo × (main loop + BEI) → 16 con headroom.
-_client = httpx.Client(
-    verify=False,
-    timeout=httpx.Timeout(10.0),
-    limits=httpx.Limits(max_connections=16, max_keepalive_connections=16, keepalive_expiry=30),
-    follow_redirects=True,
-)
+_LIMITS = httpx.Limits(max_connections=16, max_keepalive_connections=16, keepalive_expiry=30)
+_client = httpx.Client(verify=True, timeout=httpx.Timeout(10.0), limits=_LIMITS,
+                       follow_redirects=True)
+_client_noverify = httpx.Client(verify=False, timeout=httpx.Timeout(10.0), limits=_LIMITS,
+                                follow_redirects=True)
+
+
+def _client_for(url: str) -> httpx.Client:
+    return _client if should_verify(url) else _client_noverify
 
 
 def http_get_json(
@@ -54,9 +60,10 @@ def http_get_json(
     label = source or url
     attempts = retries + 1
     headers = {"User-Agent": user_agent}
+    client = _client_for(url)
     for attempt in range(attempts):
         try:
-            resp = _client.get(url, headers=headers, timeout=timeout)
+            resp = client.get(url, headers=headers, timeout=timeout)
             resp.raise_for_status()
             return resp.json()
         except httpx.HTTPStatusError as e:
