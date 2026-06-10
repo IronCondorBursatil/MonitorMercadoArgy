@@ -33,6 +33,28 @@ def test_clock_rejects_garbage_env(monkeypatch):
         clock_today()
 
 
+def test_warn_if_frozen_emits_when_active(monkeypatch, caplog):
+    """Un MONITOR_AS_OF olvidado en .env congelaría los precios de PRODUCCIÓN en
+    silencio — el arranque debe gritarlo."""
+    import logging
+    from core.domain.clock import warn_if_frozen
+
+    monkeypatch.setenv("MONITOR_AS_OF", "2026-06-10")
+    with caplog.at_level(logging.WARNING):
+        assert warn_if_frozen() is True
+    assert any("MONITOR_AS_OF" in r.message for r in caplog.records)
+
+
+def test_warn_if_frozen_silent_when_inactive(monkeypatch, caplog):
+    import logging
+    from core.domain.clock import warn_if_frozen
+
+    monkeypatch.delenv("MONITOR_AS_OF", raising=False)
+    with caplog.at_level(logging.WARNING):
+        assert warn_if_frozen() is False
+    assert not caplog.records
+
+
 # --- el pricing core debe usar el clock ------------------------------------- #
 
 class _TamarProvider:

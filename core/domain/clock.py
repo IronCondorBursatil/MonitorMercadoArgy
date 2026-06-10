@@ -13,8 +13,23 @@ dict — barato) para que monkeypatch.setenv por-test funcione sin recargas.
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date
+
+logger = logging.getLogger(__name__)
+
+
+def warn_if_frozen() -> bool:
+    """Si MONITOR_AS_OF está activo, lo grita en WARNING y devuelve True. El lifespan
+    lo llama al arrancar: un AS_OF olvidado en .env congelaría TODOS los precios de
+    producción a una fecha vieja sin ninguna señal visible."""
+    raw = os.environ.get("MONITOR_AS_OF")
+    if not raw:
+        return False
+    logger.warning("MONITOR_AS_OF=%s ACTIVO: el 'hoy' del dominio está CONGELADO — "
+                   "los precios usan esa fecha, no la real. Solo para tests.", raw)
+    return True
 
 
 def today() -> date:

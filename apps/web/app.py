@@ -301,6 +301,10 @@ async def lifespan(app: FastAPI):
     app.state.app_state.set_data_source(app.state.hub.active_mode,
                                         app.state.hub.active_label,
                                         app.state.hub.is_delayed)
+    # Clock congelado por accidente: un MONITOR_AS_OF olvidado en .env congelaría
+    # TODOS los precios a una fecha vieja sin señal visible — gritarlo al boot.
+    from core.domain.clock import warn_if_frozen
+    warn_if_frozen()
     # Backup del catálogo (fuente de verdad viva) ANTES de warmear el repo / migrar:
     # snapshot consistente del estado previo, best-effort (jamás bloquea el arranque).
     try:

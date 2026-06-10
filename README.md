@@ -38,13 +38,17 @@ o pytest fallan. Instalable como hook `pre-push`.
 **Fecha de referencia de los tests**: los tests sensibles a la fecha (equivalencia,
 golden) usan una fecha fija (`tests/_clock.py`, default 2026-06-10) para no caducar.
 Para correr con la fecha real: `MONITOR_TEST_REF_DATE=today py -3.12 -m pytest`.
+El "hoy" del **dominio** (ventana TAMAR, extrapolación CER, síntesis de cashflows)
+se congela con `MONITOR_AS_OF=YYYY-MM-DD` (`core/domain/clock.py`) — **solo para
+tests**: si queda activo, el server lo grita en WARNING al arrancar (los precios
+usarían esa fecha, no la real).
 
 ## Operación
 
 | Necesidad | Comando / mecanismo |
 |-----------|---------------------|
 | Backup del catálogo | Automático al arrancar (1×/día, rota a `MONITOR_BACKUP_KEEP=7` días) en `%LOCALAPPDATA%\monitor\backups`. |
-| Restaurar un backup | `py -3.12 scripts/restore_catalog.py` (lista) · `--latest` · `<archivo>` |
+| Restaurar un backup | `py -3.12 scripts/restore_catalog.py` (lista) · `--latest` · `<archivo>`. **Pará el server primero** (el script lo verifica y aborta; `--force` para saltear). |
 | Estado / frescura | `GET /api/health` (`status` ok/degraded + `is_stale`/`last_error`) y el badge del header (verde/ámbar/rojo). |
 | Re-sembrar catálogo del Excel | `py -3.12 scripts/ingest_master.py` (solo si editaste el master a mano) |
 
