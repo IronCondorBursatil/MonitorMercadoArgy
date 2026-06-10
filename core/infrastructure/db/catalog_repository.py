@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from typing import Dict, List, Optional
 
 from sqlalchemy import delete, inspect, select
@@ -110,8 +111,11 @@ def _migrate_table_add_columns(eng, table) -> None:
 # (cada operación ABM lo invoca defensivamente); tras la primera corrida exitosa
 # sobre un engine dado, el resto son no-op — sin re-inspección de schema ni el
 # write txn del stamp por click. `configure()` crea un engine NUEVO (los tests
-# redirigen la DB así), lo que invalida el flag por identidad.
+# redirigen la DB así), lo que invalida el flag por identidad. El lock cierra la
+# carrera teórica de dos threads en la PRIMERA llamada (rutas ABM en el threadpool
+# de Starlette) — sin él ambos podrían migrar a la vez.
 _INITIALIZED_ENGINE = None
+_INIT_LOCK = threading.Lock()
 
 
 def init_db() -> None:
@@ -127,13 +131,16 @@ def init_db() -> None:
     Idempotente y barata: corre una vez por engine (ver _INITIALIZED_ENGINE)."""
     global _INITIALIZED_ENGINE
     eng = get_engine()
-    if eng is _INITIALIZED_ENGINE:
+    if eng is _INITIALIZED_ENGINE:   # fast-path sin lock (lectura atómica)
         return
-    Base.metadata.create_all(eng)
-    for table in Base.metadata.sorted_tables:
-        _migrate_table_add_columns(eng, table)
-    _stamp_schema_version(eng, CURRENT_SCHEMA_VERSION)
-    _INITIALIZED_ENGINE = eng
+    with _INIT_LOCK:
+        if eng is _INITIALIZED_ENGINE:   # double-check bajo lock
+            return
+        Base.metadata.create_all(eng)
+        for table in Base.metadata.sorted_tables:
+            _migrate_table_add_columns(eng, table)
+        _stamp_schema_version(eng, CURRENT_SCHEMA_VERSION)
+        _INITIALIZED_ENGINE = eng
 
 
 def _num(x: Optional[float]) -> float:

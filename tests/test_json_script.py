@@ -24,17 +24,21 @@ def test_ampersand_escaped_roundtrip():
 
 
 def test_all_embed_sites_use_the_shared_helper():
-    """Ningún router debe embeber JSON en <script> con json.dumps pelado: los 6
-    sitios (chain/pts_call/pts_put/datasets×2/contracts) usan json_for_script."""
+    """Ningún router debe embeber JSON en <script> con json.dumps pelado. Guard
+    robusto (verificación adversarial): regex multiline sobre TODOS los .py de
+    apps/web — cualquier clave `*_json` (la convención de los embeds con |safe)
+    asignada con json.dumps, aunque el formatter parta la línea, es un offender."""
+    import re
     from pathlib import Path
 
-    routers = Path("apps/web/routers")
+    # `"algo_json": json.dumps(` con whitespace/newlines arbitrarios en el medio.
+    pattern = re.compile(r'"(\w*_json)"\s*:\s*json\.dumps\(')
     offenders = []
-    for f in ("options.py", "panels.py"):
-        src = (routers / f).read_text(encoding="utf-8")
-        for var in ("chain_json", "pts_call_json", "pts_put_json",
-                    "datasets_json", "contracts_json"):
-            for line in src.splitlines():
-                if f'"{var}"' in line and "json.dumps(" in line:
-                    offenders.append(f"{f}: {line.strip()}")
-    assert not offenders, "embeds con json.dumps pelado:\n" + "\n".join(offenders)
+    for f in Path("apps/web").rglob("*.py"):
+        src = f.read_text(encoding="utf-8")
+        for m in pattern.finditer(src):
+            line_no = src[:m.start()].count("\n") + 1
+            offenders.append(f"{f}:{line_no}: {m.group(1)}")
+    assert not offenders, (
+        "embeds JSON con json.dumps pelado (usar apps.web.json_script.json_for_script):\n"
+        + "\n".join(offenders))

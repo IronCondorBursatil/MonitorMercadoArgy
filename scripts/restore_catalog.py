@@ -28,7 +28,10 @@ from core.infrastructure.db.backup import backup_db, list_backups, restore_db  #
 
 
 def _server_running(host: str, port: int, timeout_s: float = 1.0) -> bool:
-    """True si hay algo escuchando en host:port (el monitor vivo)."""
+    """True si hay algo escuchando en host:port (el monitor vivo). `0.0.0.0` es
+    una dirección de bind, no conectable — se prueba por loopback."""
+    if host in ("0.0.0.0", "::"):
+        host = "127.0.0.1"
     try:
         with socket.create_connection((host, port), timeout=timeout_s):
             return True

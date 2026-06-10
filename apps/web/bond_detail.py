@@ -23,6 +23,7 @@ from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.domain.models import Instrument, MarketSnapshot
+from core.domain.clock import today as _domain_today
 from core.domain.services import FinancialEngine, _is_cer_type, _cer_reference_date
 from core.holiday_engine import settlement_byma, date_range_habil
 
@@ -175,7 +176,7 @@ def _infer_coupon_rate_label(instrument: Instrument) -> str:
     BONAR/GLOBAL/BOPREAL — el Instrument no carga el cupón explícito pero
     se puede recuperar desde el próximo flow con interés."""
     cfs = sorted(instrument.cashflows or [], key=lambda c: c.date)
-    today = date.today()
+    today = _domain_today()
     next_cf = next((c for c in cfs if c.date >= today and c.interest > 0), None)
     if next_cf is None:
         return "Tasa fija"
@@ -346,8 +347,8 @@ def _resolve_ref(settlement_lag: int) -> date:
     """T+0 (lag=0) = today, T+1 (lag=1) = next business day BYMA. Cualquier
     otro lag positivo cae al siguiente hábil correspondiente."""
     if settlement_lag <= 0:
-        return date.today()
-    return settlement_byma(date.today().strftime("%Y-%m-%d"), lag=settlement_lag).date()
+        return _domain_today()
+    return settlement_byma(_domain_today().strftime("%Y-%m-%d"), lag=settlement_lag).date()
 
 
 def _live_metrics(
@@ -709,7 +710,7 @@ def cer_return_scenarios(
         return empty
     if indices_eff is None:
         return empty
-    today = date.today()
+    today = _domain_today()
     cer_today = indices_eff.get_cer(today)
     if not cer_today:
         return empty
@@ -884,7 +885,7 @@ def cer_projection(
     if not _is_cer_type(instrument.instrument_type) or not instrument.cer_base:
         return empty
 
-    today = date.today()
+    today = _domain_today()
     cer_today = indices_eff.get_cer(today) if indices_eff is not None else None
     cer_base = instrument.cer_base
 

@@ -101,7 +101,7 @@ def options_chain(request: Request, u: str = Query(""), v: str = Query(""),
     if not v or v not in months:
         v = months[0] if months else ""
     data = _chain_data(items, u, v) if (u and v) else {"rows": [], "spot": 0.0, "n": 0,
-                                                       "chain_json": "[]"}
+                                                       "chain_json": json_for_script([])}
     return _TEMPLATES.TemplateResponse(
         request, "fragments/options_chain.html",
         {"underlying": u, "month": v, "months": months, **data},
