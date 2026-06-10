@@ -46,13 +46,23 @@ _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.paren
 _LAYOUT_FILE = str(Path(str(settings.catalog_db)).parent / "dashboard_layout.json")
 
 
+def _json_for_script(obj) -> str:
+    """json.dumps seguro para embeber en un <script>: escapa < > & y los separadores
+    de línea U+2028/U+2029 a \\uXXXX. Siguen siendo JSON válido (parsean al mismo
+    valor) pero ya no pueden cerrar el tag ni romper el parser JS (mitiga XSS, S4)."""
+    return (json.dumps(obj, ensure_ascii=False)
+            .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+            .replace(" ", "\\u2028").replace(" ", "\\u2029"))
+
+
 def _read_default_layout() -> str:
-    """Contenido JSON del layout default (string crudo para embeber), o 'null'."""
+    """JSON del layout default escapado para embeber en <script>, o 'null'. Se
+    re-serializa (no se devuelve el archivo crudo) para neutralizar un payload
+    malicioso que un POST a /panels/layout pudiera haber guardado."""
     try:
         with open(_LAYOUT_FILE, "r", encoding="utf-8") as f:
-            txt = f.read().strip()
-        json.loads(txt)  # validar
-        return txt
+            obj = json.loads(f.read())
+        return _json_for_script(obj)
     except (OSError, ValueError):
         return "null"
 
@@ -707,13 +717,15 @@ async def save_default_layout(request: Request):
     """Guarda el layout actual ({layout, hidden, cols}) como default del dashboard."""
     raw = await request.body()
     try:
-        json.loads(raw)  # debe ser JSON válido
+        obj = json.loads(raw)  # debe ser JSON válido
     except Exception:
         return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
     try:
         os.makedirs(os.path.dirname(_LAYOUT_FILE), exist_ok=True)
         with open(_LAYOUT_FILE, "w", encoding="utf-8") as f:
-            f.write(raw.decode("utf-8"))
+            # Re-serializar (no el body crudo): normaliza y acota lo guardado. El
+            # escapado anti-XSS se hace además al leer (_json_for_script).
+            json.dump(obj, f, ensure_ascii=False)
     except OSError as e:
         logger.warning("No se pudo guardar el layout default: %s", e)
         return JSONResponse({"ok": False}, status_code=500)
