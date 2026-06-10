@@ -34,21 +34,22 @@ class ResilientClient:
         user_agent: str = "monitor/2.0",
     ):
         # Verificación TLS por host (ver _tls.py): verificada por defecto, sin verificar
-        # solo para hosts con cadena rota (BYMA addin). Dos clientes pooled; se elige por
-        # URL. Si se inyecta un transport (tests con MockTransport), se usa para ambos —
-        # la verificación es irrelevante bajo mock.
-        _limits = httpx.Limits(max_keepalive_connections=20, max_connections=100,
-                               keepalive_expiry=30)
-        _to = httpx.Timeout(timeout, connect=2.0, pool=2.0)
-        _hdrs = {"User-Agent": user_agent}
-        self._client = httpx.AsyncClient(
-            limits=_limits, timeout=_to, headers=_hdrs,
-            transport=transport or httpx.AsyncHTTPTransport(retries=1, verify=True),
-        )
-        self._client_noverify = httpx.AsyncClient(
-            limits=_limits, timeout=_to, headers=_hdrs,
-            transport=transport or httpx.AsyncHTTPTransport(retries=1, verify=False),
-        )
+        # solo para hosts con cadena rota (BYMA addin). Dos clientes pooled (misma
+        # factory — anti-drift); se elige por URL. Si se inyecta un transport (tests
+        # con MockTransport), se usa para ambos — la verificación es irrelevante bajo
+        # mock. Sin follow_redirects (default httpx): el redirect cross-host con el
+        # cliente no-verify nunca ocurre.
+        def _make_client(*, verify: bool) -> httpx.AsyncClient:
+            return httpx.AsyncClient(
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=100,
+                                    keepalive_expiry=30),
+                timeout=httpx.Timeout(timeout, connect=2.0, pool=2.0),
+                headers={"User-Agent": user_agent},
+                transport=transport or httpx.AsyncHTTPTransport(retries=1, verify=verify),
+            )
+
+        self._client = _make_client(verify=True)
+        self._client_noverify = _make_client(verify=False)
         self._breakers: Dict[str, CircuitBreaker] = {}
         self._sems: Dict[str, asyncio.Semaphore] = {}
         self._fail_max = fail_max

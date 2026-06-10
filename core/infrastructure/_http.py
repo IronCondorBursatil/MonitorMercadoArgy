@@ -34,11 +34,25 @@ logger = logging.getLogger(__name__)
 # verificado, uno no — seleccionados por URL. Antes era verify=False global, lo que
 # dejaba toda la data de mercado expuesta a MITM aunque sus cadenas son válidas.
 # Pool: hasta 4 endpoints Data912 en paralelo × (main loop + BEI) → 16 con headroom.
-_LIMITS = httpx.Limits(max_connections=16, max_keepalive_connections=16, keepalive_expiry=30)
-_client = httpx.Client(verify=True, timeout=httpx.Timeout(10.0), limits=_LIMITS,
-                       follow_redirects=True)
-_client_noverify = httpx.Client(verify=False, timeout=httpx.Timeout(10.0), limits=_LIMITS,
-                                follow_redirects=True)
+#
+# Redirects: el cliente se elige por la URL INICIAL, así que un redirect cross-host se
+# sigue con el MISMO cliente. El no-verify NO sigue redirects (si BYMA redirigiera a
+# otro dominio, el hop iría sin verificar — mejor fallar visible); el verificado sí
+# (verificar de más es seguro: un hop a host de cadena rota da SSLError, falla cerrada).
+
+
+def _make_client(*, verify: bool, follow_redirects: bool) -> httpx.Client:
+    return httpx.Client(
+        verify=verify,
+        timeout=httpx.Timeout(10.0),
+        limits=httpx.Limits(max_connections=16, max_keepalive_connections=16,
+                            keepalive_expiry=30),
+        follow_redirects=follow_redirects,
+    )
+
+
+_client = _make_client(verify=True, follow_redirects=True)
+_client_noverify = _make_client(verify=False, follow_redirects=False)
 
 
 def _client_for(url: str) -> httpx.Client:
