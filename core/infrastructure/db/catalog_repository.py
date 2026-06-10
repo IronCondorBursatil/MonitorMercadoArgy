@@ -22,28 +22,88 @@ from core.infrastructure.db.models import Base, CashflowORM, InstrumentORM
 
 logger = logging.getLogger(__name__)
 
+# Versión del schema del catálogo. Subir SOLO cuando se introduce una migración de
+# DATOS (no basta agregar columnas — eso lo reconcilia _migrate_table_add_columns
+# de forma aditiva en cada arranque). Sirve de punto de control para backups y para
+# correr transformaciones de datos exactamente una vez.
+CURRENT_SCHEMA_VERSION = 1
+
+
+def _ensure_schema_meta(eng) -> None:
+    with eng.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS schema_meta (key VARCHAR PRIMARY KEY, value VARCHAR)"
+        )
+
+
+def get_schema_version() -> int:
+    """Versión de schema sellada en la DB. 0 si nunca se selló (DB pre-versionado o
+    recién creada) — no rompe, permite detectar el caso y migrar."""
+    eng = get_engine()
+    if not inspect(eng).has_table("schema_meta"):
+        return 0
+    with eng.begin() as conn:
+        row = conn.exec_driver_sql(
+            "SELECT value FROM schema_meta WHERE key='schema_version'"
+        ).fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def _stamp_schema_version(eng, version: int) -> None:
+    _ensure_schema_meta(eng)
+    with eng.begin() as conn:
+        conn.exec_driver_sql(
+            "INSERT INTO schema_meta (key, value) VALUES ('schema_version', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(version),),
+        )
+
+
+def _migrate_table_add_columns(eng, table) -> None:
+    """Reconcilia una tabla existente con su modelo ORM agregando SOLO las columnas
+    faltantes (`ALTER TABLE ... ADD COLUMN`). FORWARD-ONLY: nunca dropea ni modifica
+    columnas existentes. Es seguro sobre tablas con datos — las altas de la ABM
+    (ON/Acciones que viven solo en la DB) sobreviven cualquier drift de schema (C1).
+
+    Las columnas nuevas se agregan nullable; si el ORM define un default escalar y la
+    columna es NOT NULL, se agrega con `DEFAULT` (SQLite exige default para NOT NULL
+    sobre tablas no vacías). Las PK se saltean (SQLite no permite ALTER ADD de PK, y
+    una tabla existente siempre conserva la suya)."""
+    insp = inspect(eng)
+    if not insp.has_table(table.name):
+        return  # create_all ya la habrá creado entera
+    existing = {c["name"] for c in insp.get_columns(table.name)}
+    for col in table.columns:
+        if col.name in existing or col.primary_key:
+            continue
+        type_sql = col.type.compile(dialect=eng.dialect)
+        ddl = f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {type_sql}'
+        default = getattr(col.default, "arg", None) if col.default is not None else None
+        if default is not None and not callable(default):
+            lit = f"'{default}'" if isinstance(default, str) else str(default)
+            ddl += f" DEFAULT {lit}"
+            if not col.nullable:
+                ddl += " NOT NULL"
+        with eng.begin() as conn:
+            conn.exec_driver_sql(ddl)
+        logger.info("catalog: ALTER %s ADD COLUMN %s (migración aditiva, sin pérdida).",
+                    table.name, col.name)
+
 
 def init_db() -> None:
-    """Crea las tablas si faltan. Si la tabla `instruments` existe pero le faltan
-    columnas nuevas (sheet/raw_fields del ABM), la recrea — la .db es solo un
-    cache derivado del Excel, así que dropear y re-sembrar es seguro.
+    """Crea las tablas que falten y reconcilia las existentes con el modelo ORM de
+    forma **forward-only**: agrega columnas nuevas con ALTER, NUNCA dropea.
 
-    `isin` se agrega de forma **aditiva** (ALTER), NO destructiva: las altas de la
-    ABM (ON/Acciones) viven solo en la DB y un drop las perdería."""
+    Invariante C1: `catalog.db` es la fuente de verdad viva (las altas ABM de
+    ON/Acciones viven solo acá, no en el Excel semilla). Un `drop_all` ante drift de
+    schema las borraría irreversiblemente, así que está prohibido — toda evolución de
+    schema es aditiva. Para transformaciones de datos (no solo columnas nuevas), usar
+    una migración explícita versionada, jamás recrear."""
     eng = get_engine()
     Base.metadata.create_all(eng)
-    insp = inspect(eng)
-    if insp.has_table("instruments"):
-        cols = {c["name"] for c in insp.get_columns("instruments")}
-        if not {"sheet", "raw_fields", "ticker_mep", "ticker_ccl"} <= cols:
-            logger.info("catalog schema drift: recreando tablas (faltan columnas nuevas).")
-            Base.metadata.drop_all(eng)
-            Base.metadata.create_all(eng)
-        elif "isin" not in cols:
-            # Migración aditiva: preserva los datos existentes (incl. altas ABM).
-            logger.info("catalog: agregando columna isin (ALTER, sin recrear).")
-            with eng.begin() as conn:
-                conn.exec_driver_sql("ALTER TABLE instruments ADD COLUMN isin VARCHAR")
+    for table in Base.metadata.sorted_tables:
+        _migrate_table_add_columns(eng, table)
+    _stamp_schema_version(eng, CURRENT_SCHEMA_VERSION)
 
 
 def _num(x: Optional[float]) -> float:
