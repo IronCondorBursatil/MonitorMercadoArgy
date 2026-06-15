@@ -426,7 +426,10 @@ def list_instruments_coverage(price_of=None, sheet: Optional[str] = None) -> Lis
         cfn = cfcounts.get(o.ticker, 0)
         price = None
         if price_of is not None:
-            for t in tickers:
+            # Precio de referencia: preferir la pata MEP (…D, en USD), luego CABLE (…C); la
+            # pata pesos (…O) recién al final. Así las ONs muestran el precio en dólares MEP
+            # (no el peso ~150990). Bonos peso-only (1 ticker ARS) no cambian.
+            for t in sorted(tickers, key=lambda x: {"MEP": 0, "CABLE": 1}.get(ccy_from_suffix(x), 2)):
                 p = price_of(t)
                 if p:
                     price = p

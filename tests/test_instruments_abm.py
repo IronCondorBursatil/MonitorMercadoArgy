@@ -431,3 +431,13 @@ class TestSectorCategory:
         assert '>Serv. Financieros<' in html                # texto = etiqueta del monitor
         # el & de la key se escapa en el atributo (autoescape); el texto es la etiqueta corta
         assert '>Energía<' in html and 'value="Energía / Petróleo &amp; Gas"' in html
+
+    def test_coverage_price_prefers_mep_leg(self, abm_db):
+        """El precio de la fila ABM toma la pata MEP (…D, en USD), no la pata pesos (…O)."""
+        save_instrument("Obligaciones_Negociables",
+                        {**self._BASE, "ticker_ars": "ZZP0O", "ticker_mep": "ZZP0D",
+                         "short_name": "PRICE TEST"})
+        prices = {"ZZP0O": 150990.0, "ZZP0D": 98.5}
+        r = {x["key"]: x for x in list_instruments_coverage(
+            price_of=prices.get, sheet="Obligaciones_Negociables")}["ZZP0O"]
+        assert r["price"] == 98.5   # la pata MEP (…D), no el peso 150990
