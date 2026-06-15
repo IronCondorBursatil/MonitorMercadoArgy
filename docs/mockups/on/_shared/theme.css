@@ -1,0 +1,110 @@
+/* =====================================================================
+   Mockups O.N's — design system Balanz (tokens copiados de app.css).
+   Light por default; [data-theme="dark"] conmuta. Compartido por los 20.
+   ===================================================================== */
+:root {
+  --navy: #0a1d4a; --navy-dark: #06143b; --navy-band: #142a66;
+  --accent: #3a5fcf; --accent-light: #dde5fb; --tir-hl: rgba(58,95,207,.14);
+  --page-bg: #f3f5fa; --panel-bg: #ffffff; --panel-border: #d2d8e6;
+  --row-alt: #f6f8fc; --row-hover: #eef2fb; --head-bg: #0a1d4a;
+  --text: #0e1834; --text-dim: #4a5780; --text-faint: #8993b8; --text-white: #fff;
+  --pos: #0d6e3a; --neg: #a8242b; --live: #37d67a;
+  --bar-pos: #cde9d6; --bar-neg: #f3d6d8;
+  --shadow-panel: 0 4px 14px rgba(10,29,74,.10);
+  --scroll-thumb: #c2cadb; --scroll-thumb-hover: #a7b1c8;
+  --font-body: "Inter Tight", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  --radius: 8px;
+}
+[data-theme="dark"] {
+  --navy: #102452; --navy-dark: #0a1738; --navy-band: #1c3170;
+  --accent: #6486e6; --accent-light: #17264c; --tir-hl: rgba(100,134,230,.22);
+  --page-bg: #070f24; --panel-bg: #0f1b3a; --panel-border: #26345a;
+  --row-alt: #13203f; --row-hover: #1b2b50; --head-bg: #102452;
+  --text: #e9edf7; --text-dim: #aab4d4; --text-faint: #8893bb;
+  --pos: #4fcf85; --neg: #f28a8f;
+  --bar-pos: #16331f; --bar-neg: #3a1d22;
+  --shadow-panel: 0 4px 14px rgba(0,0,0,.5);
+  --scroll-thumb: #3a4d7a; --scroll-thumb-hover: #4d639c;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page-bg); color: var(--text);
+       font: 13px/1.45 var(--font-body); -webkit-font-smoothing: antialiased; }
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 7px;
+  border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; }
+a { color: var(--accent); text-decoration: none; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); } .neg { color: var(--neg); }
+.dim { color: var(--text-dim); } .faint { color: var(--text-faint); }
+
+/* ---- header / nav (replica del monitor real, con O.N's activo) ---- */
+.on-header { position: sticky; top: 0; z-index: 100; background: var(--head-bg);
+  color: var(--text-white); box-shadow: var(--shadow-panel); }
+.on-header .bar { display: flex; align-items: center; gap: 14px; padding: 9px 18px; }
+.on-header h1 { font-size: 14px; margin: 0; font-weight: 700; letter-spacing: .5px;
+  white-space: nowrap; }
+.on-header .sub { color: #c7d0ee; font-size: 11.5px; }
+.on-header nav { margin-left: auto; display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.on-header nav a { color: #c7d0ee; font-size: 12px; font-weight: 600; padding: 5px 9px;
+  border-radius: 6px; }
+.on-header nav a:hover { background: rgba(255,255,255,.12); color: #fff; }
+.on-header nav a.active { background: var(--accent); color: #fff; }
+.on-header .badge { background: #e8843a; color: #311; font-weight: 700; font-size: 10.5px;
+  padding: 2px 7px; border-radius: 10px; }
+.on-header .tbtn { background: rgba(255,255,255,.12); border: none; color: #fff; cursor: pointer;
+  border-radius: 6px; padding: 5px 9px; font-size: 13px; }
+.on-header .gen { color: #8fa0d6; font-size: 10.5px; }
+
+/* ---- panel / card primitives ---- */
+.panel { background: var(--panel-bg); border: 1px solid var(--panel-border);
+  border-radius: var(--radius); box-shadow: var(--shadow-panel); overflow: hidden; }
+.panel-head { display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+  background: var(--navy-band); color: #fff; font-weight: 700; font-size: 12.5px;
+  letter-spacing: .4px; }
+.panel-head .spacer { margin-left: auto; }
+.panel-body { padding: 12px 14px; }
+
+/* ---- tables ---- */
+table.on { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.on thead th { position: sticky; top: 0; background: var(--head-bg); color: #fff;
+  font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px;
+  padding: 7px 9px; text-align: right; white-space: nowrap; cursor: pointer; user-select: none; }
+table.on thead th:first-child, table.on tbody td:first-child { text-align: left; }
+table.on tbody td { padding: 6px 9px; text-align: right; border-bottom: 1px solid var(--panel-border);
+  white-space: nowrap; }
+table.on tbody tr:nth-child(even) { background: var(--row-alt); }
+table.on tbody tr:hover { background: var(--row-hover); }
+table.on .tir { background: var(--tir-hl); font-weight: 700; }
+table.on .grp td { background: var(--navy-band); color: #fff; font-weight: 700; text-align: left;
+  font-size: 11.5px; letter-spacing: .3px; position: sticky; top: 28px; }
+th.sorted-asc::after { content: " ▲"; } th.sorted-desc::after { content: " ▼"; }
+
+/* ---- chips / pills / segmented ---- */
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px;
+  border: 1px solid var(--panel-border); background: var(--panel-bg); color: var(--text-dim);
+  font-size: 11.5px; font-weight: 600; cursor: pointer; user-select: none; }
+.chip:hover { border-color: var(--accent); }
+.chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.chip .dot { width: 9px; height: 9px; border-radius: 50%; }
+.seg { display: inline-flex; border: 1px solid var(--panel-border); border-radius: 7px; overflow: hidden; }
+.seg button { background: var(--panel-bg); color: var(--text-dim); border: none; padding: 5px 12px;
+  font-size: 12px; font-weight: 600; cursor: pointer; }
+.seg button.on { background: var(--accent); color: #fff; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* ---- KPI tiles ---- */
+.kpi { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--radius);
+  padding: 11px 14px; box-shadow: var(--shadow-panel); }
+.kpi .k-label { color: var(--text-faint); font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .4px; font-weight: 600; }
+.kpi .k-val { font-family: var(--font-mono); font-size: 21px; font-weight: 700; margin-top: 3px; }
+.kpi .k-sub { color: var(--text-dim); font-size: 11px; margin-top: 1px; }
+
+.muted-note { color: var(--text-faint); font-size: 11px; padding: 8px 14px; }
+.wrap { max-width: 1500px; margin: 0 auto; padding: 16px; }

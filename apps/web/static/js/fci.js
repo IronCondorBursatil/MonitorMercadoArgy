@@ -33,6 +33,10 @@ function fmtAum(v) {
   return sg + "$" + Math.round(a).toLocaleString("es-AR");
 }
 function fmtMoney(v) { if (v == null) return "—"; return "$" + Number(v).toLocaleString("es-AR"); }
+function esc(s) {
+  if (s == null) return "";
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
 
 // lens-adjusted return for a fund/period/metric
 function getRet(f, period, metric, lens) {
@@ -202,8 +206,8 @@ function renderBody() {
     });
     var med = median(g.map(function (f) { return getRet(f, S.period, S.metric, S.lens); }).filter(function (v) { return v != null; }));
     var col = S.collapsed[sub];
-    body += "<tr class='grp' data-s='" + sub + "'><td colspan='" + (6 + PERIODS.length + 2) + "'>"
-      + (col ? "▸ " : "▾ ") + sub + " <span class='gcount'>· " + g.length + " fondos</span>"
+    body += "<tr class='grp' data-s='" + esc(sub) + "'><td colspan='" + (6 + PERIODS.length + 2) + "'>"
+      + (col ? "▸ " : "▾ ") + esc(sub) + " <span class='gcount'>· " + g.length + " fondos</span>"
       + "<span class='gmed'>· mediana " + (S.metric === "tna" ? "TNA" : "") + " " + fmtPct(med) + "</span></td></tr>";
     if (col) return;
     var max = Math.max.apply(null, g.map(function (f) { var v = getRet(f, S.period, S.metric, S.lens); return v == null ? 0 : v; }).concat([0.01]));
@@ -213,8 +217,8 @@ function renderBody() {
       var fav = S.favs.has(key(f));
       body += "<tr class='fund' data-k='" + key(f) + "'>"
         + "<td class='star" + (fav ? " on" : "") + "' data-fav='" + key(f) + "'>" + (fav ? "★" : "☆") + "</td>"
-        + "<td><div class='fname'>" + f.fondo + "</div>" + (f.n_clases > 1 ? "<div class='fsub'>" + f.n_clases + " clases</div>" : "") + "</td>"
-        + "<td class='opt' style='font-size:11.5px;color:var(--text-dim)'>" + (f.soc || "—") + "</td>"
+        + "<td><div class='fname'>" + esc(f.fondo) + "</div>" + (f.n_clases > 1 ? "<div class='fsub'>" + f.n_clases + " clases</div>" : "") + "</td>"
+        + "<td class='opt' style='font-size:11.5px;color:var(--text-dim)'>" + esc(f.soc || "—") + "</td>"
         + "<td class='num'>" + f.moneda + "</td><td class='opt num'>" + f.settle + "</td>"
         + "<td><div class='bar'><i style='width:" + pct + "%'></i><span class='" + cls(v) + "'>" + fmtPct(v) + "</span></div></td>"
         + PERIODS.map(function (p) { var pv = getRet(f, p, S.metric, S.lens); return "<td class='opt num " + cls(pv) + "'>" + fmtPct(pv) + "</td>"; }).join("")
@@ -252,7 +256,7 @@ function renderRankings() {
     var w = Math.max(3, Math.abs(v) / amax * 100);
     return "<div class='rk" + (i < 3 ? " top" + (i + 1) : "") + "' data-k='" + key(f) + "' style='cursor:pointer'>"
       + "<div class='pos-n'>" + (i + 1) + "</div>"
-      + "<div class='rkbar'><i style='width:" + w + "%'></i><b>" + f.fondo + " <span class='muted'>· " + (f.soc || "") + "</span></b></div>"
+      + "<div class='rkbar'><i style='width:" + w + "%'></i><b>" + esc(f.fondo) + " <span class='muted'>· " + esc(f.soc || "") + "</span></b></div>"
       + "<div class='rkv " + cls(v) + "'>" + fmtPct(v) + "</div></div>";
   }).join("") || "<p class='empty'>Sin datos</p>";
   document.querySelectorAll("#rkbody .rk").forEach(function (r) { r.onclick = function () { openDetail(r.dataset.k); }; });
@@ -273,7 +277,7 @@ function renderComparar() {
     html += "<p class='note'>Crecimiento de $10.000 (histórico reconstruido de los retornos reales)" + lensTag() + ".</p>";
     html += "<div style='overflow:auto'><table class='cmp-tbl'><colgroup><col style='width:150px'>"
       + chosen.map(function () { return "<col>"; }).join("") + "</colgroup><thead><tr><th style='text-align:left'>Métrica</th>"
-      + chosen.map(function (f) { return "<th style='text-align:center'>" + f.fondo + "</th>"; }).join("") + "</tr></thead><tbody>";
+      + chosen.map(function (f) { return "<th style='text-align:center'>" + esc(f.fondo) + "</th>"; }).join("") + "</tr></thead><tbody>";
     var row = function (label, fn) { html += "<tr><td style='text-align:left'>" + label + "</td>" + chosen.map(function (f) { return "<td style='text-align:center'>" + fn(f) + "</td>"; }).join("") + "</tr>"; };
     PERIODS.forEach(function (p) { row((S.metric === "tna" ? "TNA " : "Dir ") + PL[p], function (f) { var v = getRet(f, p, S.metric, S.lens); return "<span class='" + cls(v) + "'>" + fmtPct(v) + "</span>"; }); });
     row("AUM", function (f) { return fmtAum(f.aum); });
@@ -293,7 +297,7 @@ function renderComparar() {
     if (!v) { sug.innerHTML = ""; return; }
     var hits = FUNDS.filter(function (f) { return fstr(f).indexOf(v) >= 0; }).slice(0, 8);
     sug.innerHTML = "<div style='border:1px solid var(--panel-border);border-radius:6px;margin:4px 0'>"
-      + hits.map(function (f) { return "<div class='cfg-item' data-k='" + key(f) + "' style='padding:6px 10px;cursor:pointer'>" + f.fondo + " <span class='muted'>· " + (f.soc || "") + "</span></div>"; }).join("") + "</div>";
+      + hits.map(function (f) { return "<div class='cfg-item' data-k='" + key(f) + "' style='padding:6px 10px;cursor:pointer'>" + esc(f.fondo) + " <span class='muted'>· " + esc(f.soc || "") + "</span></div>"; }).join("") + "</div>";
     sug.querySelectorAll(".cfg-item").forEach(function (d) { d.onclick = function () { if (S.cmp.indexOf(d.dataset.k) < 0) S.cmp.push(d.dataset.k); saveCmp(); q.value = ""; sug.innerHTML = ""; renderTabs(); renderComparar(); }; });
   };
   renderCmpChips();
@@ -301,7 +305,7 @@ function renderComparar() {
 }
 function renderCmpChips() {
   var box = document.getElementById("cmpchips"); if (!box) return;
-  box.innerHTML = S.cmp.map(function (k) { var f = FMAP[k]; if (!f) return ""; return "<span class='chip'>" + f.fondo + "<button data-k='" + k + "'>×</button></span>"; }).join("");
+  box.innerHTML = S.cmp.map(function (k) { var f = FMAP[k]; if (!f) return ""; return "<span class='chip'>" + esc(f.fondo) + "<button data-k='" + k + "'>×</button></span>"; }).join("");
   box.querySelectorAll("button").forEach(function (b) { b.onclick = function () { S.cmp = S.cmp.filter(function (x) { return x !== b.dataset.k; }); saveCmp(); renderTabs(); renderComparar(); }; });
 }
 function drawCmpChart(chosen) {
@@ -336,8 +340,8 @@ function renderFavBody() {
     + PERIODS.map(function (p) { return "<th>" + PL[p] + "</th>"; }).join("") + "<th>AUM</th></tr></thead><tbody>";
   favs.forEach(function (f) {
     html += "<tr class='fund' data-k='" + key(f) + "'><td class='star on' data-fav='" + key(f) + "'>★</td>"
-      + "<td><div class='fname'>" + f.fondo + "</div><div class='fsub'>" + (f.soc || "") + "</div></td>"
-      + "<td class='opt' style='font-size:11px;color:var(--text-dim)'>" + f.sub + "</td><td class='num'>" + f.moneda + "</td>"
+      + "<td><div class='fname'>" + esc(f.fondo) + "</div><div class='fsub'>" + esc(f.soc || "") + "</div></td>"
+      + "<td class='opt' style='font-size:11px;color:var(--text-dim)'>" + esc(f.sub) + "</td><td class='num'>" + esc(f.moneda) + "</td>"
       + PERIODS.map(function (p) { var v = getRet(f, p, S.metric, S.lens); return "<td class='num " + cls(v) + "'>" + fmtPct(v) + "</td>"; }).join("")
       + "<td class='num'>" + fmtAum(f.aum) + "</td></tr>";
   });
@@ -392,7 +396,7 @@ function renderFlujos() {
     var name = m[0], val = m[1], w = Math.abs(val) / mgrMax * 100, open = !!S.flowOpen[name];
     var rowh = "<div class='rk mgr-row' data-mi='" + mi + "' style='cursor:pointer;user-select:none'>"
       + "<div style='width:16px;text-align:center;color:var(--text-faint)'>" + (open ? "▾" : "▸") + "</div>"
-      + "<div class='rkbar' style='background:var(--row-alt)'><i style='width:" + w + "%;background:" + (val >= 0 ? "var(--pos)" : "var(--neg)") + ";opacity:.5'></i><b>" + name + "</b></div>"
+      + "<div class='rkbar' style='background:var(--row-alt)'><i style='width:" + w + "%;background:" + (val >= 0 ? "var(--pos)" : "var(--neg)") + ";opacity:.5'></i><b>" + esc(name) + "</b></div>"
       + "<div class='rkv " + (val >= 0 ? "pos" : "neg") + "'>" + fmtAum(val) + "</div></div>";
     if (open) {
       var funds = mem.filter(function (f) { return (f.soc || "—") === name; }).map(function (f) {
@@ -402,7 +406,7 @@ function renderFlujos() {
       rowh += "<div class='mgr-funds'>" + funds.map(function (x) {
         var fw2 = Math.abs(x.v) / fmax * 100;
         return "<div class='rk subfund' data-k='" + x.f.fid + "' style='cursor:pointer'><div style='width:16px'></div>"
-          + "<div class='rkbar' style='height:18px;background:var(--row-alt)'><i style='width:" + fw2 + "%;background:" + (x.v >= 0 ? "var(--pos)" : "var(--neg)") + ";opacity:.4'></i><b style='font-size:11.5px'>" + x.f.fondo + "</b></div>"
+          + "<div class='rkbar' style='height:18px;background:var(--row-alt)'><i style='width:" + fw2 + "%;background:" + (x.v >= 0 ? "var(--pos)" : "var(--neg)") + ";opacity:.4'></i><b style='font-size:11.5px'>" + esc(x.f.fondo) + "</b></div>"
           + "<div class='rkv " + (x.v >= 0 ? "pos" : "neg") + "' style='font-size:11.5px'>" + fmtAum(x.v) + "</div></div>";
       }).join("") + "</div>";
     }
@@ -446,12 +450,12 @@ function closeModal() { if (detChart) { detChart.destroy(); detChart = null; } d
 function drawModal() {
   var f = FMAP[detailState.k]; if (!f) return;
   var fav = S.favs.has(detailState.k), inCmp = S.cmp.indexOf(detailState.k) >= 0;
-  var badges = "<span class='tag'>" + f.sub + "</span><span class='tag'>" + f.moneda + "</span><span class='tag'>" + f.settle + "</span>"
-    + (f.horizonte ? "<span class='tag'>" + f.horizonte + "</span>" : "")
+  var badges = "<span class='tag'>" + esc(f.sub) + "</span><span class='tag'>" + esc(f.moneda) + "</span><span class='tag'>" + esc(f.settle) + "</span>"
+    + (f.horizonte ? "<span class='tag'>" + esc(f.horizonte) + "</span>" : "")
     + (f.aum_real ? "<span class='tag real'>AUM real</span>" : "<span class='tag syn'>AUM s/d</span>");
   var tabs = [["rend", "Rendimientos"], ["vcp", "Cuotaparte"], ["flows", "Flujos"], ["ficha", "Ficha"]];
   document.getElementById("modal").innerHTML = "<div class='scrim' id='scrim'><div class='sheet' id='sheet'><div class='sheet-head'>"
-    + "<div><h2>" + f.fondo + "</h2><div class='muted' style='font-size:12.5px'>" + (f.soc || "") + (f.n_clases > 1 ? " · " + f.n_clases + " clases" : "") + "</div><div class='badges'>" + badges + "</div></div>"
+    + "<div><h2>" + esc(f.fondo) + "</h2><div class='muted' style='font-size:12.5px'>" + esc(f.soc || "") + (f.n_clases > 1 ? " · " + f.n_clases + " clases" : "") + "</div><div class='badges'>" + badges + "</div></div>"
     + "<button class='x' id='mx'>×</button></div>"
     + "<div style='display:flex;gap:7px;padding:8px 16px 0;flex-wrap:wrap'>"
     + "<button class='btn-ghost' id='mfav'>" + (fav ? "★ En watchlist" : "☆ Seguir") + "</button>"
@@ -486,7 +490,7 @@ function drawPane() {
       + kpi("Mínimo", f.min ? fmtMoney(f.min) : "—")
       + kpi("Liquidación", f.settle) + "</div>"
       + posSection(f)
-      + "<h4 style='margin:16px 0 6px;color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.4px'>Clase principal (" + (f.clases[0] || {}).clase + ") · por moneda</h4>"
+      + "<h4 style='margin:16px 0 6px;color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.4px'>Clase principal (" + esc((f.clases[0] || {}).clase || "") + ") · por moneda</h4>"
       + "<table><thead><tr><th style='text-align:left'>Período</th><th class='num'>TNA</th><th class='num'>Directo</th><th class='num'>USD @MEP</th><th class='num'>Real (CER)</th></tr></thead><tbody>"
       + PERIODS.map(function (p) {
         return "<tr><td style='text-align:left'>" + PL[p] + "</td>"
@@ -499,7 +503,7 @@ function drawPane() {
       + "<div style='overflow:auto'><table><thead><tr><th style='text-align:left'>Clase</th><th>Mon</th>"
       + PERIODS.map(function (p) { return "<th class='num'>" + PL[p] + "</th>"; }).join("") + "<th class='num'>AUM</th><th class='num'>Costo</th><th class='num'>Mín.</th></tr></thead><tbody>"
       + f.clases.map(function (c) {
-        return "<tr><td style='text-align:left'>" + c.clase + "</td><td class='num'>" + c.moneda + "</td>"
+        return "<tr><td style='text-align:left'>" + esc(c.clase) + "</td><td class='num'>" + esc(c.moneda) + "</td>"
           + PERIODS.map(function (p) { var v = getRet(c, p, S.metric, S.lens); return "<td class='num " + cls(v) + "'>" + fmtPct(v) + "</td>"; }).join("")
           + "<td class='num'>" + fmtAum(c.aum) + (c.aum_real ? "" : " *") + "</td><td class='num'>" + fmtPct(c.fee_admin, 2) + "</td><td class='num'>" + (c.min ? fmtMoney(c.min) : "—") + "</td></tr>";
       }).join("") + "</tbody></table></div>";
@@ -561,13 +565,13 @@ function drawPane() {
       + fila("Liquidación rescate", f.settle) + fila("Inversión mínima", f.min ? fmtMoney(f.min) : null)
       + fila("Costo gestión (anual)", fmtPct(f.fee_admin, 2)) + fila("Comisión salida", f.fee_out != null ? fmtPct(f.fee_out, 2) : null)
       + fila("Inicio", f.inicio) + fila("ISIN", f.isin) + fila("Bloomberg", f.bbg)
-      + "</dl>" + (f.obj ? "<p class='objetivo'>“" + f.obj + (f.obj.length >= 400 ? "…" : "") + "”</p>" : "");
+      + “</dl>” + (f.obj ? “<p class='objetivo'>”” + esc(f.obj) + (f.obj.length >= 400 ? “…” : “”) + “”</p>” : “”);
   }
   pane.style.opacity = "0"; requestAnimationFrame(function () { if (pane) pane.style.opacity = "1"; });
   animateSheet(sheet, h0);
 }
 function kpi(k, v, sub) { return "<div class='kpi'><div class='k'>" + k + "</div><div class='v'>" + v + (sub ? " <small>" + sub + "</small>" : "") + "</div></div>"; }
-function fila(k, v) { return v ? ("<dt>" + k + "</dt><dd>" + v + "</dd>") : ""; }
+function fila(k, v) { return v ? ("<dt>" + k + "</dt><dd>" + esc(String(v)) + "</dd>") : ""; }
 
 // posición del fondo en su subcategoría (percentil)
 function fundPosition(f, period) {
@@ -582,7 +586,7 @@ function fundPosition(f, period) {
 function posSection(f) {
   var per = detailState.rkPeriod || S.period;
   var pers = "<span class='seg' id='posper'>" + PERIODS.map(function (p) { return "<button data-p='" + p + "' class='" + (per === p ? "on" : "") + "'>" + PL[p] + "</button>"; }).join("") + "</span>";
-  var head = "<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 7px'><span class='lbl'>Posición en " + f.sub + "</span>" + pers + "</div>";
+  var head = "<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 7px'><span class='lbl'>Posición en " + esc(f.sub) + "</span>" + pers + "</div>";
   var pos = fundPosition(f, per);
   if (!pos) return head + "<p class='note'>Pocos pares en la subcategoría para rankear.</p>";
   var col = pos.v >= pos.med ? "var(--pos)" : "var(--neg)";

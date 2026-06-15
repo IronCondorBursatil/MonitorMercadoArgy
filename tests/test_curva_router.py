@@ -9,7 +9,8 @@ def test_curva_page_renders():
     with TestClient(app) as c:
         r = c.get("/curva")
         assert r.status_code == 200
-        assert "curva-canvas" in r.text and "chart.js" in r.text.lower() and "CURVA" in r.text
+        # chart.umd.min.js: vendor LOCAL (static/vendor) — antes se asertaba la URL del CDN
+        assert "curva-canvas" in r.text and "chart.umd.min.js" in r.text.lower() and "CURVA" in r.text
 
 
 def test_curva_data_shape():

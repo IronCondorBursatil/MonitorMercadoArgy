@@ -104,17 +104,17 @@ main { padding: 14px; display: grid; gap: 14px;
 /* Botones con el mismo estilo que los links del nav (texto celeste, hover/activo
    con el resaltado de selección). */
 .ph-tools { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; cursor: default; }
-.ph-btn, .ccy-btn { background: transparent; color: #c7d0ee; border: none; border-radius: 6px;
+.ph-btn, .ccy-btn, .ley-btn { background: transparent; color: #c7d0ee; border: none; border-radius: 6px;
            padding: 4px 9px; cursor: pointer; font: 600 11px var(--font-body); letter-spacing: .3px;
            white-space: nowrap; }
-.ph-btn:hover, .ccy-btn:hover { background: rgba(255,255,255,.12); color: #fff; }
-.ccy-btn.on { background: rgba(255,255,255,.12); color: #fff; }
+.ph-btn:hover, .ccy-btn:hover, .ley-btn:hover { background: rgba(255,255,255,.12); color: #fff; }
+.ccy-btn.on, .ley-btn.on { background: rgba(255,255,255,.12); color: #fff; }
 .ph-x { color: #c7d0ee; padding: 4px 8px; }
 .ph-x:hover { background: rgba(242,138,143,.22); color: #fff; }
 .ph-cam { display: inline-flex; align-items: center; padding: 4px 7px; }
 .ph-cam svg { display: block; }
 .ph-cam:disabled { opacity: .5; cursor: progress; }
-.ccy-filter { display: inline-flex; gap: 3px; flex: 0 0 auto; margin: 0 2px; }
+.ccy-filter, .ley-filter { display: inline-flex; gap: 3px; flex: 0 0 auto; margin: 0 2px; }
 /* Plazo de liquidación: UN solo botón que alterna 24hs (default) ↔ CI. Cuando está
    en CI se ilumina (accent) + efecto "presionado" para señalar que cambió el plazo. */
 .settle-toggle { background: transparent; color: #c7d0ee; border: 1px solid var(--panel-border);
@@ -135,11 +135,15 @@ main { padding: 14px; display: grid; gap: 14px;
             max-height: 70vh; overflow: auto; }
 .col-menu.open { display: block; }
 
-/* oculta las filas cuya moneda no esté activa (estado en `data-flt` del panel) */
-.panel[data-flt] tbody tr[data-ccy] { display: none; }
-.panel[data-flt~="ARS"]   tbody tr[data-ccy="ARS"],
-.panel[data-flt~="MEP"]   tbody tr[data-ccy="MEP"],
-.panel[data-flt~="CABLE"] tbody tr[data-ccy="CABLE"] { display: table-row; }
+/* Filtros de fila por panel — moneda (`data-flt` ↔ data-ccy) y ley (`data-ley-flt`
+   ↔ data-ley). SOLO reglas hide ("ocultá lo que NO está activo"): sin show-rules
+   la composición AND entre filtros es automática, el orden de las reglas no importa,
+   y un filtro nuevo es un bloque más sin tocar estos. Sin atributo → todo visible. */
+.panel[data-flt]:not([data-flt~="ARS"])   tbody tr[data-ccy="ARS"],
+.panel[data-flt]:not([data-flt~="MEP"])   tbody tr[data-ccy="MEP"],
+.panel[data-flt]:not([data-flt~="CABLE"]) tbody tr[data-ccy="CABLE"],
+.panel[data-ley-flt]:not([data-ley-flt~="AR"])  tbody tr[data-ley="AR"],
+.panel[data-ley-flt]:not([data-ley-flt~="EXT"]) tbody tr[data-ley="EXT"] { display: none; }
 
 /* ocultar columnas vía clases hcol-N en el .panel (Config de columnas).
    Hasta 16: soberanos/bopreales tienen 15 cols (con Sem/1M/3M/YTD/1A) + headroom. */

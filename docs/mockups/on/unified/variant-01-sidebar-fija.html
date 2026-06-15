@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ON Unificado · Sidebar fija a la derecha</title>
+<link rel="stylesheet" href="../_shared/theme.css">
+<link rel="stylesheet" href="../_shared/unified.css">
+<style>
+  /* ---- TU LAYOUT ACÁ (la maqueta específica de esta variante) ---- */
+  html, body { height: 100%; margin: 0; }
+
+  .pg { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
+
+  /* header terminal */
+  .v-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 16px; background: var(--head-bg); color: var(--text-white);
+    box-shadow: var(--shadow-panel); z-index: 50; flex: 0 0 auto;
+  }
+  .v-head h1 { font-size: 14px; margin: 0; font-weight: 700; letter-spacing: .5px; white-space: nowrap; }
+  .v-head .v-sub { color: #c7d0ee; font-size: 11.5px; }
+  .v-head .v-gen { color: #8fa0d6; font-size: 10.5px; margin-left: 6px; }
+  .v-head .spacer { margin-left: auto; }
+  .v-head .badge {
+    background: #e8843a; color: #311; font-weight: 700; font-size: 10.5px;
+    padding: 2px 7px; border-radius: 10px;
+  }
+  .v-head .tbtn {
+    background: rgba(255,255,255,.12); border: none; color: #fff; cursor: pointer;
+    border-radius: 6px; padding: 5px 10px; font-size: 14px; transition: background .15s;
+  }
+  .v-head .tbtn:hover { background: rgba(255,255,255,.25); }
+
+  /* 2 columnas: tabla flex:1 + sidebar fija a la derecha */
+  .v-main { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+
+  #tool {
+    flex: 1 1 auto; min-width: 0; min-height: 0;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--panel-border);
+  }
+
+  /* panel lateral fijo ~360px, full alto, sticky */
+  .v-side {
+    flex: 0 0 360px; width: 360px; align-self: stretch;
+    position: sticky; top: 0;
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--panel-bg);
+    overflow: hidden;
+  }
+
+  /* bloque del gráfico (siempre visible, arriba) */
+  .v-chartcard { display: flex; flex-direction: column; flex: 0 0 auto; padding: 0; }
+  .v-chart-head {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 11px 14px 6px;
+  }
+  .v-chart-head .ch-title {
+    font-size: 12px; font-weight: 700; letter-spacing: .3px; color: var(--text);
+  }
+  .v-chart-head .ch-sub { font-size: 10.5px; color: var(--text-faint); margin-left: auto; }
+  .v-canvas-box {
+    position: relative; height: 340px; margin: 0 12px 8px;
+    padding: 6px 4px 4px;
+    border: 1px solid var(--panel-border); border-radius: var(--radius);
+    background: color-mix(in srgb, var(--page-bg) 55%, var(--panel-bg));
+  }
+  .v-canvas-box canvas { display: block; }
+
+  /* mini-leyenda de sectores (debajo del gráfico) */
+  .v-leg-head {
+    font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    color: var(--text-faint); padding: 8px 16px 6px;
+    border-top: 1px solid var(--panel-border);
+  }
+  .v-leg {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    padding: 0 10px 12px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .v-chip {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 10px; border-radius: 7px; cursor: pointer; user-select: none;
+    border: 1.5px solid transparent; transition: background .12s, border-color .12s, opacity .12s;
+  }
+  .v-chip:hover { background: var(--row-hover); }
+  .v-chip.active { border-color: var(--accent); background: var(--row-alt); }
+  .v-chip.dim { opacity: .38; }
+  .v-chip .v-dot {
+    width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--panel-bg) 60%, transparent);
+  }
+  .v-chip .v-name { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.15; }
+  .v-chip .v-stats { font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+  .v-chip .v-count {
+    margin-left: auto; font: 700 10px var(--font-mono);
+    background: var(--row-hover); color: var(--text-dim);
+    padding: 1px 7px; border-radius: 9px;
+  }
+  .v-chip .v-txtwrap { display: flex; flex-direction: column; min-width: 0; }
+  .v-leg-empty { padding: 18px 14px; color: var(--text-faint); font-size: 11.5px; text-align: center; }
+
+  /* responsive: si la ventana es muy angosta la sidebar se reduce */
+  @media (max-width: 900px) {
+    .v-side { flex-basis: 300px; width: 300px; }
+  }
+</style>
+</head>
+<body>
+<div class="pg">
+  <!-- header terminal -->
+  <header class="v-head">
+    <h1>O.N's · Unificado</h1>
+    <span class="v-sub">— Sidebar fija a la derecha</span>
+    <span class="v-gen" id="genTxt"></span>
+    <span class="spacer"></span>
+    <span class="badge">BYMA open (20m)</span>
+    <button class="tbtn" title="Tema claro/oscuro" onclick="ON.toggleTheme()">◐</button>
+  </header>
+
+  <div class="v-main">
+    <!-- tabla unificada (flex:1, scroll interno) -->
+    <div id="tool"></div>
+
+    <!-- panel lateral fijo -->
+    <aside class="v-side">
+      <div class="v-chartcard">
+        <div class="v-chart-head">
+          <span class="ch-title">TIR vs MD · por sector</span>
+          <span class="ch-sub" id="chSub"></span>
+        </div>
+        <div class="v-canvas-box">
+          <canvas id="bubble"></canvas>
+        </div>
+      </div>
+      <div class="v-leg-head">Sectores · click para resaltar</div>
+      <div class="v-leg" id="legend"></div>
+    </aside>
+  </div>
+</div>
+
+<script src="../_shared/on_data.js"></script>
+<script src="../_shared/sectors.js"></script>
+<script src="../_shared/chart.umd.min.js"></script>
+<script src="../_shared/util.js"></script>
+<script src="../_shared/unified.js"></script>
+<script>
+  /* ---- TU JS ACÁ: Unified.render(...) + lógica del gráfico ---- */
+  (function () {
+    "use strict";
+
+    // snapshot label en el header
+    var gen = ON.DATA.generated ? ("snapshot " + ON.DATA.generated.replace("T", " ")) : "";
+    var meta = ON.DATA.meta
+      ? (ON.DATA.meta.n_bonds + " ONs · AR " + ON.DATA.meta.n_ar + " / EXT " + ON.DATA.meta.n_ext)
+      : "";
+    document.getElementById("genTxt").textContent = [gen, meta].filter(Boolean).join("  ·  ");
+
+    // ---- estado del gráfico ----
+    var chart = null;
+    var lastAggs = [];
+    var sel = null;                 // sector resaltado (toggle)
+    var canvas = document.getElementById("bubble");
+    var legEl = document.getElementById("legend");
+    var subEl = document.getElementById("chSub");
+
+    // radio de la burbuja ∝ count
+    function radius(count) { return Math.max(8, Math.min(28, 6 + count * 1.3)); }
+
+    // aggs → datasets (una burbuja por sector con MD/TIR válidos)
+    function buildData(aggs) {
+      var pts = aggs.filter(function (a) {
+        return a.md_avg != null && !isNaN(a.md_avg) && a.tir_avg != null && !isNaN(a.tir_avg) && a.count > 0;
+      });
+      return {
+        datasets: pts.map(function (a) {
+          return {
+            label: a.short,
+            sectorKey: a.key,
+            data: [{
+              x: a.md_avg, y: a.tir_avg, r: radius(a.count),
+              short: a.short, count: a.count, tir: a.tir_avg, md: a.md_avg
+            }],
+            backgroundColor: a.color + "cc",
+            borderColor: a.color,
+            borderWidth: 2,
+            hoverBorderWidth: 3,
+          };
+        }),
+      };
+    }
+
+    function options() {
+      var t = ON.chartTheme();
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 240 },
+        layout: { padding: { top: 6, right: 8, bottom: 2, left: 2 } },
+        onClick: function (evt, els) {
+          if (!els || !els.length) return;
+          var ds = chart.data.datasets[els[0].datasetIndex];
+          if (ds && ds.sectorKey) toggle(ds.sectorKey);
+        },
+        scales: {
+          x: {
+            type: "linear",
+            title: { display: true, text: "MD prom (años)", color: t.txt, font: { size: 10 } },
+            ticks: { color: t.txt, font: { size: 10 } },
+            grid: { color: t.grid },
+            border: { color: t.grid },
+          },
+          y: {
+            type: "linear",
+            title: { display: true, text: "TIR prom (%)", color: t.txt, font: { size: 10 } },
+            ticks: { color: t.txt, font: { size: 10 }, callback: function (v) { return v + "%"; } },
+            grid: { color: t.grid },
+            border: { color: t.grid },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function (c) {
+                var r = c.raw || {};
+                return r.short + " (" + r.count + " bonos) · TIR prom "
+                  + (r.tir != null ? r.tir.toFixed(2) : "?") + "% · MD prom "
+                  + (r.md != null ? r.md.toFixed(2) : "?") + " a";
+              },
+            },
+          },
+        },
+      };
+    }
+
+    // crear la instancia al cargar (canvas ya en el DOM)
+    function ensureChart() {
+      if (chart) return;
+      chart = new Chart(canvas.getContext("2d"), {
+        type: "bubble",
+        data: { datasets: [] },
+        options: options(),
+      });
+    }
+
+    // aplicar atenuado al sector seleccionado en el gráfico
+    function applyEmphasis() {
+      if (!chart) return;
+      chart.data.datasets.forEach(function (ds) {
+        var on = !sel || ds.sectorKey === sel;
+        // recomponer color con alpha según selección
+        var base = ON.sectorColor(ds.sectorKey);
+        ds.backgroundColor = base + (on ? "cc" : "22");
+        ds.borderColor = on ? base : base + "55";
+      });
+      chart.update("none");
+    }
+
+    function draw(aggs) {
+      ensureChart();
+      lastAggs = aggs || [];
+      chart.data = buildData(lastAggs);
+      chart.update("none");
+      applyEmphasis();
+      var n = chart.data.datasets.length;
+      subEl.textContent = n + (n === 1 ? " sector" : " sectores");
+    }
+
+    // toggle del resaltado (sincroniza tabla + gráfico + leyenda)
+    function toggle(key) {
+      sel = (sel === key) ? null : key;
+      Unified.highlight(sel);     // atenúa los demás en la tabla
+      applyEmphasis();
+      paintLegendState();
+    }
+
+    // ---- mini-leyenda de sectores ----
+    function buildLegend(aggs) {
+      if (!aggs.length) {
+        legEl.innerHTML = '<div class="v-leg-empty">Sin sectores visibles</div>';
+        return;
+      }
+      var h = "";
+      aggs.forEach(function (a) {
+        var stats = ON.pct(a.tir_avg) + " TIR · "
+          + (a.md_avg != null ? ON.num(a.md_avg) + "a MD" : "—");
+        h += '<div class="v-chip" data-sec="' + encodeURIComponent(a.key) + '">'
+          + '<span class="v-dot" style="background:' + a.color + '"></span>'
+          + '<span class="v-txtwrap">'
+          + '<span class="v-name">' + a.icon + ' ' + a.short + '</span>'
+          + '<span class="v-stats">' + stats + '</span>'
+          + '</span>'
+          + '<span class="v-count">' + a.count + '</span>'
+          + '</div>';
+      });
+      legEl.innerHTML = h;
+      legEl.querySelectorAll(".v-chip").forEach(function (el) {
+        el.onclick = function () { toggle(decodeURIComponent(el.dataset.sec)); };
+      });
+      paintLegendState();
+    }
+
+    function paintLegendState() {
+      legEl.querySelectorAll(".v-chip").forEach(function (el) {
+        var k = decodeURIComponent(el.dataset.sec);
+        el.classList.toggle("active", sel === k);
+        el.classList.toggle("dim", !!sel && sel !== k);
+      });
+    }
+
+    // recolorear/redibujar en cambio de tema
+    window.addEventListener("on:themechange", function () {
+      if (!chart) return;
+      chart.options = options();
+      applyEmphasis();   // reaplica alphas (también update)
+      chart.update("none");
+    });
+
+    // ---- montaje de la herramienta unificada ----
+    Unified.render(document.getElementById("tool"), {
+      defaultCcy: "MEP",
+      onRender: function (bonds, aggs) {
+        // si el sector resaltado ya no está visible, limpiar selección
+        if (sel && !aggs.some(function (a) { return a.key === sel; })) {
+          sel = null;
+          Unified.highlight(null);
+        }
+        draw(aggs);          // gráfico sigue el filtro de la tabla
+        buildLegend(aggs);   // leyenda sigue el filtro de la tabla
+      },
+    });
+
+    // crear el chart aunque onRender ya haya corrido (idempotente)
+    ensureChart();
+  })();
+</script>
+</body>
+</html>

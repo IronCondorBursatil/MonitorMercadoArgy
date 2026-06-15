@@ -1,6 +1,6 @@
 {% if rows %}
   {% for r in rows %}
-  <tr data-ticker="{{ r.ticker }}"{% if r.ccy %} data-ccy="{{ r.ccy }}"{% endif %}>
+  <tr data-ticker="{{ r.ticker }}"{% if r.ccy %} data-ccy="{{ r.ccy }}"{% endif %}{% if r.ley %} data-ley="{{ r.ley }}"{% endif %}>
     {% if r.clickable is defined and not r.clickable %}
     <td class="tk">{{ r.cells[0].text }}</td>
     {% else %}

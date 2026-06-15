@@ -41,9 +41,10 @@ class _StubState:
         return self._m
 
 
-def _metric(ticker, itype, price, tir, md, vtec, parity):
+def _metric(ticker, itype, price, tir, md, vtec, parity, ley=None):
     inst = Instrument(ticker=ticker, short_name=ticker, instrument_type=itype,
                       maturity_date=date.today() + timedelta(days=400),
+                      ley_aplicable=ley,
                       cashflows=[Cashflow(date.today() + timedelta(days=400), 100.0, 0.0)])
     snap = MarketSnapshot(instrument=inst, price=price, last_update=date.today(),
                           change_pct=1.5, volume=2_000_000.0)
@@ -62,8 +63,92 @@ def test_build_rows_for_cer_panel():
     # primera celda = ticker; columnas CER incluyen category, vto, etc.
     assert rows[0]["cells"][0]["text"] == "TX26"
     # TIR 0.10 -> 10.00%
-    tir_cell = next(c for c in rows[0]["cells"] if c["text"] == "10.00%")
-    assert tir_cell is not None
+    tir_cell = next((c for c in rows[0]["cells"] if c["text"] == "10.00%"), None)
+    assert tir_cell is not None and tir_cell["text"] == "10.00%"
+
+
+def _on_metric(ticker, price, ley=None):
+    # ON HARD DOLLAR sobre la fábrica común — sin precio, tir None (no cotiza).
+    return _metric(ticker, "HARD DOLLAR", price, 0.07 if price else None,
+                   2.0, 100.0, 1.0, ley=ley)
+
+
+def test_on_panel_hides_rows_without_market_price():
+    """El panel ON solo muestra especies con precio de mercado: las patas sin
+    cotización (price None o 0.00, ej. board BYMA vacío) no generan fila."""
+    state = _StubState([
+        _on_metric("YMCXD", 109.9),
+        _on_metric("AFCHD", 0.0),     # sin precio (0.00) → fuera
+        _on_metric("BPCVD", None),    # sin snapshot de precio → fuera
+    ])
+    rows = panels._build_rows("obligaciones_negociables", state)
+    assert [r["ticker"] for r in rows] == ["YMCXD"]
+    # Los demás paneles NO cambian: una especie sin precio sigue mostrándose.
+    cer = _StubState([_metric("TX26", "BONCER", None, None, 1.2, 100.0, None)])
+    assert len(panels._build_rows("cer", cer)) == 1
+
+
+def test_on_panel_has_sector_column_classified():
+    """El panel ON trae la columna Sector (clasificada por emisor): YPF → Energía."""
+    assert any(c["key"] == "sector" for c in panels_schema._ON_COLS)
+    inst = Instrument(ticker="YMCXD", short_name="YPF SA", instrument_type="HARD DOLLAR",
+                      maturity_date=date.today() + timedelta(days=400),
+                      cashflows=[Cashflow(date.today() + timedelta(days=400), 100.0, 0.0)])
+    snap = MarketSnapshot(instrument=inst, price=100.0, change_pct=1.0, volume=1_000_000.0)
+    m = InstrumentMetrics(snapshot=snap, tir=0.07, duration=2.0, technical_value=100.0, parity=1.0)
+    rows = panels._build_rows("obligaciones_negociables", _StubState([m]))
+    assert any(c["text"] == "Energía" for c in rows[0]["cells"])
+    # Un panel no-ON no recibe la celda Sector (es exclusiva del panel ON).
+    cer = panels._build_rows("cer", _StubState([_metric("TX26", "BONCER", 95.0, 0.10, 1.2, 100.0, 0.95)]))
+    assert all(c["text"] != "Energía" for c in cer[0]["cells"])
+
+
+def test_on_panel_rows_carry_ley_for_filter():
+    """Las filas ON llevan `ley` (AR/EXT, del ley_aplicable del instrumento) para el
+    filtro del header; sin dato → EXT (misma convención que is_ley_argentina)."""
+    state = _StubState([
+        _on_metric("YMCXD", 109.9, ley="Argentina"),
+        _on_metric("TSC4D", 109.7, ley="Extranjera"),
+        _on_metric("MGCRD", 107.0, ley=None),
+    ])
+    rows = {r["ticker"]: r for r in panels._build_rows("obligaciones_negociables", state)}
+    assert rows["YMCXD"]["ley"] == "AR"
+    assert rows["TSC4D"]["ley"] == "EXT"
+    assert rows["MGCRD"]["ley"] == "EXT"
+    # Paneles no-ON no llevan `ley` (el atributo es del filtro del panel ON).
+    sob = panels._build_rows("bonares", _StubState([_metric("AL30D", "BONAR", 63.5, 0.12, 3.0, 70.0, 0.9)]))
+    assert "ley" not in sob[0]
+
+
+def test_on_chart_and_share_respect_ley_filter():
+    """La foto (/share) y el gráfico (/chart) del panel ON espejan el filtro Ley
+    activo en pantalla: con ?ley=AR solo entran las ONs ley local (antes la URL
+    solo propagaba ?ccy → la imagen mostraba AR+EXT, distinta de la tabla)."""
+    state = _StubState([
+        _on_metric("YMCXD", 109.9, ley="Argentina"),
+        _on_metric("TSC4D", 109.7, ley="Extranjera"),
+    ])
+    app.dependency_overrides[panels.get_state] = lambda: state
+    try:
+        with TestClient(app) as c:
+            share = c.get("/panels/obligaciones_negociables/share?ccy=MEP&ley=AR").text
+            chart = c.get("/panels/obligaciones_negociables/chart?ley=AR").text
+        assert "YMCXD" in share and "TSC4D" not in share   # solo ley local en la foto
+        assert "Ley AR" in share                            # subtítulo refleja el filtro
+        assert "YMCXD" in chart and "TSC4D" not in chart    # idem el scatter
+    finally:
+        app.dependency_overrides.pop(panels.get_state, None)
+
+
+def test_index_has_ley_filter_buttons_and_css():
+    """El header del panel ON trae el filtro Ley AR / Ley EXT; el CSS define las
+    reglas data-ley-flt (ocultar/mostrar por ley, componiendo con el de moneda)."""
+    with TestClient(app) as c:
+        html = c.get("/").text
+    assert html.count('class="ley-filter"') == 1          # solo el panel ON
+    assert 'data-ley="AR"' in html and 'data-ley="EXT"' in html
+    css = (Path(panels.__file__).resolve().parents[1] / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    assert "data-ley-flt" in css
 
 
 def test_bonares_panel_has_return_columns_colored():

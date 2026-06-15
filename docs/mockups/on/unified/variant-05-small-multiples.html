@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ON Unificado · Small multiples (un mini-scatter por sector)</title>
+<link rel="stylesheet" href="../_shared/theme.css">
+<link rel="stylesheet" href="../_shared/unified.css">
+<style>
+  /* ---- LAYOUT variante 5: tabla a la izquierda + columna angosta de small multiples a la derecha ---- */
+  html, body { height: 100%; margin: 0; }
+
+  .v5-app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* header terminal */
+  .v5-head { display: flex; align-items: center; gap: 12px; flex: 0 0 auto;
+    padding: 9px 16px; background: var(--head-bg); color: #fff;
+    box-shadow: var(--shadow-panel); z-index: 50; }
+  .v5-head h1 { font-size: 14px; margin: 0; font-weight: 700; letter-spacing: .4px; white-space: nowrap; }
+  .v5-head .sub { color: #c7d0ee; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .v5-head .gen { color: #8fa0d6; font-size: 10.5px; margin-left: auto; white-space: nowrap; }
+  .v5-head .badge { background: #e8843a; color: #311; font-weight: 700; font-size: 10.5px;
+    padding: 2px 7px; border-radius: 10px; }
+  .v5-head .tbtn { background: rgba(255,255,255,.14); border: none; color: #fff; cursor: pointer;
+    border-radius: 6px; padding: 5px 10px; font-size: 14px; line-height: 1; }
+  .v5-head .tbtn:hover { background: rgba(255,255,255,.26); }
+
+  /* cuerpo: split flex */
+  .v5-body { flex: 1 1 auto; display: flex; min-height: 0; gap: 0; }
+
+  /* tabla unificada */
+  #tool { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+    border-right: 1px solid var(--panel-border); }
+
+  /* columna derecha angosta de small multiples */
+  .v5-rail { flex: 0 0 308px; width: 308px; min-height: 0; display: flex; flex-direction: column;
+    background: var(--page-bg); }
+  .v5-rail-head { flex: 0 0 auto; display: flex; align-items: baseline; gap: 8px;
+    padding: 9px 12px 8px; background: var(--navy-band); color: #fff; }
+  .v5-rail-head b { font-size: 12px; font-weight: 700; letter-spacing: .3px; }
+  .v5-rail-head .hint { margin-left: auto; color: #c7d0ee; font-size: 10px; }
+
+  .v5-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; align-content: start; }
+
+  /* tarjeta de sector */
+  .sm-card { background: var(--panel-bg); border: 1px solid var(--panel-border);
+    border-radius: var(--radius); overflow: hidden; cursor: pointer;
+    box-shadow: var(--shadow-panel);
+    transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, opacity .14s ease; }
+  .sm-card:hover { transform: translateY(-2px); border-color: var(--sc, var(--accent));
+    box-shadow: 0 6px 18px rgba(0,0,0,.30); }
+  .sm-card.dim { opacity: .34; }
+  .sm-card.empty { opacity: .42; cursor: default; }
+  .sm-card.empty:hover { transform: none; border-color: var(--panel-border); box-shadow: var(--shadow-panel); }
+
+  .sm-top { display: flex; align-items: center; gap: 5px; padding: 6px 8px 5px;
+    border-bottom: 1px solid var(--panel-border);
+    border-left: 4px solid var(--sc, var(--accent)); }
+  .sm-ic { font-size: 11px; line-height: 1; }
+  .sm-name { font-weight: 700; font-size: 11px; color: var(--sc, var(--text));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sm-n { margin-left: auto; font: 700 9.5px var(--font-mono); color: var(--text-dim);
+    background: var(--row-hover); border-radius: 8px; padding: 0 6px; }
+
+  .sm-canvas-wrap { position: relative; height: 130px; padding: 4px 4px 2px; }
+  .sm-canvas-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
+  .sm-empty-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--text-faint); font-size: 10px; }
+
+  .sm-stats { display: flex; gap: 6px; padding: 4px 8px 7px; font: 10px var(--font-mono); }
+  .sm-stats .st { display: flex; flex-direction: column; line-height: 1.25; }
+  .sm-stats .st .lab { color: var(--text-faint); font-size: 8.5px; font-family: var(--font-body);
+    text-transform: uppercase; letter-spacing: .3px; }
+  .sm-stats .st .val { color: var(--text); font-weight: 700; }
+  .sm-stats .st.tir .val { color: var(--sc, var(--accent)); }
+  .sm-stats .grow { margin-left: auto; }
+
+  .v5-rail-foot { flex: 0 0 auto; padding: 7px 12px; border-top: 1px solid var(--panel-border);
+    color: var(--text-faint); font-size: 10px; line-height: 1.3; }
+</style>
+</head>
+<body>
+  <div class="v5-app">
+    <div class="v5-head">
+      <h1>O.N's · Unificado — Small multiples</h1>
+      <span class="sub">un mini-scatter por sector</span>
+      <span class="gen" id="v5-gen"></span>
+      <span class="badge">BYMA open (20m)</span>
+      <button class="tbtn" title="Tema claro/oscuro" onclick="ON.toggleTheme()">◐</button>
+    </div>
+
+    <div class="v5-body">
+      <!-- tabla unificada (alto disponible + scroll interno) -->
+      <div id="tool"></div>
+
+      <!-- columna angosta: grilla de small multiples -->
+      <aside class="v5-rail">
+        <div class="v5-rail-head">
+          <b>TIR vs MD · por sector</b>
+          <span class="hint">hover = resaltar</span>
+        </div>
+        <div class="v5-grid" id="v5-grid"></div>
+        <div class="v5-rail-foot">
+          Cada tarjeta: TIR (Y) vs MD (X) de los títulos del sector. Pasá el mouse para resaltarlo en la tabla.
+        </div>
+      </aside>
+    </div>
+  </div>
+
+<script src="../_shared/on_data.js"></script>
+<script src="../_shared/sectors.js"></script>
+<script src="../_shared/chart.umd.min.js"></script>
+<script src="../_shared/util.js"></script>
+<script src="../_shared/unified.js"></script>
+<script>
+(function () {
+  "use strict";
+  var Chart = window.Chart;
+
+  // pie del header
+  (function () {
+    var g = document.getElementById("v5-gen");
+    var D = ON.DATA || {};
+    var gen = D.generated ? ("snapshot " + D.generated.replace("T", " ")) : "";
+    var meta = D.meta ? (D.meta.n_bonds + " ONs · AR " + D.meta.n_ar + " / EXT " + D.meta.n_ext) : "";
+    g.textContent = [gen, meta].filter(Boolean).join("  ·  ");
+  })();
+
+  var gridEl = document.getElementById("v5-grid");
+
+  // ---- construir UNA tarjeta + canvas + Chart por sector, en el orden canónico.
+  // Todos los <canvas> y todas las instancias Chart existen DESDE EL INICIO (aunque
+  // un sector arranque sin puntos visibles). cards[key] = {root, canvas, chart, name, n, stTir, stMd}.
+  var cards = {};
+
+  function buildCards() {
+    gridEl.innerHTML = "";
+    cards = {};
+    ON.SECTORS.forEach(function (s) {
+      var m = ON.sectorMeta(s.key);
+      var card = document.createElement("div");
+      card.className = "sm-card empty";
+      card.style.setProperty("--sc", m.color);
+      card.dataset.sec = s.key;
+      card.innerHTML =
+        '<div class="sm-top">' +
+          '<span class="sm-ic">' + m.icon + '</span>' +
+          '<span class="sm-name">' + m.short + '</span>' +
+          '<span class="sm-n">0</span>' +
+        '</div>' +
+        '<div class="sm-canvas-wrap"><canvas></canvas>' +
+          '<div class="sm-empty-msg">sin títulos</div>' +
+        '</div>' +
+        '<div class="sm-stats">' +
+          '<div class="st tir"><span class="lab">TIR prom</span><span class="val">—</span></div>' +
+          '<div class="st md grow"><span class="lab">MD prom</span><span class="val">—</span></div>' +
+        '</div>';
+
+      var canvas = card.querySelector("canvas");
+      var chart = makeChart(canvas, m.color);
+
+      // hover sobre la card → resaltar el sector en la tabla
+      card.addEventListener("mouseenter", function () { Unified.highlight(s.key); });
+      card.addEventListener("mouseleave", function () { Unified.highlight(null); });
+      // click → toggle (resalta / limpia), por accesibilidad táctil
+      card.addEventListener("click", function () {
+        var st = Unified.state || {};
+        if (st.highlight === s.key) Unified.highlight(null);
+        else Unified.highlight(s.key);
+      });
+
+      gridEl.appendChild(card);
+      cards[s.key] = {
+        root: card, canvas: canvas, chart: chart,
+        nEl: card.querySelector(".sm-n"),
+        emptyEl: card.querySelector(".sm-empty-msg"),
+        stTir: card.querySelector(".st.tir .val"),
+        stMd: card.querySelector(".st.md .val"),
+      };
+    });
+  }
+
+  function makeChart(canvas, color) {
+    var t = ON.chartTheme();
+    return new Chart(canvas.getContext("2d"), {
+      type: "scatter",
+      data: { datasets: [{
+        data: [],
+        pointRadius: 3.2,
+        pointHoverRadius: 5,
+        backgroundColor: color + "cc",
+        borderColor: color,
+        borderWidth: 1,
+      }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 250 },
+        layout: { padding: 2 },
+        scales: {
+          x: {
+            title: { display: false },
+            ticks: { color: t.txt, font: { size: 8 }, maxTicksLimit: 4 },
+            grid: { color: t.grid, lineWidth: 0.5 },
+          },
+          y: {
+            title: { display: false },
+            ticks: { color: t.txt, font: { size: 8 }, maxTicksLimit: 4,
+              callback: function (v) { return v + "%"; } },
+            grid: { color: t.grid, lineWidth: 0.5 },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: t.panel, titleColor: t.txt, bodyColor: t.txt,
+            borderColor: t.grid, borderWidth: 1, padding: 7, displayColors: false,
+            callbacks: {
+              title: function (items) { var r = items[0] && items[0].raw || {}; return (r.t || "") + (r.e ? " · " + r.e : ""); },
+              label: function (c) {
+                var r = c.raw || {};
+                return "MD " + (r.x != null ? r.x.toFixed(2) : "?") + "a · TIR " + (r.y != null ? r.y.toFixed(2) : "?") + "%";
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  // ---- (re)poblar cada tarjeta con los títulos VISIBLES de su sector.
+  // Se llama en cada onRender de Unified → las cards siguen el filtro de la tabla.
+  function updateCards(bonds, aggs) {
+    // index de aggs por sector (para TIR/MD prom y count consistentes con la tabla)
+    var aggBy = {};
+    (aggs || []).forEach(function (a) { aggBy[a.key] = a; });
+
+    // agrupar bonos visibles por sector
+    var bySec = {};
+    (bonds || []).forEach(function (b) {
+      var k = b.sector || "Otros";
+      (bySec[k] || (bySec[k] = [])).push(b);
+    });
+
+    Object.keys(cards).forEach(function (key) {
+      var c = cards[key];
+      var list = bySec[key] || [];
+      var pts = ON.scatterPoints(list);     // [{x:md,y:tir,t,e,...}]
+      var a = aggBy[key];
+
+      c.chart.data.datasets[0].data = pts;
+      c.chart.update("none");
+
+      var n = a ? a.count : list.length;
+      c.nEl.textContent = n;
+      c.root.classList.toggle("empty", n === 0);
+      c.emptyEl.style.display = pts.length ? "none" : "flex";
+
+      c.stTir.textContent = (a && a.tir_avg != null) ? ON.pct(a.tir_avg) : "—";
+      c.stMd.textContent  = (a && a.md_avg != null) ? (ON.num(a.md_avg) + " a") : "—";
+    });
+  }
+
+  // ---- recolorear + redibujar en cambio de tema (ejes/grilla desde chartTheme) ----
+  function retheme() {
+    var t = ON.chartTheme();
+    Object.keys(cards).forEach(function (key) {
+      var ch = cards[key].chart;
+      ch.options.scales.x.ticks.color = t.txt;
+      ch.options.scales.y.ticks.color = t.txt;
+      ch.options.scales.x.grid.color = t.grid;
+      ch.options.scales.y.grid.color = t.grid;
+      var tt = ch.options.plugins.tooltip;
+      tt.backgroundColor = t.panel; tt.titleColor = t.txt; tt.bodyColor = t.txt; tt.borderColor = t.grid;
+      ch.update("none");
+    });
+  }
+  window.addEventListener("on:themechange", retheme);
+
+  // ---- arranque: construir las cards (canvases + Chart en el DOM) y montar la tabla ----
+  buildCards();
+
+  Unified.render(document.getElementById("tool"), {
+    defaultCcy: "MEP",
+    onRender: function (bonds, aggs) { updateCards(bonds, aggs); },
+  });
+
+  // updateCards ya corrió dentro del primer render de Unified (onRender). Listo.
+})();
+</script>
+</body>
+</html>

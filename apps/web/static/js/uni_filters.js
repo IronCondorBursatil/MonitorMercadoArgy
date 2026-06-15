@@ -103,7 +103,59 @@
       });
     });
   }
-  function init() {
+  // ---- Refresh manual (#uni-refresh): preservar filtros + orden ----
+  // El botón ↻ reemplaza la tabla entera (montos frescos del hub) con el MISMO
+  // q/cat → mismas columnas. Capturamos los valores del blotter y el orden antes
+  // del swap y los restauramos en el init siguiente (solo si la forma coincide).
+  var savedState = null;
+  document.addEventListener("htmx:beforeRequest", function (e) {
+    var src = e.detail && e.detail.elt;
+    if (!src || src.id !== "uni-refresh") return;
+    var table = document.querySelector(".uni-table");
+    var fltRow = table && table.querySelector("tr.uni-flt");
+    if (!fltRow) return;
+    savedState = {
+      vals: Array.prototype.map.call(
+        fltRow.querySelectorAll("[data-mode]"), function (c) { return c.value; }),
+      sortCls: table.dataset.sortCls || "",
+      sortDir: table.dataset.sortDir || "",
+    };
+  });
+  // Un ↻ fallido (timeout / non-2xx) no swapea #uni-results → nadie consumiría el
+  // estado y el PRÓXIMO swap legítimo (cambio de categoría) lo restauraría sobre
+  // un dataset distinto. Descartarlo apenas el request del botón falla.
+  document.addEventListener("htmx:responseError", function (e) {
+    var src = e.detail && e.detail.elt;
+    if (src && src.id === "uni-refresh") savedState = null;
+  });
+  document.addEventListener("htmx:sendError", function (e) {
+    var src = e.detail && e.detail.elt;
+    if (src && src.id === "uni-refresh") savedState = null;
+  });
+  function restoreState(table, fltRow) {
+    if (!savedState) return;
+    var st = savedState;
+    savedState = null;                     // se consume una sola vez
+    var ctrls = fltRow.querySelectorAll("[data-mode]");
+    if (ctrls.length !== st.vals.length) return;   // columnas distintas → no mapear
+    Array.prototype.forEach.call(ctrls, function (c, i) { c.value = st.vals[i]; });
+    if (st.sortCls) {
+      table.dataset.sortCls = st.sortCls;
+      table.dataset.sortDir = st.sortDir;
+    }
+  }
+  function init(evt) {
+    // Gate por target, AL TOPE: solo nos interesan los settles que tocan la tabla
+    // (#uni-results: swap completo, lotes del scroll). Sin esto, CUALQUIER request
+    // HTMX del documento (badge de salud cada 15s, cards del header, indices del
+    // catálogo) re-escaneaba la tabla entera, reconstruía los selects y
+    // re-appendeaba todas las filas (reflow) en idle — CPU proporcional al tamaño
+    // de la tabla. El camino DOMContentLoaded llama init() SIN evt y sigue de largo.
+    if (evt) {
+      var tgt = evt.target;
+      if (!tgt || !(tgt.id === "uni-results" || (tgt.closest && tgt.closest("#uni-results"))))
+        return;
+    }
     var table = document.querySelector(".uni-table");
     if (!table) return;
     var fltRow = table.querySelector("tr.uni-flt");
@@ -115,12 +167,15 @@
       fltRow.addEventListener("change", run);
     }
     rebuildSelects(table, fltRow);
+    restoreState(table, fltRow);   // tras un ↻: re-aplica blotter + orden previos
     apply(table, fltRow);
     wireSort(table);
     applySort(table);          // re-aplica el orden tras appends del scroll
     updateSortArrows(table);
   }
-  // Se re-corre tras cada swap HTMX (cambio de filtro/categoría o append del scroll).
+  // Se re-corre tras cada swap HTMX que toque #uni-results (el gate filtra el resto).
   document.addEventListener("htmx:afterSettle", init);
-  document.addEventListener("DOMContentLoaded", init);
+  // OJO: el wrapper es necesario — pasar `init` directo le daría el Event de
+  // DOMContentLoaded (target=document) y el gate cortaría la carga inicial.
+  document.addEventListener("DOMContentLoaded", function () { init(); });
 })();

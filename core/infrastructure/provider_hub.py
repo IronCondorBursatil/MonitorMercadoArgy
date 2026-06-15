@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from datetime import date
 from typing import Dict, List, Optional
 
@@ -47,6 +48,11 @@ class ProviderHub:
         "stocks": "https://data912.com/live/arg_stocks",
     }
 
+    # Floor Data912: cada cuántos segundos se refresca el snapshot Data912 que rellena
+    # los símbolos que la fuente activa (BYMA) no lista. TTL para no duplicar la carga
+    # (BYMA va cada ciclo ~5s; el cierre que aporta el floor casi no cambia intradía).
+    _FLOOR_TTL_S = 25.0
+
     def __init__(self, client: ResilientClient, active_source: Optional[MarketSource] = None):
         self._client = client
         # Snapshot por plazo (stale-safe): {"24": {sym:row}, "CI": {sym:row}}.
@@ -61,6 +67,17 @@ class ProviderHub:
         self._lock = threading.Lock()
         # Default Data912 (back-compat de tests/CLI); la app setea byma_open al arrancar.
         self._active: MarketSource = active_source or Data912Source()
+        # Floor Data912 (rellena lo que la activa no lista). `_active_syms` = símbolos que
+        # la activa cubrió en los últimos K_ACTIVE_CYCLES ciclos. Ventana deslizante (no
+        # acumulado infinito): un símbolo que la activa deja de listar sale a los K ciclos
+        # y el floor vuelve a cubrirlo. Anti-flicker: dentro de la ventana la activa manda.
+        self._K_ACTIVE_CYCLES: int = 3
+        self._active_sym_counts: Dict[str, int] = {}   # sym → ciclos restantes antes de expirar
+        self._active_syms: set = set()                  # los que tienen contador > 0
+        self._last_active_rows: Dict[str, Dict[str, Data912Row]] = {}  # último valor BYMA por settle
+        self._floor_snaps: Dict[str, Dict[str, Data912Row]] = {}
+        self._floor_source: Dict[str, str] = {}
+        self._floor_at: float = 0.0
 
     # ---------------- fuente activa (hot-swap) ----------------
     @property
@@ -79,6 +96,9 @@ class ProviderHub:
         """Cambia la fuente live. El próximo `refresh_all()` ya usa la nueva."""
         logger.info("ProviderHub: fuente activa → %s", source.mode)
         self._active = source
+        self._active_syms = set()        # recalcular cobertura desde cero
+        self._active_sym_counts = {}     # resetear ventana K de la nueva fuente
+        self._last_active_rows = {}      # resetear cache de valores BYMA
 
     # ---------------- fetch live (fuente activa) ----------------
     async def refresh_all(self) -> Dict[str, Data912Row]:
@@ -93,33 +113,79 @@ class ProviderHub:
             logger.warning("market source %s fetch failed: %s: %s",
                            self._active.mode, type(e).__name__, e)
             snaps, source = {}, {}
-        # Backstop pre-market: si la fuente activa no trajo NADA y el snapshot sigue
-        # en blanco (típico de BYMA open antes de las 10:30 ART — devuelve empty:true,
-        # y con su demora de ~20m las filas vivas recién entran ~10:50 — o
-        # findes/feriados/outage), primamos con el cierre previo de Data912 para no
-        # dejar el board en 0.00. Solo MIENTRAS no hay datos: apenas la fuente activa
-        # entrega su primer ciclo, el merge stale-safe la deja a cargo y no volvemos a
-        # caer acá (no pisamos precios vivos con cierre previo en un vacío transitorio).
-        if (not _has_rows(snaps) and self._active.mode != Data912Source.mode
-                and self._snapshot_empty()):
-            try:
-                d_snaps, d_source = await Data912Source().fetch(self._client)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:  # noqa: BLE001
-                logger.warning("backstop Data912 falló: %s: %s", type(e).__name__, e)
+        # Ventana deslizante K_ACTIVE_CYCLES: un símbolo entra en _active_syms al aparecer
+        # en la fuente activa y recibe un contador = K. Cada ciclo sin aparecer decrementa
+        # en 1; al llegar a 0 sale del set y el floor puede cubrirlo. K ciclos consecutivos
+        # de ausencia son necesarios para salir — una rueda vacía puntual no lo descarta.
+        seen_this_cycle: set = set()
+        for rows in (snaps or {}).values():
+            seen_this_cycle.update(rows.keys())
+        # Persistir los últimos valores BYMA para retención stale (anti-floor en ventana K).
+        if seen_this_cycle:
+            for settle, rows in (snaps or {}).items():
+                prev = self._last_active_rows.setdefault(settle, {})
+                for sym, row in rows.items():
+                    if row is not None:
+                        prev[sym] = row
+        # Actualizar contadores: visto → reset a K; ausente → decrementar.
+        all_tracked = set(self._active_sym_counts) | seen_this_cycle
+        new_counts: Dict[str, int] = {}
+        for sym in all_tracked:
+            if sym in seen_this_cycle:
+                new_counts[sym] = self._K_ACTIVE_CYCLES  # reset a K: K ciclos de gracia
             else:
-                if _has_rows(d_snaps):
-                    logger.info("fuente %s sin datos y board vacío; backstop Data912 "
-                                "(%d símbolos, cierre previo).",
-                                self._active.mode, len(d_snaps.get(SETTLE_24, {})))
-                    snaps, source = d_snaps, d_source
+                cnt = self._active_sym_counts.get(sym, 0) - 1
+                if cnt > 0:
+                    new_counts[sym] = cnt
+                # cnt <= 0 → sale del tracking (floor puede cubrirlo)
+        self._active_sym_counts = new_counts
+        self._active_syms = {s for s, c in new_counts.items() if c > 0}
+        # Floor Data912 por símbolo: si la activa NO es Data912, Data912 rellena los
+        # símbolos que la activa no lista (BYMA open en feriado/pre-market lista parcial)
+        # → se muestra el universo completo con LAST/cierre. La activa manda donde lista;
+        # el floor solo aporta lo que falta. Subsume el viejo backstop de board-vacío.
+        if self._active.mode != Data912Source.mode:
+            f_snaps, f_source = await self._data912_floor()
+            if _has_rows(f_snaps):
+                snaps, source = self._apply_floor(snaps, source, f_snaps, f_source)
         return self._merge(snaps, source)
 
-    def _snapshot_empty(self) -> bool:
-        """True si todavía no acumulamos ninguna cotización (board en blanco)."""
-        with self._lock:
-            return not any(self._snap.get(s) for s in (SETTLE_24, SETTLE_CI))
+    async def _data912_floor(self):
+        """Snapshot Data912 cacheado (TTL `_FLOOR_TTL_S`) para rellenar lo que la fuente
+        activa no lista. Ante fallo, reusa el último floor bueno (degrada, no rompe)."""
+        now = time.monotonic()
+        if self._floor_snaps and (now - self._floor_at) < self._FLOOR_TTL_S:
+            return self._floor_snaps, self._floor_source
+        try:
+            snaps, source = await Data912Source().fetch(self._client)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 — el floor caído no tumba el ciclo
+            logger.warning("floor Data912 falló: %s: %s", type(e).__name__, e)
+            return self._floor_snaps, self._floor_source
+        if _has_rows(snaps):
+            self._floor_snaps, self._floor_source, self._floor_at = snaps, source, now
+        return self._floor_snaps, self._floor_source
+
+    def _apply_floor(self, active, active_src, floor, floor_src):
+        """Mergea el floor Data912 BAJO la fuente activa: la activa manda; el floor solo
+        aporta los símbolos que la activa NO cubre (`self._active_syms`). Para símbolos
+        en `_active_syms` que la activa no devolvió este ciclo (BYMA transitoriamente vacío),
+        se retiene el último valor bueno de la activa (anti-clobber del floor)."""
+        out = {}
+        for settle in (SETTLE_24, SETTLE_CI):
+            base = {}
+            for sym, row in (floor.get(settle) or {}).items():
+                if sym not in self._active_syms and row is not None and row.c and row.c > 0:
+                    base[sym] = row
+            # Stale retention: símbolos activos que BYMA no devolvió este ciclo → último valor
+            last = self._last_active_rows.get(settle) or {}
+            for sym in self._active_syms:
+                if sym not in (active.get(settle) or {}) and sym in last:
+                    base[sym] = last[sym]
+            base.update(active.get(settle) or {})   # la activa (este ciclo) tiene prioridad
+            out[settle] = base
+        return out, {**(floor_src or {}), **(active_src or {})}
 
     async def fetch_data912(self) -> Dict[str, Data912Row]:
         """Atajo: fuerza un fetch Data912 a este hub (usado por tests/CLI). NO

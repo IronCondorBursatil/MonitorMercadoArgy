@@ -61,6 +61,7 @@ _TASA_FIJA_COLS = [
 _ON_COLS = [
     {"key": "ticker", "label": "Ticker", "kind": "text"},
     {"key": "short_name", "label": "Emisor", "kind": "text"},
+    {"key": "sector", "label": "Sector", "kind": "text"},  # clasificado por emisor (on_classification)
     {"key": "vto", "label": "Vto", "kind": "date"},
     {"key": "price", "label": "Precio", "kind": "number", "decimals": 2},
     {"key": "technical_value", "label": "V.Téc", "kind": "number", "decimals": 2},
@@ -166,6 +167,16 @@ PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreale
 # (D=MEP, C=CABLE, resto=ARS). BOPREALes incluidos: cotizan en pesos (base BPO*),
 # MEP (…D) y cable (…C) — la pata pesos se linkea por ISIN (ver backfill_legs_from_universe).
 CCY_FILTER_PANELS = {"bonares", "obligaciones_negociables", "bopreales"}
+
+# Paneles que solo muestran especies CON precio de mercado: una pata sin cotización
+# (price None/0.00, ej. board vacío o especie ilíquida) no genera fila. Solo ONs:
+# en soberanos/CER el backstop de cierre previo ya cubre, y un faltante se nota más.
+PRICE_REQUIRED_PANELS = {"obligaciones_negociables"}
+
+# Paneles con filtro de ley aplicable (AR = Argentina / EXT = Extranjera) en el
+# header. La fila lleva `data-ley` (de Instrument.is_ley_argentina; sin dato → EXT,
+# misma convención del pricing MEP/CCL) y el CSS oculta las que no estén activas.
+LEY_FILTER_PANELS = {"obligaciones_negociables"}
 
 # Paneles con selector de plazo de liquidación CI (T+0) / 24hs (T+1). El precio y
 # todo lo que deriva de él (TIR/paridad/MD/V.Téc) se recalcula on-demand para el

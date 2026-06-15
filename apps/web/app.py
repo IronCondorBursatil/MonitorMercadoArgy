@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from apps.web.deps import get_repo, get_state
 from apps.web.routers import (
     abm, bcra, bonds, cartera, cashflows, catalog, curva, escenarios, fci, header,
-    options, panels, source, stream,
+    on, options, panels, source, stream,
 )
 from apps.web.state import AppState
 from config.settings import settings
@@ -161,7 +161,7 @@ async def _startup_reconcile(app: FastAPI) -> None:
         # por el universo BYMA (mismo ISIN). Idempotente. Requiere byma_catalog cargado.
         legs = await asyncio.to_thread(_backfill_legs)
         if n or enriched or legs:
-            get_repo().reload(reseed_from_excel=False)
+            get_repo().reload()
         logger.info("Startup: catálogo +%d filas, %d ISIN, %d especies BYMA, +%d patas.",
                     n, enriched, universe, legs)
     except asyncio.CancelledError:
@@ -244,6 +244,16 @@ async def _price_history_loop(app: FastAPI) -> None:
             raise
         except Exception:
             logger.exception("fci history accumulation failed")
+        # Backup periódico 1×/día: captura el estado aunque el server lleve días sin
+        # reiniciarse (el backup del lifespan solo corre al arranque).
+        try:
+            from core.infrastructure.db.backup import backup_db
+            bak = await asyncio.to_thread(backup_db, settings.catalog_db,
+                                          settings.backup_dir, keep=settings.backup_keep)
+            if bak:
+                logger.info("catalog backup periódico: %s", bak.name)
+        except Exception:  # noqa: BLE001 — el backup no debe tumbar el loop
+            logger.warning("backup periódico de catalog.db falló", exc_info=True)
         await asyncio.sleep(settings.price_history_sec)
 
 
@@ -357,6 +367,7 @@ app.include_router(cashflows.router)
 app.include_router(escenarios.router)
 app.include_router(curva.router)
 app.include_router(fci.router)
+app.include_router(on.router)
 app.include_router(abm.router)
 app.include_router(catalog.router)
 app.include_router(options.router)

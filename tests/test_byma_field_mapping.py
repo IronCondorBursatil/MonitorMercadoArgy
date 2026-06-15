@@ -31,6 +31,30 @@ def test_market_closed_zero_trade_ok():
     assert q.pct_change is None
 
 
+def test_no_trade_falls_back_to_closing_price():
+    """Sin operar en la rueda (trade 0/None) → c = CIERRE (closingPrice), para que la
+    especie igual aparezca con precio de mercado (todo el universo de ONs)."""
+    q = byma_row_to_quote({"symbol": "YMCXO", "trade": 0, "closingPrice": 98.5,
+                           "previousClosingPrice": 97.0})
+    assert q.c == 98.5
+    q2 = byma_row_to_quote({"symbol": "YMCXO", "trade": None, "closingPrice": None,
+                            "previousClosingPrice": 97.0})
+    assert q2.c == 97.0                      # cae al cierre anterior si no hay cierre del día
+
+
+def test_last_trade_wins_over_close():
+    """Si operó, manda el LAST (trade), no el cierre."""
+    q = byma_row_to_quote({"symbol": "YMCXO", "trade": 99.9, "closingPrice": 98.5})
+    assert q.c == 99.9
+
+
+def test_truly_no_price_stays_zero():
+    """Sin LAST ni cierre ni cierre anterior → 0.0 (queda oculta donde se exige precio)."""
+    q = byma_row_to_quote({"symbol": "ZZZ", "trade": 0, "closingPrice": 0,
+                           "previousClosingPrice": None})
+    assert q.c == 0.0
+
+
 def test_no_symbol_returns_none():
     assert byma_row_to_quote({"trade": 1.0}) is None
     assert byma_row_to_quote({"symbol": ""}) is None

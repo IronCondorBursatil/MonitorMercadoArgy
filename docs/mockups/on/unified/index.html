@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ON Unificado — 10 versiones del gráfico</title>
+<link rel="stylesheet" href="../_shared/theme.css">
+<style>
+  html, body { height: 100%; margin: 0; }
+  .chooser { display: grid; grid-template-columns: 360px 1fr; height: 100vh; }
+  .nav { background: var(--panel-bg); border-right: 1px solid var(--panel-border); overflow: auto; }
+  .nav-hd { padding: 14px 16px; background: var(--head-bg); color: #fff; position: sticky; top: 0; z-index: 2; }
+  .nav-hd h1 { margin: 0; font-size: 15px; }
+  .nav-hd p { margin: 4px 0 0; font-size: 11.5px; color: #c7d0ee; }
+  .item { display: block; padding: 11px 16px; border-bottom: 1px solid var(--panel-border);
+    cursor: pointer; transition: background .12s; }
+  .item:hover { background: var(--row-hover); }
+  .item.on { background: var(--accent-light); border-left: 4px solid var(--accent); }
+  .item .t { font-weight: 700; font-size: 13px; color: var(--text); }
+  .item .t .nn { display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center;
+    background: var(--accent); color: #fff; border-radius: 6px; font: 700 11px var(--font-mono); margin-right: 8px; }
+  .item .d { font-size: 11.5px; color: var(--text-dim); margin: 5px 0 0 30px; line-height: 1.4; }
+  .item .open { font-size: 10.5px; color: var(--accent); margin: 4px 0 0 30px; }
+  .stage { position: relative; background: var(--page-bg); }
+  .stage iframe { width: 100%; height: 100%; border: 0; }
+  .stage .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--text-faint); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="chooser">
+  <div class="nav">
+    <div class="nav-hd">
+      <h1>O.N's · Herramienta unificada</h1>
+      <p>Liga + Heatmap fusionados en UNA tabla Sector › Emisor › Título.<br>10 versiones que difieren en <b>dónde va el gráfico</b> TIR-vs-MD. Click para previsualizar.</p>
+    </div>
+    <div id="list"></div>
+  </div>
+  <div class="stage">
+    <div class="ph" id="ph">Elegí una versión a la izquierda →</div>
+    <iframe id="frame" title="preview" style="display:none"></iframe>
+  </div>
+</div>
+<script>
+  var V = [
+    ["variant-01-sidebar-fija.html", "Sidebar fija a la derecha", "Gráfico SIEMPRE visible en un panel lateral derecho de 360px + leyenda de sectores clickeable."],
+    ["variant-02-drawer-lateral.html", "Drawer lateral on-demand", "Gráfico oculto; un botón 📊 lo desliza desde la derecha con backdrop. Arranca cerrado."],
+    ["variant-03-dock-inferior.html", "Dock inferior fijo", "Gráfico apaisado fijo abajo a todo el ancho; minimizable a una barra."],
+    ["variant-04-toggle-vista.html", "Toggle Tabla | Gráfico | Ambos", "Switch que alterna entre tabla sola (default), gráfico grande, o ambos lado a lado."],
+    ["variant-05-small-multiples.html", "Small multiples", "Sin gráfico grande: un mini-scatter por sector en una columna derecha; hover resalta la tabla."],
+    ["variant-06-sparkline-en-fila.html", "Sparkline embebido en la fila", "Mini-nube TIR·MD inline en cada fila de sector + panel grande plegable arriba."],
+    ["variant-07-modal-overlay.html", "Modal overlay", "Tabla full; botón 'Ver gráfico' abre el gráfico en un modal centrado (ESC/click cierra)."],
+    ["variant-08-split-redimensionable.html", "Split redimensionable", "Tabla | gráfico con un divisor vertical arrastrable; doble-click resetea 65/35."],
+    ["variant-09-flotante-draggable.html", "Ventana flotante", "Gráfico en una ventanita movible por su barra de título, minimizable; ancla abajo-derecha."],
+    ["variant-10-acordeon-superior.html", "Acordeón superior", "Franja con KPIs que al expandir revela el gráfico a todo el ancho (colapsada por default)."],
+  ];
+  var list = document.getElementById("list"), frame = document.getElementById("frame"), ph = document.getElementById("ph");
+  function open(i) {
+    frame.src = V[i][0]; frame.style.display = "block"; ph.style.display = "none";
+    Array.prototype.forEach.call(list.children, function (el, j) { el.classList.toggle("on", i === j); });
+  }
+  V.forEach(function (v, i) {
+    var a = document.createElement("div");
+    a.className = "item";
+    a.innerHTML = '<div class="t"><span class="nn">' + (i + 1) + '</span>' + v[1] + '</div>' +
+      '<div class="d">' + v[2] + '</div>' +
+      '<div class="open"><a href="' + v[0] + '" target="_blank" rel="noopener">abrir en pestaña nueva ↗</a></div>';
+    a.addEventListener("click", function (e) { if (e.target.tagName !== "A") open(i); });
+    list.appendChild(a);
+  });
+  open(0);
+</script>
+</body>
+</html>

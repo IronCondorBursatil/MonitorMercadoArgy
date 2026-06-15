@@ -141,18 +141,35 @@ class FCIHistoryStore:
             return list(self._cache.keys()) if self._cache else []
 
 
+# Guard de continuidad: un fondo no duplica/colapsa su circulación en una rueda.
+# Saltos > este umbral (×) en el Δccp/ccp_prev se tratan como discontinuidades de
+# fuente (renombre de fondo en ArgentinaDatos, error de carga, etc.) y se descartan.
+_NET_FLOW_MAX_JUMP = 3.0   # Δccp > 3× ccp_prev → implausible
+
 def net_flow_series(series: Dict[date, dict]) -> Dict[date, float]:
     """Flujo neto orgánico entre puntos consecutivos: `(ccp[d] − ccp[prev]) · vcp[d]`.
 
     Pura: no toca disco. Usa `vcp` del día (no del previo) para valuar las cuotapartes
     suscriptas/rescatadas. Saltea puntos sin `ccp`/`vcp`. El primer punto no tiene flujo.
+
+    Guard de continuidad: saltos implausibles (Δccp > _NET_FLOW_MAX_JUMP × ccp_prev)
+    se descartan — evita que un renombre de fondo en ArgentinaDatos genere un flujo
+    espurio gigante en el panel FCI.
     """
     days = sorted(d for d, v in series.items()
                   if v and v.get("ccp") is not None and v.get("vcp") is not None)
     out: Dict[date, float] = {}
     for i in range(1, len(days)):
         prev, cur = series[days[i - 1]], series[days[i]]
-        out[days[i]] = (cur["ccp"] - prev["ccp"]) * cur["vcp"]
+        ccp_prev = prev["ccp"]
+        if ccp_prev and ccp_prev > 0:
+            delta_ratio = abs(cur["ccp"] - ccp_prev) / ccp_prev
+            if delta_ratio > _NET_FLOW_MAX_JUMP:
+                logger.debug(
+                    "net_flow_series: salto implausible Δccp/ccp=%.1f× el %s — descartado",
+                    delta_ratio, days[i])
+                continue
+        out[days[i]] = (cur["ccp"] - ccp_prev) * cur["vcp"]
     return out
 
 

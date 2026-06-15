@@ -5,6 +5,7 @@ fila y descarta las inválidas."""
 from __future__ import annotations
 
 import logging
+import math
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -35,6 +36,16 @@ class Data912Row(BaseModel):
     @classmethod
     def _normalize_symbol(cls, v: str) -> str:
         return v.upper().strip()
+
+    @field_validator("c", mode="before")
+    @classmethod
+    def _reject_non_finite_price(cls, v) -> float:
+        # NaN/Inf pasan el `ge=0` (NaN < 0 es False), pero rompen XIRR/MD.
+        # Rechazar aquí descarta la fila por fila sin tumbar el batch.
+        fv = float(v)
+        if not math.isfinite(fv):
+            raise ValueError(f"precio no finito: {v!r}")
+        return fv
 
 
 def parse_snapshot_rows(payload: list) -> "dict[str, Data912Row]":

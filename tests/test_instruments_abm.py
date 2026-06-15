@@ -282,3 +282,40 @@ class TestListInstruments:
         assert set(grp["tickers"]) >= {"AL30", "AL30D", "AL30C"}
         # las especies no aparecen como entradas top-level sueltas
         assert "AL30D" not in by_key and "AL30C" not in by_key
+
+
+# --------------------------------------------------------------------------- #
+# _safe_synth — contrato del except acotado
+# --------------------------------------------------------------------------- #
+
+class TestSafeSynth:
+    """Documenta y pinnea el contrato del `except` acotado de `_safe_synth`.
+
+    - Input inválido (ValueError/KeyError/TypeError) → [] (no tumba el form).
+    - AttributeError (bug interno en synth) → PROPAGA (no se traga silenciosamente).
+    """
+
+    def test_bad_input_returns_empty(self):
+        from apps.web.instruments_abm import _safe_synth
+        # Campo frecuencia no parseable → ValueError dentro de synth → []
+        result = _safe_synth({"tipo": "BONAR", "frecuencia pagos": "no-es-numero",
+                               "fecha_emision": "2025-01-01",
+                               "fecha_vencimiento": "2030-01-01"})
+        assert result == []
+
+    def test_missing_required_fields_returns_empty(self):
+        from apps.web.instruments_abm import _safe_synth
+        # Sin campos mínimos → KeyError/ValueError → []
+        assert _safe_synth({}) == []
+
+    def test_attribute_error_propagates(self):
+        """Un AttributeError dentro de synth NO se silencia: signalaría un bug interno."""
+        import unittest.mock as mock
+        from apps.web.instruments_abm import _safe_synth
+        # _safe_synth importa synth_cashflows on-the-fly; parchear donde vive.
+        with mock.patch("core.domain.cashflow_synth.synth_cashflows",
+                        side_effect=AttributeError("bug interno simulado")):
+            with pytest.raises(AttributeError, match="bug interno simulado"):
+                _safe_synth({"tipo": "BONAR", "fecha_emision": "2025-01-01",
+                              "fecha_vencimiento": "2030-01-01",
+                              "frecuencia pagos": "2", "cupon anual %": "5.0"})

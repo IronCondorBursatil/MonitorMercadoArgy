@@ -18,6 +18,7 @@ websockets               # futures_provider
 fastapi
 uvicorn[standard]
 httpx
+requests                 # ficha técnica BYMA (catalog_enrich) — Session + truststore
 jinja2
 python-multipart
 sse-starlette

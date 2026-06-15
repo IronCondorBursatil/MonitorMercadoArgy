@@ -6,6 +6,7 @@ Función pura y testeable sin red."""
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 from core.infrastructure.schemas import Data912Row
@@ -50,6 +51,8 @@ def byma_row_to_quote(raw: dict) -> Optional[Data912Row]:
         return None
 
     last = _f(raw.get("trade"))
+    close = _f(raw.get("closingPrice"))
+    prev_close = _f(raw.get("previousClosingPrice"))
     imb = _f(raw.get("imbalance"))
     n_ops = raw.get("numberOfOrders")
     try:
@@ -65,8 +68,15 @@ def byma_row_to_quote(raw: dict) -> Optional[Data912Row]:
     try:
         return Data912Row(
             symbol=str(sym),
-            # Mercado cerrado → trade en 0/None; c=0.0 es válido (Field ge=0).
-            c=last if (last is not None and last >= 0) else 0.0,
+            # `c` = LAST (trade, último operado). Si NO operó en la rueda (trade 0/None),
+            # caemos al CIERRE (closingPrice) y luego al CIERRE ANTERIOR (previousClosingPrice):
+            # así las especies sin operaciones igual aparecen con precio de mercado (todo el
+            # universo, p.ej. ONs ilíquidas), en vez de quedar en 0.00 y ocultarse donde se
+            # exige precio (panel ON). Sin ningún precio → 0.0 (Field ge=0).
+            # Guard de finitud: BYMA puede enviar NaN/Inf; el validator de Data912Row lo
+            # rechazará fila por fila antes de que llegue al motor/store.
+            c=next((p for p in (last, close, prev_close)
+                    if p is not None and p > 0 and math.isfinite(p)), 0.0),
             px_bid=_f(raw.get("bidPrice")),
             px_ask=_f(raw.get("offerPrice")),
             v=_f(raw.get("volumeAmount")),

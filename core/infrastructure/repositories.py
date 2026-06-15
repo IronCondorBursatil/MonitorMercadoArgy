@@ -282,14 +282,6 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
     def _parse_date(self, val) -> Optional[date]:
         return _parse_date_value(val)
 
-    @staticmethod
-    def _safe_int(val, default=0):
-        return _safe_int(val, default)
-
-    @staticmethod
-    def _safe_float(val, default=0.0):
-        return _safe_float(val, default)
-
     def _generate_bond_cashflows(self, row: pd.Series) -> List[Cashflow]:
         """Delegate al synth puro en core.domain.cashflow_synth.
 
@@ -329,8 +321,8 @@ class ExcelInstrumentsRepository(IInstrumentsRepository):
                 continue
             cf_map.setdefault(t, []).append(Cashflow(
                 date=cf_date,
-                amortization=self._safe_float(row.get(amort_col, 0)),
-                interest=self._safe_float(row.get(interest_col, 0)) if interest_col else 0.0,
+                amortization=_safe_float(row.get(amort_col, 0)),
+                interest=_safe_float(row.get(interest_col, 0)) if interest_col else 0.0,
             ))
         return skipped
 

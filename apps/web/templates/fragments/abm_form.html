@@ -1,5 +1,5 @@
 <form hx-post="/abm/save" hx-target="#abm-list" hx-swap="innerHTML"
-      hx-on::after-request="if(event.detail.successful){abmFlash(this);}">
+      hx-on::after-request="if(event.detail.successful && !event.detail.xhr.responseText.includes('abm-err')){abmFlash(this);abmCloseDrawer();}">
   <h4>{{ label }}{% if ticker %} · editar <b>{{ ticker }}</b>{% endif %}</h4>
   <input type="hidden" name="sheet" value="{{ sheet }}">
   <div class="abm-fields">
@@ -63,23 +63,29 @@
   </div>
   <div id="abm-calc-out"></div>
 
-  <div class="abm-sec">Flujo de fondos {% if cashflows %}<span class="abm-faint">· {{ cashflows|length }} pagos</span>{% endif %}</div>
-  {% if cashflows %}
-  <table class="abm-cf">
-    <thead><tr><th>Fecha</th><th>Amort.</th><th>Renta</th><th>Total</th></tr></thead>
-    <tbody>
-      {% for cf in cashflows %}
-      <tr>
-        <td>{{ cf.date }}</td>
-        <td class="num">{{ '%.2f'|format(cf.amortization) }}</td>
-        <td class="num">{{ '%.2f'|format(cf.interest) }}</td>
-        <td class="num">{{ '%.2f'|format(cf.amortization + cf.interest) }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="abm-faint" style="padding:6px 2px">Sin flujos materializados.</div>
-  {% endif %}
+  {# Flujo de fondos EDITABLE: cada fila date/amort/renta; guarda con save_cashflows
+     (delete+insert) en caliente. Útil para ONs de cashflows explícitos (1er largo/stub). #}
+  <div class="abm-sec">Flujo de fondos <span class="abm-faint">· editable{% if cashflows %} · {{ cashflows|length }} pagos{% endif %}</span></div>
+  <form id="abm-cf-form" hx-post="/abm/cashflows" hx-target="#abm-cf-flash" hx-swap="innerHTML">
+    <input type="hidden" name="cf_ticker" value="{{ ticker }}">
+    <table class="abm-cf abm-cf-edit">
+      <thead><tr><th>Fecha</th><th>Amort.</th><th>Renta</th><th></th></tr></thead>
+      <tbody id="abm-cf-body">
+        {% for cf in cashflows %}
+        <tr class="abm-cf-row">
+          <td><input type="date" name="cf_date" value="{{ cf.date }}"></td>
+          <td><input type="number" step="0.000001" name="cf_amort" value="{{ '%.6f'|format(cf.amortization) }}"></td>
+          <td><input type="number" step="0.000001" name="cf_interest" value="{{ '%.6f'|format(cf.interest) }}"></td>
+          <td><button type="button" class="cf-del" onclick="cfDel(this)" title="quitar fila">✕</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="abm-cf-actions">
+      <button type="button" class="abm-cf-add" onclick="cfAdd()">＋ fila</button>
+      <button type="submit" class="abm-cf-save">Guardar flujos</button>
+      <span id="abm-cf-flash" class="abm-flash"></span>
+    </div>
+  </form>
 </div>
 {% endif %}

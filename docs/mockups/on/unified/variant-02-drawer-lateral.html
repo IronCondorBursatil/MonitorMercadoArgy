@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ON Unificado · Drawer lateral on-demand</title>
+<link rel="stylesheet" href="../_shared/theme.css">
+<link rel="stylesheet" href="../_shared/unified.css">
+<style>
+  /* ---- LAYOUT — Variante 2: Drawer lateral on-demand ---- */
+  html, body { height: 100%; margin: 0; }
+
+  .pg { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
+
+  /* header terminal */
+  .v-head { display: flex; align-items: center; gap: 12px;
+    background: var(--head-bg); color: var(--text-white);
+    padding: 9px 16px; box-shadow: var(--shadow-panel); z-index: 60; }
+  .v-head h1 { font-size: 14px; margin: 0; font-weight: 700; letter-spacing: .5px;
+    white-space: nowrap; }
+  .v-head .sub { color: #c7d0ee; font-size: 11.5px; white-space: nowrap; }
+  .v-head .spacer { margin-left: auto; }
+  .v-head .meta { color: #8fa0d6; font-size: 10.5px; white-space: nowrap; }
+  .v-head .hbtn { background: rgba(255,255,255,.12); border: none; color: #fff; cursor: pointer;
+    border-radius: 6px; padding: 6px 11px; font: 600 12px var(--font-body); display: inline-flex;
+    align-items: center; gap: 6px; transition: background .15s ease; }
+  .v-head .hbtn:hover { background: rgba(255,255,255,.22); }
+  .v-head .hbtn.on { background: var(--accent); color: #fff; }
+  .v-head .tbtn { background: rgba(255,255,255,.12); border: none; color: #fff; cursor: pointer;
+    border-radius: 6px; padding: 6px 10px; font-size: 14px; line-height: 1; }
+  .v-head .tbtn:hover { background: rgba(255,255,255,.22); }
+
+  /* tabla a todo el ancho */
+  #tool { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+  /* ---- backdrop ---- */
+  .v-backdrop { position: fixed; inset: 0; background: rgba(6,15,40,.45);
+    backdrop-filter: blur(1px); z-index: 90; opacity: 0; visibility: hidden;
+    transition: opacity .28s ease, visibility .28s ease; }
+  .v-backdrop.open { opacity: 1; visibility: visible; }
+
+  /* ---- drawer lateral derecho ---- */
+  .v-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 90vw;
+    background: var(--panel-bg); border-left: 1px solid var(--panel-border);
+    box-shadow: -6px 0 28px rgba(6,15,40,.40); z-index: 100;
+    display: flex; flex-direction: column;
+    transform: translateX(100%); transition: transform .30s cubic-bezier(.4,.0,.2,1); }
+  .v-drawer.open { transform: translateX(0); }
+
+  .v-drawer-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px;
+    background: var(--navy-band); color: #fff; }
+  .v-drawer-head .ttl { font-weight: 700; font-size: 12.5px; letter-spacing: .4px; }
+  .v-drawer-head .ttl small { display: block; color: #c7d0ee; font-weight: 500;
+    font-size: 10px; letter-spacing: .2px; margin-top: 1px; }
+  .v-drawer-head .x { margin-left: auto; background: rgba(255,255,255,.14); border: none;
+    color: #fff; cursor: pointer; border-radius: 6px; width: 26px; height: 26px;
+    font-size: 15px; line-height: 1; }
+  .v-drawer-head .x:hover { background: rgba(255,255,255,.26); }
+
+  .v-drawer-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+    padding: 12px 14px; gap: 10px; overflow: auto; }
+
+  .v-chart-card { background: var(--panel-bg); border: 1px solid var(--panel-border);
+    border-radius: var(--radius); padding: 10px; flex: 0 0 auto; }
+  .v-chart-wrap { position: relative; height: 340px; width: 100%; }
+  .v-chart-hint { color: var(--text-faint); font-size: 10.5px; margin-top: 6px; text-align: center; }
+
+  .v-legend { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .v-legend .lrow { display: flex; align-items: center; gap: 8px; font-size: 11.5px;
+    color: var(--text-dim); cursor: pointer; padding: 3px 5px; border-radius: 6px;
+    transition: background .12s ease; }
+  .v-legend .lrow:hover { background: var(--row-hover); }
+  .v-legend .lrow.active { background: var(--accent-light); color: var(--text); }
+  .v-legend .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+  .v-legend .lname { font-weight: 600; flex: 1 1 auto; }
+  .v-legend .lstat { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
+
+  .v-empty { color: var(--text-faint); font-size: 11.5px; text-align: center; padding: 30px 10px; }
+</style>
+</head>
+<body>
+<div class="pg">
+  <header class="v-head">
+    <h1>O.N's · Unificado</h1>
+    <span class="sub">— Drawer lateral on-demand</span>
+    <span class="spacer"></span>
+    <span class="meta" id="vMeta"></span>
+    <button class="hbtn" id="btnChart" title="Abrir/cerrar gráfico">📊 Gráfico</button>
+    <button class="tbtn" title="Tema claro/oscuro" onclick="ON.toggleTheme()">◐</button>
+  </header>
+
+  <div id="tool"></div>
+</div>
+
+<!-- backdrop + drawer (el canvas vive acá, presente desde el inicio) -->
+<div class="v-backdrop" id="backdrop"></div>
+<aside class="v-drawer" id="drawer" aria-hidden="true">
+  <div class="v-drawer-head">
+    <div class="ttl">TIR vs MD · por sector<small>burbuja ∝ nº de bonos · click = filtrar</small></div>
+    <button class="x" id="btnClose" title="Cerrar">✕</button>
+  </div>
+  <div class="v-drawer-body">
+    <div class="v-chart-card">
+      <div class="v-chart-wrap"><canvas id="chart"></canvas></div>
+      <div class="v-chart-hint">Eje X = MD prom (años) · Eje Y = TIR prom (%)</div>
+    </div>
+    <div class="v-legend" id="legend"></div>
+  </div>
+</aside>
+
+<script src="../_shared/on_data.js"></script>
+<script src="../_shared/sectors.js"></script>
+<script src="../_shared/chart.umd.min.js"></script>
+<script src="../_shared/util.js"></script>
+<script src="../_shared/unified.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---------- meta del header ----------
+  var meta = ON.DATA.meta || {};
+  var metaEl = document.getElementById("vMeta");
+  if (metaEl && meta.n_bonds != null)
+    metaEl.textContent = meta.n_bonds + " ONs · AR " + meta.n_ar + " / EXT " + meta.n_ext;
+
+  // ---------- drawer open/close ----------
+  var drawer = document.getElementById("drawer");
+  var backdrop = document.getElementById("backdrop");
+  var btnChart = document.getElementById("btnChart");
+  var btnClose = document.getElementById("btnClose");
+
+  function openDrawer() {
+    drawer.classList.add("open");
+    backdrop.classList.add("open");
+    btnChart.classList.add("on");
+    drawer.setAttribute("aria-hidden", "false");
+    // el canvas pudo cambiar de tamaño mientras estaba oculto → reajustar
+    if (chart) { chart.resize(); chart.update("none"); }
+  }
+  function closeDrawer() {
+    drawer.classList.remove("open");
+    backdrop.classList.remove("open");
+    btnChart.classList.remove("on");
+    drawer.setAttribute("aria-hidden", "true");
+  }
+  function toggleDrawer() {
+    if (drawer.classList.contains("open")) closeDrawer(); else openDrawer();
+  }
+  btnChart.onclick = toggleDrawer;
+  btnClose.onclick = closeDrawer;
+  backdrop.onclick = closeDrawer;
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && drawer.classList.contains("open")) closeDrawer();
+  });
+
+  // ---------- gráfico: TIR vs MD · por sector (bubble) ----------
+  var chart = null;
+  var curAggs = [];
+  var legendEl = document.getElementById("legend");
+  var activeSector = null; // sector resaltado (toggle)
+
+  function radius(count) { return Math.max(8, Math.min(28, 6 + count * 1.3)); }
+
+  // aggs → puntos de burbuja (uno por sector con MD/TIR válidos)
+  function bubbles(aggs) {
+    return aggs
+      .filter(function (a) { return a.md_avg != null && a.tir_avg != null && a.count > 0; })
+      .map(function (a) {
+        return {
+          x: a.md_avg, y: a.tir_avg, r: radius(a.count),
+          key: a.key, short: a.short, count: a.count, color: a.color,
+        };
+      });
+  }
+
+  function buildData(aggs) {
+    var pts = bubbles(aggs);
+    return {
+      datasets: [{
+        label: "Sectores",
+        data: pts,
+        parsing: false,
+        backgroundColor: pts.map(function (p) {
+          if (activeSector && p.key !== activeSector) return p.color + "44";
+          return p.color + "cc";
+        }),
+        borderColor: pts.map(function (p) {
+          if (activeSector && p.key !== activeSector) return p.color + "66";
+          return p.color;
+        }),
+        borderWidth: pts.map(function (p) { return activeSector === p.key ? 3 : 1.5; }),
+        hoverBorderWidth: 3,
+      }],
+    };
+  }
+
+  function buildOpts() {
+    var t = ON.chartTheme();
+    return {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 220 },
+      scales: {
+        x: {
+          title: { display: true, text: "MD prom (años)", color: t.txt },
+          ticks: { color: t.txt }, grid: { color: t.grid },
+          border: { color: t.grid },
+        },
+        y: {
+          title: { display: true, text: "TIR prom (%)", color: t.txt },
+          ticks: { color: t.txt, callback: function (v) { return v + "%"; } },
+          grid: { color: t.grid }, border: { color: t.grid },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function (c) {
+              var r = c.raw || {};
+              return r.short + " (" + r.count + " bonos) · TIR prom " +
+                (r.y != null ? r.y.toFixed(1) : "?") + "% · MD prom " +
+                (r.x != null ? r.x.toFixed(1) : "?") + " a";
+            },
+          },
+        },
+      },
+      onClick: function (evt, els) {
+        if (!els || !els.length) return;
+        var p = chart.data.datasets[0].data[els[0].index];
+        if (p) toggleHighlight(p.key);
+      },
+    };
+  }
+
+  function toggleHighlight(key) {
+    activeSector = (activeSector === key) ? null : key;
+    Unified.highlight(activeSector);          // sincroniza la tabla
+    paintBubbleColors();
+    syncLegendActive();
+  }
+
+  function paintBubbleColors() {
+    if (!chart) return;
+    var ds = chart.data.datasets[0];
+    var pts = ds.data;
+    ds.backgroundColor = pts.map(function (p) {
+      return (activeSector && p.key !== activeSector) ? p.color + "44" : p.color + "cc";
+    });
+    ds.borderColor = pts.map(function (p) {
+      return (activeSector && p.key !== activeSector) ? p.color + "66" : p.color;
+    });
+    ds.borderWidth = pts.map(function (p) { return activeSector === p.key ? 3 : 1.5; });
+    chart.update("none");
+  }
+
+  function renderLegend(aggs) {
+    var pts = bubbles(aggs);
+    legendEl.innerHTML = pts.length
+      ? pts.map(function (p) {
+          return '<div class="lrow' + (activeSector === p.key ? " active" : "") +
+            '" data-key="' + encodeURIComponent(p.key) + '">' +
+            '<span class="dot" style="background:' + p.color + '"></span>' +
+            '<span class="lname">' + p.short + '</span>' +
+            '<span class="lstat">' + p.count + ' · ' + p.y.toFixed(1) + '% · ' + p.x.toFixed(1) + 'a</span>' +
+          '</div>';
+        }).join("")
+      : '<div class="v-empty">Sin sectores con TIR/MD para los filtros activos.</div>';
+    legendEl.querySelectorAll(".lrow").forEach(function (row) {
+      row.onclick = function () { toggleHighlight(decodeURIComponent(row.dataset.key)); };
+    });
+  }
+  function syncLegendActive() {
+    legendEl.querySelectorAll(".lrow").forEach(function (row) {
+      row.classList.toggle("active", decodeURIComponent(row.dataset.key) === activeSector);
+    });
+  }
+
+  function createChart() {
+    var ctx = document.getElementById("chart").getContext("2d");
+    chart = new Chart(ctx, { type: "bubble", data: buildData(curAggs), options: buildOpts() });
+  }
+
+  // redibujar con los aggs vigentes (filtro de la tabla)
+  function drawChart(aggs) {
+    curAggs = aggs || [];
+    // si el sector resaltado desapareció del set visible, limpiar
+    if (activeSector && !curAggs.some(function (a) { return a.key === activeSector; })) {
+      activeSector = null;
+      Unified.highlight(null);
+    }
+    if (!chart) createChart();
+    chart.data = buildData(curAggs);
+    chart.options = buildOpts();
+    chart.update("none");
+    renderLegend(curAggs);
+  }
+
+  // recolorear ejes/grilla al cambiar de tema
+  window.addEventListener("on:themechange", function () {
+    if (!chart) return;
+    chart.options = buildOpts();
+    paintBubbleColors();
+    chart.update("none");
+  });
+
+  // ---------- montar la herramienta unificada ----------
+  Unified.render(document.getElementById("tool"), {
+    defaultCcy: "MEP",
+    onRender: function (bonds, aggs) { drawChart(aggs); },
+  });
+
+  // garantizar instancia inicial aunque onRender ya haya corrido (drawer arranca cerrado)
+  if (!chart) drawChart(Unified.sectorAggs());
+})();
+</script>
+</body>
+</html>

@@ -17,7 +17,6 @@ se sobrescribe íntegra; se hace un backup de seguridad del estado actual antes.
 
 from __future__ import annotations
 
-import socket
 import sys
 from pathlib import Path
 
@@ -25,18 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import settings  # noqa: E402
 from core.infrastructure.db.backup import backup_db, list_backups, restore_db  # noqa: E402
-
-
-def _server_running(host: str, port: int, timeout_s: float = 1.0) -> bool:
-    """True si hay algo escuchando en host:port (el monitor vivo). `0.0.0.0` es
-    una dirección de bind, no conectable — se prueba por loopback."""
-    if host in ("0.0.0.0", "::"):
-        host = "127.0.0.1"
-    try:
-        with socket.create_connection((host, port), timeout=timeout_s):
-            return True
-    except OSError:
-        return False
+from scripts.op_guards import server_running  # noqa: E402
 
 
 def _print_backups(backups) -> None:
@@ -62,7 +50,7 @@ def main(argv: list[str]) -> int:
 
     # Guard F3: nunca restaurar sobre la DB de un server vivo (lock WAL + cache
     # en memoria desactualizado). --force lo saltea conscientemente.
-    if not force and _server_running(settings.host, settings.port):
+    if not force and server_running(settings.host, settings.port):
         print(f"ABORTADO: el monitor está corriendo en {settings.host}:{settings.port}.")
         print("Pará el server primero (la DB en uso puede bloquear el restore y el")
         print("catálogo en memoria quedaría desactualizado). Para forzar: --force")
@@ -80,10 +68,21 @@ def main(argv: list[str]) -> int:
         return 1
 
     print(f"Restaurando {target.name} → {settings.catalog_db}")
-    # Red de seguridad: snapshot del estado ACTUAL antes de sobrescribir.
-    safety = backup_db(settings.catalog_db, settings.backup_dir, keep=settings.backup_keep)
+    # Red de seguridad: snapshot INCONDICIONAL del estado ACTUAL antes de
+    # sobrescribir (`tag=` — el diario del arranque no contiene las altas del día).
+    # keep=0: NO rotar en este punto — la rotación normal podría borrar el `target`
+    # que vamos a restaurar si ya hay `backup_keep` archivos y target es el más viejo.
+    # El diario del próximo arranque poda el exceso sin riesgo.
+    safety = backup_db(settings.catalog_db, settings.backup_dir,
+                       keep=0, tag="pre-restore")
     if safety:
         print(f"  (backup de seguridad del estado actual: {safety.name})")
+    elif Path(settings.catalog_db).is_file():
+        print("ABORTADO: no se pudo crear el backup de seguridad pre-restore "
+              "(el restore pisaría el estado actual sin red de seguridad).")
+        if not force:
+            return 3
+        print("(--force: continuando SIN backup de seguridad)")
     restore_db(target, settings.catalog_db)
     print("Restore completo.")
     return 0

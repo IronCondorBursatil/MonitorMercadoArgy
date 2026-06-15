@@ -3,8 +3,9 @@
 Drop-in de `ExcelInstrumentsRepository` (mismas firmas). Lee de SQLite y cachea
 en memoria al instanciar. Si la base está vacía, auto-siembra desde el Excel
 (reusando el parsing probado del repo Excel) — así el cutover no requiere correr
-`ingest_master.py` a mano la primera vez. `reload()` re-siembra desde el Excel,
-manteniendo paridad con el flujo actual (la ABM edita el Excel y dispara reload).
+`ingest_master.py` a mano la primera vez. `reload()` solo refresca el cache en
+memoria desde SQLite (NUNCA re-siembra): la ABM escribe SQLite directo y dispara
+`reload()` en caliente; el re-seed destructivo vive solo en `ingest_from_excel`.
 """
 
 from __future__ import annotations
@@ -139,6 +140,15 @@ def init_db() -> None:
         Base.metadata.create_all(eng)
         for table in Base.metadata.sorted_tables:
             _migrate_table_add_columns(eng, table)
+        # Crear índices aditivos en DBs existentes (create_all los omite si la tabla
+        # ya existe). Idempotente via IF NOT EXISTS — orden de columnas no importa.
+        with eng.begin() as conn:
+            for ddl in (
+                "CREATE INDEX IF NOT EXISTS ix_instr_mep ON instruments (ticker_mep)",
+                "CREATE INDEX IF NOT EXISTS ix_instr_ccl ON instruments (ticker_ccl)",
+                "CREATE INDEX IF NOT EXISTS ix_instr_isin ON instruments (isin)",
+            ):
+                conn.exec_driver_sql(ddl)
         _stamp_schema_version(eng, CURRENT_SCHEMA_VERSION)
         _INITIALIZED_ENGINE = eng
 
@@ -182,14 +192,28 @@ def instrument_to_orm(inst: Instrument, sheet: Optional[str] = None,
     return orm
 
 
-def reseed_with_meta(rows) -> int:
+def reseed_with_meta(rows, allow_drop: bool = False) -> int:
     """Wipe + reseed — transaccional, idempotente. Cada fila es UN bono:
     (Instrument, sheet, raw_fields[, secondary_tickers]). Las patas de moneda
-    secundarias se guardan en ticker_mep/ticker_ccl (1 fila por bono)."""
+    secundarias se guardan en ticker_mep/ticker_ccl (1 fila por bono).
+
+    Guard anti-pérdida: si el re-seed dejaría afuera bonos que HOY están en la
+    DB (altas ABM que viven solo en SQLite — el Excel es semilla, no espejo),
+    aborta con la lista. `allow_drop=True` = override consciente."""
     from core.infrastructure.repositories import split_currency_tickers
 
     init_db()
     rows = [tuple(r) for r in rows]
+    if not allow_drop:
+        incoming = {r[0].ticker for r in rows}
+        with SessionLocal() as s:
+            existing = {t for (t,) in s.execute(select(InstrumentORM.ticker)).all()}
+        lost = sorted(existing - incoming)
+        if lost:
+            preview = ", ".join(lost[:10]) + ("…" if len(lost) > 10 else "")
+            raise ValueError(
+                f"re-seed abortado: borraría {len(lost)} bono(s) que viven solo en la "
+                f"DB (altas ABM): {preview}. Si es intencional, usar allow_drop=True.")
     with SessionLocal.begin() as s:
         s.execute(delete(CashflowORM))
         s.execute(delete(InstrumentORM))
@@ -201,14 +225,27 @@ def reseed_with_meta(rows) -> int:
     return len(rows)
 
 
-def ingest_from_excel(xlsx_path: str) -> int:
+def ingest_from_excel(xlsx_path: str, allow_drop: bool = False) -> int:
     """Excel → SQLite. Reusa el parsing probado de ExcelInstrumentsRepository,
-    preservando sheet + raw_fields para el round-trip del form del ABM."""
+    preservando sheet + raw_fields para el round-trip del form del ABM.
+    Hereda el guard anti-pérdida de `reseed_with_meta` (el Excel es semilla:
+    NO conoce las altas ABM — re-sembrar sin chequear las borraría)."""
     from core.infrastructure.repositories import ExcelInstrumentsRepository
     triples = ExcelInstrumentsRepository(xlsx_path).get_all_with_meta()
-    n = reseed_with_meta(triples)
+    n = reseed_with_meta(triples, allow_drop=allow_drop)
     logger.info("ingest_from_excel: seeded %d instruments into SQLite.", n)
     return n
+
+
+def _coupon_pct(raw_fields) -> Optional[float]:
+    """Cupón anual nominal % desde raw_fields['cupon anual %'] (string o número); None si vacío."""
+    v = (raw_fields or {}).get("cupon anual %")
+    if v is None or v == "":
+        return None
+    try:
+        return float(str(v).replace(",", "."))
+    except (ValueError, TypeError):
+        return None
 
 
 def _orm_to_domain(orm: InstrumentORM) -> Instrument:
@@ -226,6 +263,10 @@ def _orm_to_domain(orm: InstrumentORM) -> Instrument:
         # ley_aplicable vive en raw_fields (no es columna ORM) — la lee el motor para
         # elegir MEP (ley AR) vs CCL (Extranjera) en la pata pesos de ONs hard-dollar.
         ley_aplicable=(orm.raw_fields or {}).get("ley_aplicable") or None,
+        # serie_clase también vive en raw_fields (display-only): la CLASE de la ON.
+        serie_clase=(orm.raw_fields or {}).get("serie_clase") or None,
+        coupon_rate=_coupon_pct(orm.raw_fields),   # cupón anual % (display-only)
+        sector_override=(orm.raw_fields or {}).get("sector_override") or None,  # categoría manual ABM
     )
 
 
@@ -266,9 +307,11 @@ class CatalogRepository(IInstrumentsRepository):
         logger.info("CatalogRepository loaded %d instruments (%d bonos) from SQLite.",
                     len(insts), n_bonos)
 
-    def reload(self, reseed_from_excel: bool = True) -> None:
-        if reseed_from_excel:
-            ingest_from_excel(self._xlsx_path)
+    def reload(self) -> None:
+        """Refresca el cache en memoria desde SQLite. NUNCA re-siembra: el camino
+        destructivo (wipe + seed desde el Excel) vive solo en `ingest_from_excel` /
+        `ingest_master.py`, con sus guards anti-pérdida de altas ABM — un flag de
+        re-seed acá era el footgun exacto que esos guards tapan."""
         self._load()
 
     # IInstrumentsRepository ------------------------------------------------ #

@@ -7,9 +7,7 @@ from fastapi.testclient import TestClient
 from jinja2 import Environment, FileSystemLoader
 
 from apps.web.app import app
-from config.settings import settings
 from core.infrastructure.byma import universe
-from core.infrastructure.db import engine as db_engine
 
 _TPL_DIR = Path(__file__).resolve().parent.parent / "apps" / "web" / "templates"
 
@@ -41,63 +39,55 @@ def _write(path, rows):
         w.writerows(rows)
 
 
-def test_ingest_and_search(tmp_path):
-    db_engine.configure(tmp_path / "u.db")
-    try:
-        csvp = tmp_path / "t.csv"
-        _write(csvp, [
-            ["GGAL", "GGAL", "ARS", "CS", "L", "primary", "", "True", "Acciones Lideres",
-             "ARP495251018", "Acciones", "EQUITY", "GRUPO FINANCIERO GALICIA S.A."],
-            ["GGALD", "GGAL", "USD", "CS", "D", "primary", "", "True", "Acciones Lideres",
-             "ARP495251018", "Acciones", "EQUITY", "GRUPO FINANCIERO GALICIA S.A."],
-            # tipoEspecie vacío → categoría inferida del securityType (GO→Títulos Públicos)
-            ["AL30", "AL30", "ARS", "GO", "0", "primary", "", "True", "Titulos Publicos",
-             "ARARGE3209S6", "", "BOND", "REP. ARGENTINA"],
-            ["ZZZ9", "ZZZ9", "ARS", "CORP", "", "", "", "False", "Oblig. Negociables",
-             "", "", "", ""],  # CORP → Obligaciones Negociables
-        ])
-        assert universe.ingest_byma_catalog(csvp) == 4
-        assert universe.count() == 4
-        # idempotente (delete + insert)
-        assert universe.ingest_byma_catalog(csvp) == 4 and universe.count() == 4
+def test_ingest_and_search(tmp_db):
+    csvp = tmp_db / "t.csv"
+    _write(csvp, [
+        ["GGAL", "GGAL", "ARS", "CS", "L", "primary", "", "True", "Acciones Lideres",
+         "ARP495251018", "Acciones", "EQUITY", "GRUPO FINANCIERO GALICIA S.A."],
+        ["GGALD", "GGAL", "USD", "CS", "D", "primary", "", "True", "Acciones Lideres",
+         "ARP495251018", "Acciones", "EQUITY", "GRUPO FINANCIERO GALICIA S.A."],
+        # tipoEspecie vacío → categoría inferida del securityType (GO→Títulos Públicos)
+        ["AL30", "AL30", "ARS", "GO", "0", "primary", "", "True", "Titulos Publicos",
+         "ARARGE3209S6", "", "BOND", "REP. ARGENTINA"],
+        ["ZZZ9", "ZZZ9", "ARS", "CORP", "", "", "", "False", "Oblig. Negociables",
+         "", "", "", ""],  # CORP → Obligaciones Negociables
+    ])
+    assert universe.ingest_byma_catalog(csvp) == 4
+    assert universe.count() == 4
+    # idempotente (delete + insert)
+    assert universe.ingest_byma_catalog(csvp) == 4 and universe.count() == 4
 
-        # por ticker (LIKE) → ambas patas
-        rows, total = universe.search_byma_catalog("GGAL")
-        assert total == 2 and {r["symbol"] for r in rows} == {"GGAL", "GGALD"}
-        # por ISIN
-        rows, total = universe.search_byma_catalog("ARARGE3209S6")
-        assert total == 1 and rows[0]["symbol"] == "AL30"
-        # por emisor (case-insensitive)
-        _rows, total = universe.search_byma_catalog("galicia")
-        assert total == 2
-        # categoría inferida
-        rows, _ = universe.search_byma_catalog("AL30")
-        assert rows[0]["categoria"] == "Títulos Públicos"
-        rows, _ = universe.search_byma_catalog("ZZZ9")
-        assert rows[0]["categoria"] == "Obligaciones Negociables"
-        # filtro por categoría
-        _rows, total = universe.search_byma_catalog("", "Títulos Públicos")
-        assert total == 1
-        # categories() para los chips/select
-        cats = dict(universe.categories())
-        assert cats.get("Acciones") == 2 and cats.get("Títulos Públicos") == 1
-    finally:
-        db_engine.configure(settings.catalog_db)
+    # por ticker (LIKE) → ambas patas
+    rows, total = universe.search_byma_catalog("GGAL")
+    assert total == 2 and {r["symbol"] for r in rows} == {"GGAL", "GGALD"}
+    # por ISIN
+    rows, total = universe.search_byma_catalog("ARARGE3209S6")
+    assert total == 1 and rows[0]["symbol"] == "AL30"
+    # por emisor (case-insensitive)
+    _rows, total = universe.search_byma_catalog("galicia")
+    assert total == 2
+    # categoría inferida
+    rows, _ = universe.search_byma_catalog("AL30")
+    assert rows[0]["categoria"] == "Títulos Públicos"
+    rows, _ = universe.search_byma_catalog("ZZZ9")
+    assert rows[0]["categoria"] == "Obligaciones Negociables"
+    # filtro por categoría
+    _rows, total = universe.search_byma_catalog("", "Títulos Públicos")
+    assert total == 1
+    # categories() para los chips/select
+    cats = dict(universe.categories())
+    assert cats.get("Acciones") == 2 and cats.get("Títulos Públicos") == 1
 
 
-def test_search_pagination(tmp_path):
-    db_engine.configure(tmp_path / "u2.db")
-    try:
-        rows = [[f"S{i:04d}", f"S{i:04d}", "ARS", "GO", "", "", "", "True", "Letras",
-                 "", "Letras", "BOND", "ESTADO"] for i in range(10)]
-        _write(tmp_path / "t.csv", rows)
-        universe.ingest_byma_catalog(tmp_path / "t.csv")
-        p0, total = universe.search_byma_catalog("", "", limit=4, offset=0)
-        p1, _ = universe.search_byma_catalog("", "", limit=4, offset=4)
-        assert total == 10 and len(p0) == 4 and len(p1) == 4
-        assert {r["symbol"] for r in p0}.isdisjoint({r["symbol"] for r in p1})
-    finally:
-        db_engine.configure(settings.catalog_db)
+def test_search_pagination(tmp_db):
+    rows = [[f"S{i:04d}", f"S{i:04d}", "ARS", "GO", "", "", "", "True", "Letras",
+             "", "Letras", "BOND", "ESTADO"] for i in range(10)]
+    _write(tmp_db / "t.csv", rows)
+    universe.ingest_byma_catalog(tmp_db / "t.csv")
+    p0, total = universe.search_byma_catalog("", "", limit=4, offset=0)
+    p1, _ = universe.search_byma_catalog("", "", limit=4, offset=4)
+    assert total == 10 and len(p0) == 4 and len(p1) == 4
+    assert {r["symbol"] for r in p0}.isdisjoint({r["symbol"] for r in p1})
 
 
 def test_universe_endpoints_smoke():
@@ -153,33 +143,29 @@ def test_shell_empty_results():
 
 # ---- columna Legislación (solo Obligaciones Negociables) ------------------ #
 
-def test_grouped_marks_has_ficha(tmp_path):
+def test_grouped_marks_has_ficha(tmp_db):
     """Los grupos cuyo ISIN ya tiene ficha técnica rica se marcan has_ficha=True
     (→ ticker naranja); los demás False."""
-    db_engine.configure(tmp_path / "uf.db")
-    try:
-        from core.infrastructure.db.catalog_repository import init_db
-        from core.infrastructure.db.engine import SessionLocal
-        from core.infrastructure.db.models import InstrumentORM
-        _write(tmp_path / "t.csv", [
-            ["AEC2O", "AEC2O", "ARS", "CORP", "O", "primary", "", "True",
-             "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES"],
-            ["XYZ0", "XYZ0", "ARS", "CORP", "O", "primary", "", "True",
-             "Oblig. Negociables", "AR9999999999", "Obligaciones Negociables", "BOND", "OTRO"],
-        ])
-        universe.ingest_byma_catalog(tmp_path / "t.csv")
-        init_db()
-        with SessionLocal.begin() as s:
-            s.merge(InstrumentORM(ticker="AEC2O", isin="USP1000CAE41",
-                                  raw_fields={"byma": {"ficha": {"ley": "Extranjera"}}}))
-            s.merge(InstrumentORM(ticker="XYZ0", isin="AR9999999999",
-                                  raw_fields={"byma": {}}))   # sin ficha
-        rows, _ = universe.search_byma_grouped("", "Obligaciones Negociables")
-        by = {g["base"]: g for g in rows}
-        assert by["AEC2O"]["has_ficha"] is True
-        assert by["XYZ0"]["has_ficha"] is False
-    finally:
-        db_engine.configure(settings.catalog_db)
+    from core.infrastructure.db.catalog_repository import init_db
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import InstrumentORM
+    _write(tmp_db / "t.csv", [
+        ["AEC2O", "AEC2O", "ARS", "CORP", "O", "primary", "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES"],
+        ["XYZ0", "XYZ0", "ARS", "CORP", "O", "primary", "", "True",
+         "Oblig. Negociables", "AR9999999999", "Obligaciones Negociables", "BOND", "OTRO"],
+    ])
+    universe.ingest_byma_catalog(tmp_db / "t.csv")
+    init_db()
+    with SessionLocal.begin() as s:
+        s.merge(InstrumentORM(ticker="AEC2O", isin="USP1000CAE41",
+                              raw_fields={"byma": {"ficha": {"ley": "Extranjera"}}}))
+        s.merge(InstrumentORM(ticker="XYZ0", isin="AR9999999999",
+                              raw_fields={"byma": {}}))   # sin ficha
+    rows, _ = universe.search_byma_grouped("", "Obligaciones Negociables")
+    by = {g["base"]: g for g in rows}
+    assert by["AEC2O"]["has_ficha"] is True
+    assert by["XYZ0"]["has_ficha"] is False
 
 
 def test_rows_orange_ticker_only_when_has_ficha():
@@ -225,69 +211,92 @@ def test_legislacion_column_hidden_for_other_categories():
     assert 'class="uni-leg"' not in rows and 'colspan="16"' in rows
 
 
-def test_search_grouped(tmp_path):
+def test_search_grouped(tmp_db):
     """1 fila por título valor: agrupa por ISIN y reparte cada moneda en su columna,
     separando la clase `primary` de las `especial`/`otro`."""
-    db_engine.configure(tmp_path / "ug.db")
-    try:
-        _write(tmp_path / "t.csv", [
-            # AEC2: 1 ISIN, 6 especies (3 primary + 3 especial)
-            ["AEC2O", "AEC2O", "ARS",   "CORP", "O", "primary",  "", "True",
-             "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
-            ["AEC2D", "AEC2O", "MEP",   "CORP", "D", "primary",  "", "True",
-             "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
-            ["AEC2C", "AEC2O", "cable", "CORP", "C", "primary",  "", "True",
-             "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
-            ["AEC2X", "AEC2O", "ARS",   "CORP", "X", "especial", "", "True",
-             "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
-            ["AEC2Y", "AEC2O", "MEP",   "CORP", "Y", "especial", "", "True",
-             "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
-            ["AEC2Z", "AEC2O", "cable", "CORP", "Z", "especial", "", "True",
-             "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
-            # GGAL: equity, la pata `otro` (GGALB) cae también en especiales
-            ["GGAL",  "GGAL", "ARS",   "CS", "",  "primary", "", "True",
-             "Acciones", "ARP495251018", "Acciones", "EQUITY", "GRUPO GALICIA"],
-            ["GGALD", "GGAL", "MEP",   "CS", "D", "primary", "", "True",
-             "Acciones", "ARP495251018", "Acciones", "EQUITY", "GRUPO GALICIA"],
-            ["GGALC", "GGAL", "cable", "CS", "C", "primary", "", "True",
-             "Acciones", "ARP495251018", "Acciones", "EQUITY", "GRUPO GALICIA"],
-            ["GGALB", "GGAL", "ARS",   "CS", "B", "otro",    "", "True",
-             "Acciones", "ARP495251018", "Acciones", "EQUITY", "GRUPO GALICIA"],
-        ])
-        universe.ingest_byma_catalog(tmp_path / "t.csv")
+    _write(tmp_db / "t.csv", [
+        # AEC2: 1 ISIN, 6 especies (3 primary + 3 especial)
+        ["AEC2O", "AEC2O", "ARS",   "CORP", "O", "primary",  "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
+        ["AEC2D", "AEC2O", "MEP",   "CORP", "D", "primary",  "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
+        ["AEC2C", "AEC2O", "cable", "CORP", "C", "primary",  "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
+        ["AEC2X", "AEC2O", "ARS",   "CORP", "X", "especial", "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
+        ["AEC2Y", "AEC2O", "MEP",   "CORP", "Y", "especial", "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
+        ["AEC2Z", "AEC2O", "cable", "CORP", "Z", "especial", "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES ARGENTINA"],
+        # GGAL: equity, la pata `otro` (GGALB) cae también en especiales
+        ["GGAL",  "GGAL", "ARS",   "CS", "",  "primary", "", "True",
+         "Acciones", "ARP495251018", "Acciones", "EQUITY", "GRUPO GALICIA"],
+        ["GGALD", "GGAL", "MEP",   "CS", "D", "primary", "", "True",
+         "Acciones", "ARP495251018", "Acciones", "EQUITY", "GRUPO GALICIA"],
+        ["GGALC", "GGAL", "cable", "CS", "C", "primary", "", "True",
+         "Acciones", "ARP495251018", "Acciones", "EQUITY", "GRUPO GALICIA"],
+        ["GGALB", "GGAL", "ARS",   "CS", "B", "otro",    "", "True",
+         "Acciones", "ARP495251018", "Acciones", "EQUITY", "GRUPO GALICIA"],
+    ])
+    universe.ingest_byma_catalog(tmp_db / "t.csv")
 
-        rows, total = universe.search_byma_grouped()
-        assert total == 2  # 2 títulos: AEC2 (ON) + GGAL (acción)
-        by_base = {g["base"]: g for g in rows}
+    rows, total = universe.search_byma_grouped()
+    assert total == 2  # 2 títulos: AEC2 (ON) + GGAL (acción)
+    by_base = {g["base"]: g for g in rows}
 
-        aec = by_base["AEC2O"]
-        assert aec["isin"] == "USP1000CAE41"
-        assert aec["primary"]  == {"pesos": "AEC2O", "mep": "AEC2D", "cable": "AEC2C"}
-        assert aec["especial"] == {"pesos": "AEC2X", "mep": "AEC2Y", "cable": "AEC2Z"}
+    aec = by_base["AEC2O"]
+    assert aec["isin"] == "USP1000CAE41"
+    assert aec["primary"]  == {"pesos": "AEC2O", "mep": "AEC2D", "cable": "AEC2C"}
+    assert aec["especial"] == {"pesos": "AEC2X", "mep": "AEC2Y", "cable": "AEC2Z"}
 
-        ggal = by_base["GGAL"]
-        assert ggal["primary"] == {"pesos": "GGAL", "mep": "GGALD", "cable": "GGALC"}
-        # clase `otro` (GGALB) cae en especiales/pesos; el resto vacío
-        assert ggal["especial"] == {"pesos": "GGALB", "mep": "", "cable": ""}
+    ggal = by_base["GGAL"]
+    assert ggal["primary"] == {"pesos": "GGAL", "mep": "GGALD", "cable": "GGALC"}
+    # clase `otro` (GGALB) cae en especiales/pesos; el resto vacío
+    assert ggal["especial"] == {"pesos": "GGALB", "mep": "", "cable": ""}
 
-        # legislación inferida del prefijo de país del ISIN (AR→local, US→NY)
-        assert aec["legislacion"] == "Ley NY"      # USP1000CAE41
-        assert ggal["legislacion"] == "Ley Local"  # ARP495251018
+    # legislación inferida del prefijo de país del ISIN (AR→local, US→NY)
+    assert aec["legislacion"] == "Ley NY"      # USP1000CAE41
+    assert ggal["legislacion"] == "Ley Local"  # ARP495251018
 
-        # buscar por una pata especial trae el GRUPO completo (todas sus columnas)
-        rows, total = universe.search_byma_grouped("AEC2Y")
-        assert total == 1 and rows[0]["primary"]["pesos"] == "AEC2O"
-        # por emisor (case-insensitive)
-        _r, total = universe.search_byma_grouped("galicia")
-        assert total == 1
-        # filtro por categoría (consistente dentro del grupo)
-        _r, total = universe.search_byma_grouped("", "Acciones")
-        assert total == 1
+    # buscar por una pata especial trae el GRUPO completo (todas sus columnas)
+    rows, total = universe.search_byma_grouped("AEC2Y")
+    assert total == 1 and rows[0]["primary"]["pesos"] == "AEC2O"
+    # por emisor (case-insensitive)
+    _r, total = universe.search_byma_grouped("galicia")
+    assert total == 1
+    # filtro por categoría (consistente dentro del grupo)
+    _r, total = universe.search_byma_grouped("", "Acciones")
+    assert total == 1
 
-        # paginado por GRUPO (no por especie)
-        p0, total = universe.search_byma_grouped("", "", limit=1, offset=0)
-        p1, _ = universe.search_byma_grouped("", "", limit=1, offset=1)
-        assert total == 2 and len(p0) == 1 and len(p1) == 1
-        assert p0[0]["base"] != p1[0]["base"]
-    finally:
-        db_engine.configure(settings.catalog_db)
+    # paginado por GRUPO (no por especie)
+    p0, total = universe.search_byma_grouped("", "", limit=1, offset=0)
+    p1, _ = universe.search_byma_grouped("", "", limit=1, offset=1)
+    assert total == 2 and len(p0) == 1 and len(p1) == 1
+    assert p0[0]["base"] != p1[0]["base"]
+
+
+# ---- refresh manual del monto operado (botón, no automático) -------------- #
+
+def test_abm_page_has_manual_refresh_button():
+    """El universo tiene un botón de refresh manual que re-pide /abm/universe con
+    la búsqueda y categoría actuales; el contenedor de resultados NO se
+    auto-refresca (sin polling `every` ni `sse` en su trigger)."""
+    import re
+    with TestClient(app) as c:
+        html = c.get("/abm").text
+    m = re.search(r'<button[^>]*id="uni-refresh"[^>]*>', html)
+    assert m, "falta el botón #uni-refresh en la vista Universo"
+    tag = m.group(0)
+    assert 'hx-get="/abm/universe"' in tag
+    assert 'hx-target="#uni-results"' in tag
+    assert "#uni-q" in tag and "#uni-cat" in tag      # propaga q + cat
+    m2 = re.search(r'<div id="uni-results"[^>]*>', html)
+    assert m2 and "every" not in m2.group(0) and "sse" not in m2.group(0)
+
+
+def test_universe_shell_shows_asof_time():
+    """El shell muestra la hora del snapshot (act HH:MM:SS) en la meta, para saber
+    de cuándo es el monto operado que se está mirando."""
+    html = _render("fragments/abm_universe.html", rows=_sample_rows(1), q="", cat="",
+                   page=0, has_next=False, total=1, asof="14:03:22")
+    assert "act 14:03:22" in html

@@ -16,6 +16,7 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -63,7 +64,8 @@ class Settings(BaseSettings):
     db_dir: Path = Path(os.environ.get("LOCALAPPDATA", str(_BASE_DIR))) / "monitor"
     catalog_db: Path = db_dir / "catalog.db"
     # Backups recuperables de la catalog.db (fuente de verdad viva): snapshot online
-    # 1×/día al arrancar, rota a `backup_keep` días. Fuera de OneDrive — ver backup.py.
+    # 1×/día al arrancar, rota a `backup_keep` archivos por pool (daily y tagged por
+    # separado — ver backup.py). Fuera de OneDrive.
     backup_dir: Path = db_dir / "backups"
     backup_keep: int = 7
     # Cierres diarios por ticker (variaciones Sem/1M/3M/YTD/1A). Se auto-mantiene
@@ -117,7 +119,7 @@ class Settings(BaseSettings):
     # solo cierre, paginado 25d). Chart es estrictamente mejor (verificado en vivo).
     byma_history_source: str = "chart"  # 'chart' | 'series'
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: Any) -> None:
         self.db_dir.mkdir(parents=True, exist_ok=True)
 
 

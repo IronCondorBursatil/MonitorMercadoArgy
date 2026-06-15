@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 
 from core.domain.models import Cashflow
+from core.domain.on_classification import SECTORS as _ON_SECTORS
 from core.infrastructure.db.catalog_repository import init_db, instrument_to_orm
 from core.infrastructure.db.engine import SessionLocal
 from core.infrastructure.db.models import CashflowORM, InstrumentORM
@@ -89,12 +90,17 @@ def _synth_cashflows_for_fields(fields: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _safe_synth(fields: Dict[str, Any]) -> List[Cashflow]:
-    """synth_cashflows tolerante: input mal-formado → []. Bugs reales propagan."""
+    """synth_cashflows tolerante: input mal-formado → []. Bugs reales propagan.
+
+    Captura SOLO las excepciones de input sucio del form (valor no parseable,
+    clave faltante, tipo incompatible). `AttributeError` NO se atrapa a propósito:
+    casi siempre es un bug DENTRO de synth_cashflows, y tragarlo guardaría un alta
+    con cero cashflows sin aviso — choca con la política 'NUNCA tragar el error'."""
     try:
         from core.domain.cashflow_synth import synth_cashflows
         normalized = {str(k).lower().strip(): v for k, v in fields.items()}
         return list(synth_cashflows(normalized))
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
+    except (ValueError, KeyError, TypeError) as e:
         logger.warning(f"synth_cashflows invalid input: {e}")
         return []
 
@@ -136,6 +142,8 @@ def _normalize_fields(fields: Dict[str, Any]) -> Dict[str, Any]:
 # usa `build_instrument` y `synth_cashflows`.
 _BASE_CALCULO_OPTIONS = ["", "ACT/365.25", "ACT/365", "30/360", "ACT/ACT"]
 _TIPO_AMORT_OPTIONS  = ["", "bullet", "amortizing"]
+# Categoría/sector para ordenar una ON a mano (override del match por emisor). "" = auto.
+_CATEGORIA_OPTIONS = [""] + [s.key for s in _ON_SECTORS]
 
 SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
     "Soberanos": {
@@ -289,6 +297,9 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
             {"key": "short_name",       "label": "Emisor",                "type": "text",   "required": True},
             {"key": "serie_clase",      "label": "Serie / Clase",         "type": "text",
              "help": "Etiqueta del informe IAMC/BYMA, ej. 'Clase XXXI' / 'Serie 13 Clase A'"},
+            {"key": "sector_override",  "label": "Categoría (sector)",    "type": "select",
+             "options": _CATEGORIA_OPTIONS,
+             "help": "Sector donde se ordena la ON. Vacío = se deduce del emisor"},
             {"key": "ley_aplicable",    "label": "Ley Aplicable",         "type": "select",
              "options": ["", "Argentina", "Extranjera"],
              "help": "Ley de emisión: Argentina (ley local) o Extranjera (ley NY)"},
@@ -313,6 +324,13 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
              "help": "Solo amortizing"},
             {"key": "capital factor",   "label": "Capital factor (VR/100)", "type": "number", "step": "0.0001",
              "help": "VR < 100 → ej. 0.40 si el valor residual es 40"},
+            # Denominación (referencia BYMA; display-only, no entra al pricing)
+            {"key": "denom_base",       "label": "Denominación base",     "type": "number", "step": "0.01",
+             "help": "Denominación mínima (BYMA), ej. 1.00"},
+            {"key": "denom_incremento", "label": "Incrementos",           "type": "number", "step": "0.01",
+             "help": "Incremento de denominación (BYMA), ej. 1.00"},
+            {"key": "valor_nominal",    "label": "Valor nominal",         "type": "number", "step": "0.01",
+             "help": "Valor nominal unitario (BYMA), ej. 1.00"},
         ],
     },
 }
@@ -358,10 +376,115 @@ def list_instruments() -> List[Dict[str, Any]]:
     init_db()
     with SessionLocal() as s:
         rows = s.execute(select(InstrumentORM).order_by(InstrumentORM.ticker)).scalars().all()
-        out = [{"sheet": o.sheet or "", "key": o.ticker,
-                "display": " / ".join(_row_tickers(o)), "tickers": _row_tickers(o)}
-               for o in rows if o.sheet != _ACCIONES_SHEET]
+        out = []
+        for o in rows:
+            if o.sheet == _ACCIONES_SHEET:
+                continue
+            # Columnas ON (filtrables en el ABM): ticker pesos (=primario), Ley (AR/EXT),
+            # Tipo (HD/DL) y Amortización (bullet/amortizing), derivadas de raw_fields /
+            # instrument_type. Vacías para las hojas no-ON (no muestran esas columnas).
+            rf = o.raw_fields or {}
+            itype = (rf.get("tipo") or o.instrument_type or "").upper()
+            tipo = "HD" if "HARD DOLLAR" in itype else (
+                "DL" if ("DOLLAR LINKED" in itype or "DOLAR LINKED" in itype) else "")
+            leyr = (rf.get("ley_aplicable") or "").upper()
+            ley = "AR" if "ARGENTIN" in leyr else ("EXT" if "EXTRANJ" in leyr else "")
+            amort = (rf.get("tipo amortizacion") or "").strip().lower()
+            if amort not in ("bullet", "amortizing"):
+                amort = ""
+            out.append({"sheet": o.sheet or "", "key": o.ticker,
+                        "display": " / ".join(_row_tickers(o)), "tickers": _row_tickers(o),
+                        "peso": o.ticker, "emisor": o.short_name or "",
+                        "ley": ley, "tipo": tipo, "amort": amort})
     out.sort(key=lambda e: e["key"])
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Completitud: tabla "adaptativa por hoja" del ABM — por instrumento, qué campos
+# relevantes están llenos (auditoría de carga). Las columnas salen del schema de
+# la hoja (SHEET_SCHEMAS) menos las patas de ticker y la denominación display-only.
+# --------------------------------------------------------------------------- #
+
+_COV_SKIP = frozenset({"ticker_ars", "ticker_mep", "ticker_ccl",
+                       "denom_base", "denom_incremento", "valor_nominal"})
+
+
+def coverage_columns(sheet: str) -> List[Dict[str, Any]]:
+    """Columnas de datos para la tabla de completitud de una hoja: los campos del
+    form (SHEET_SCHEMAS) menos las patas de ticker y la denominación (display-only).
+    El ticker primario, Cashflows y Precio los renderiza la plantilla aparte."""
+    flds = SHEET_SCHEMAS.get(sheet, {}).get("fields", [])
+    return [{"key": f["key"], "label": f["label"], "required": bool(f.get("required"))}
+            for f in flds if f["key"] not in _COV_SKIP]
+
+
+def list_instruments_coverage(price_of=None, sheet: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Por instrumento (1 fila por bono), el estado de carga de sus campos relevantes:
+    valores, flags de faltantes, # de cashflows, precio vivo y % de completitud.
+
+    El % cuenta los campos de datos de la hoja + cashflows (requerido); el **precio**
+    NO entra en el % (viene del feed, no es carga manual) pero se expone como columna.
+    `price_of(ticker)->float|None` (ej. `AppState.price_of`) da el precio vivo.
+    Ordena los menos completos primero (auditoría). Excluye Acciones y hojas
+    desconocidas. Si `sheet` se pasa, filtra a esa hoja."""
+    from sqlalchemy import func
+    from sqlalchemy.orm import noload
+    init_db()
+    with SessionLocal() as s:
+        # noload: la tabla de completitud solo necesita raw_fields/sheet, no los cashflows.
+        # cfcounts viene de una query de conteo separada — más rápida que cargar todos los flujos.
+        rows = s.execute(select(InstrumentORM).options(noload(InstrumentORM.cashflows))).scalars().all()
+        cfcounts = dict(s.execute(
+            select(CashflowORM.ticker, func.count()).group_by(CashflowORM.ticker)).all())
+
+    out: List[Dict[str, Any]] = []
+    for o in rows:
+        sh = o.sheet or ""
+        if sh == _ACCIONES_SHEET or sh not in SHEET_SCHEMAS:
+            continue
+        if sheet and sh != sheet:
+            continue
+        cols = coverage_columns(sh)
+        raw = o.raw_fields or {}
+        tickers = _row_tickers(o)
+        cfn = cfcounts.get(o.ticker, 0)
+        price = None
+        if price_of is not None:
+            for t in tickers:
+                p = price_of(t)
+                if p:
+                    price = p
+                    break
+        vals: Dict[str, Any] = {}
+        filled = 0
+        miss_req: List[str] = []
+        miss_opt: List[str] = []
+        for c in cols:
+            k = c["key"]
+            v = (o.isin or raw.get("isin")) if k == "isin" else raw.get(k)
+            vals[k] = v
+            if v not in (None, "") and str(v).strip() != "":
+                filled += 1
+            elif c["required"]:
+                miss_req.append(c["label"])
+            else:
+                miss_opt.append(c["label"])
+        # cashflows: requerido, cuenta en el %
+        total = len(cols) + 1
+        if cfn > 0:
+            filled += 1
+        else:
+            miss_req.append("Cashflows")
+        pct = round(100 * filled / total) if total else 0
+        health = "r" if miss_req else ("a" if miss_opt else "g")
+        out.append({
+            "sheet": sh, "key": o.ticker, "tickers": tickers,
+            "display": " / ".join(tickers), "emisor": o.short_name or "",
+            "vals": vals, "cf": cfn, "price": price, "has_price": bool(price),
+            "pct": pct, "health": health, "missing": miss_req + miss_opt,
+        })
+    out.sort(key=lambda e: (e["pct"], e["key"]))
     return out
 
 
@@ -688,77 +811,3 @@ def backfill_legs_from_universe(dry_run: bool = False) -> List[Dict[str, Any]]:
         logger.info("Backfill patas universo: %d bonos completados (+%d patas).",
                     len(results), sum(len(r["added"]) for r in results))
     return results
-
-
-def unknown_data912_tickers(
-    snapshot: Dict[str, Any],
-    sources: Dict[str, str],
-    catalog_tickers,
-    exclude=frozenset(),
-) -> Dict[str, List[Dict[str, Any]]]:
-    """Símbolos que cotizan en Data912 (snapshot del hub) pero NO están en el
-    catálogo, agrupados por endpoint de origen. Es el listado de referencia del
-    sidebar del ABM: lo que falta dar de alta.
-
-    - `snapshot`: {symbol: Data912Row}  (del ProviderHub)
-    - `sources`:  {symbol: endpoint}     ('notes'/'bonds'/'corp'/'stocks')
-    - `catalog_tickers`: tickers ya cargados; se normaliza el alias `_CER` al
-      símbolo de mercado (TXMJ8_CER → TXMJ8) para no marcar duales como faltantes.
-    - `exclude`: símbolos a omitir (p.ej. PANEL_LIDER, ya mostrados en su panel).
-
-    Devuelve {endpoint: [{"ticker", "price"}, ...]} ordenado por ticker.
-    """
-    def _norm(t: str) -> str:
-        tu = str(t).upper().strip()
-        return tu[:-4] if tu.endswith("_CER") else tu
-
-    cat = {_norm(t) for t in catalog_tickers}
-    ex = {str(e).upper().strip() for e in exclude}
-    groups: Dict[str, List[Dict[str, Any]]] = {}
-    for sym, row in snapshot.items():
-        symu = str(sym).upper().strip()
-        if symu in cat or symu in ex:
-            continue
-        src = sources.get(sym) or sources.get(symu) or "otros"
-        groups.setdefault(src, []).append(
-            {"ticker": symu, "price": getattr(row, "c", None)}
-        )
-    for rows in groups.values():
-        rows.sort(key=lambda r: r["ticker"])
-    return groups
-
-
-_CORP_SUFFIX_ORDER = {"O": 0, "D": 1, "C": 2}
-
-
-def group_corp_tickers(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Agrupa tickers de ONs por base (todo menos el último char) cuando el
-    sufijo es O (pesos) / D (MEP) / C (cable). Los que no siguen el patrón
-    se muestran solos al final.
-
-    Devuelve [{"base": str, "variants": [{"ticker", "price", "suffix"}, ...]}, ...]
-    """
-    bases: Dict[str, Dict[str, Dict]] = {}
-    unmatched: List[Dict] = []
-    for it in items:
-        tk = it["ticker"]
-        suffix = tk[-1] if tk else ""
-        if suffix in _CORP_SUFFIX_ORDER and len(tk) > 1:
-            base = tk[:-1]
-            bases.setdefault(base, {})[suffix] = {**it, "suffix": suffix}
-        else:
-            unmatched.append({**it, "suffix": ""})
-
-    result = []
-    for base in sorted(bases):
-        variants = [
-            bases[base][s]
-            for s in ("O", "D", "C")
-            if s in bases[base]
-        ]
-        result.append({"base": base, "variants": variants})
-
-    for it in sorted(unmatched, key=lambda x: x["ticker"]):
-        result.append({"base": it["ticker"], "variants": [it]})
-
-    return result

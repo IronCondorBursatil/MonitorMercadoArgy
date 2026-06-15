@@ -70,6 +70,9 @@ class Instrument(BaseModel):
     day_count: str = "ACT/365.25"  # "30/360", "ACT/365", "ACT/365.25", "ACT/ACT"
     ley_aplicable: Optional[str] = None  # ON: "Argentina" / "Extranjera" — elige MEP vs CCL p/ la pata pesos
     isin: Optional[str] = None  # clave del activo (BYMA); display-only, el motor lo ignora
+    serie_clase: Optional[str] = None  # ON: "Clase XXXI" / "Serie 13 Clase A"; display-only (vive en raw_fields)
+    coupon_rate: Optional[float] = None  # cupón anual nominal % (raw_fields "cupon anual %"); display-only
+    sector_override: Optional[str] = None  # ON: sector elegido a mano en ABM (raw_fields["sector_override"])
 
     @field_validator("cashflows", mode="after")
     @classmethod

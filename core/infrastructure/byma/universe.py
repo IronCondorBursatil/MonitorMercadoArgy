@@ -251,6 +251,86 @@ def search_byma_grouped(q: str = "", categoria: str = "", *, limit: int = 200,
     return page, total
 
 
+# categoría BYMA → hoja del ABM, para el alta de 1 clic desde el Universo.
+_CAT_SHEET = {
+    "Obligaciones Negociables": "Obligaciones_Negociables",
+    "Títulos Públicos": "Soberanos",
+    "Bonos": "Soberanos",
+}
+
+
+def prefill_for(key: str) -> Optional[dict]:
+    """Para el ＋Alta del Universo: dado el `key` de un grupo (ISIN / ticker_pesos /
+    symbol), devuelve {sheet, fields} para abrir el form prefilleado. Toma las patas
+    `primary` por moneda (ARS→ticker_ars, MEP→ticker_mep, cable→ticker_ccl), ISIN,
+    emisor y ley (del prefijo ISIN). La hoja se deduce de la categoría (default ON)."""
+    key = (key or "").strip().upper()
+    if not key:
+        return None
+    init_db()
+    with SessionLocal() as s:
+        rows = s.execute(select(BymaCatalogORM).where(or_(
+            func.upper(BymaCatalogORM.isin) == key,
+            func.upper(BymaCatalogORM.ticker_pesos) == key,
+            func.upper(BymaCatalogORM.symbol) == key,
+        ))).scalars().all()
+    if not rows:
+        return None
+    slot_field = {"pesos": "ticker_ars", "mep": "ticker_mep", "cable": "ticker_ccl"}
+    fields: dict = {}
+    isin = emisor = categoria = None
+    for o in rows:
+        isin = isin or o.isin
+        emisor = emisor or o.emisor
+        categoria = categoria or o.categoria
+        if o.clase_liquidacion != "primary":
+            continue
+        slot = _MONEDA_SLOT.get(o.moneda)
+        f = slot_field.get(slot or "")
+        if f and not fields.get(f):
+            fields[f] = (o.symbol or "").upper()
+    sheet = _CAT_SHEET.get(categoria or "", "Obligaciones_Negociables")
+    fields["short_name"] = emisor or ""
+    fields["isin"] = isin or ""
+    if sheet == "Obligaciones_Negociables":
+        fields["tipo"] = "HARD DOLLAR"
+        ley = _legislacion(isin)
+        if ley:
+            fields["ley_aplicable"] = "Argentina" if ley == "Ley Local" else "Extranjera"
+    return {"sheet": sheet, "fields": fields}
+
+
+def count_unloaded() -> int:
+    """# de símbolos del Universo BYMA que NO están dados de alta en pricing.
+
+    Implementación eficiente vía SQL: compara los ISINs/tickers del universo BYMA contra
+    los de `instruments` (NOT EXISTS subquery) — sin materializar todos los grupos Python.
+    """
+    from core.infrastructure.db.models import InstrumentORM
+    init_db()
+    with SessionLocal() as sess:
+        # Sub-selects de ISINs y tickers ya cargados en pricing.
+        loaded_isins = select(InstrumentORM.isin).where(InstrumentORM.isin.isnot(None))
+        loaded_tickers = select(InstrumentORM.ticker).where(InstrumentORM.ticker.isnot(None))
+        loaded_mep = select(InstrumentORM.ticker_mep).where(InstrumentORM.ticker_mep.isnot(None))
+        loaded_ccl = select(InstrumentORM.ticker_ccl).where(InstrumentORM.ticker_ccl.isnot(None))
+        # Una especie BYMA está "sin cargar" si su ISIN (o símbolo) no matchea ninguna
+        # fila del catálogo de pricing. Se cuenta por símbolo (no por grupo) para simplificar.
+        not_loaded = (
+            select(func.count())
+            .select_from(BymaCatalogORM)
+            .where(
+                ~or_(
+                    BymaCatalogORM.isin.in_(loaded_isins),
+                    BymaCatalogORM.symbol.in_(loaded_tickers),
+                    BymaCatalogORM.symbol.in_(loaded_mep),
+                    BymaCatalogORM.symbol.in_(loaded_ccl),
+                )
+            )
+        )
+        return int(sess.execute(not_loaded).scalar_one())
+
+
 def categories() -> List[Tuple[str, int]]:
     """[(categoría, cantidad)] para los chips del filtro, desc por cantidad."""
     init_db()

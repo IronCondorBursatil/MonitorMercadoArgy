@@ -2,9 +2,10 @@
 {% block head %}
 <link rel="stylesheet" href="/static/vendor/gridstack/gridstack.min.css">
 <script src="/static/vendor/gridstack/gridstack-all.js"></script>
-<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+{# vendor LOCAL (ver base.html): antes unpkg/jsdelivr — CDN caído = página en blanco #}
+<script src="/static/vendor/htmx-ext-sse.js"></script>
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/vendor/html2canvas.min.js"></script>
 {% endblock %}
 {% block content %}
 {# Resolución del grid: columnas y celdas chicas = resize de grano fino (se siente
@@ -51,6 +52,13 @@
             <button type="button" class="ccy-btn" data-ccy="ARS">ARS</button>
             <button type="button" class="ccy-btn on" data-ccy="MEP">MEP</button>
             <button type="button" class="ccy-btn" data-ccy="CABLE">CABLE</button>
+          </span>
+          {% endif %}
+          {% if p.ley_filter %}
+          {# Filtro de ley aplicable (ONs): clic = solo esa ley; re-clic = todas. #}
+          <span class="ley-filter">
+            <button type="button" class="ley-btn" data-ley="AR" title="Solo ley local (Argentina)">Ley AR</button>
+            <button type="button" class="ley-btn" data-ley="EXT" title="Solo ley extranjera (NY)">Ley EXT</button>
           </span>
           {% endif %}
           {% if p.settle_filter %}
@@ -146,7 +154,26 @@
       if (!force && item.dataset.manual === "1") return;  // respeta el resize manual
       var body = item.querySelector(".panel-body");
       var table = item.querySelector(".panel-body table");
-      if (!body || !table || body.clientHeight === 0) return;  // oculto / sin layout
+      if (!body || !table) return;
+      // Bail SOLO si el panel está realmente oculto (display:none → offsetParent
+      // null) o la tabla aún no mide. OJO: NO usar body.clientHeight===0 — un panel
+      // colapsado al mínimo (el head se come todo el alto) tiene body.clientHeight 0
+      // AUNQUE sea visible y tenga datos, y ese guard lo dejaba TRABADO chico para
+      // siempre (nunca volvía a crecer). Ese era el bug del "panel minimizado".
+      if (item.offsetParent === null) return;   // panel oculto / sin layout
+      if (table.offsetHeight === 0) return;     // tabla sin medir todavía
+      // Sin filas reales todavía (placeholder "Cargando…" en el arranque en frío, o
+      // todo oculto por el filtro): NO encoger el panel — lo dejamos en su alto actual
+      // hasta que el feed traiga los títulos. Si no, en los primeros segundos (antes
+      // de que el refresh loop pueble AppState) el fit mide el placeholder y deja el
+      // panel "minimizado". Cuando llegan las filas, htmx:afterSwap re-dispara el fit
+      // y lo ajusta al contenido.
+      var dataRows = table.querySelectorAll("tbody tr:not(.empty)");
+      var hasVisibleRow = false;
+      for (var i = 0; i < dataRows.length; i++) {
+        if (dataRows[i].offsetParent !== null) { hasVisibleRow = true; break; }
+      }
+      if (!hasVisibleRow) return;
       // Ajuste relativo MEDIDO: queremos que el body sea apenas FIT_PAD más alto
       // que la tabla (pegado al último dato, sin scrollbar). Cada fila ≈ CELL px de
       // body, así que no hace falta modelar el margin interno de GridStack.
@@ -160,38 +187,53 @@
       el.querySelectorAll(".grid-stack-item").forEach(function (it) { fitPanel(it); });
     }
 
-    // --- Filtro de moneda por panel (ARS/MEP/CABLE) ----------------------- //
-    // El estado vive en `data-flt` del .panel (sobrevive a los swaps de HTMX del
-    // tbody); el CSS oculta las filas cuya `data-ccy` no esté activa. Single-select
-    // por defecto; con Ctrl/⌘ se eligen varias. Al cambiar, el panel se re-ajusta.
-    document.querySelectorAll(".ccy-filter").forEach(function (bar) {
+    // --- Filtros de fila por panel (moneda y ley): wiring compartido ------- //
+    // El estado vive en un atributo del .panel (sobrevive a los swaps de HTMX del
+    // tbody); el CSS oculta por data-*. La coreografía común (stopPropagation
+    // anti-drag del handle GridStack, borrar el flag manual, re-fit en rAF) vive
+    // UNA vez acá; cada filtro inyecta solo su semántica de clic.
+    function wireRowFilter(bar, btnSel, dataKey, attrName, onClick) {
       var panel = bar.closest(".panel");
       var item = bar.closest(".grid-stack-item");
       function apply() {
         var on = Array.prototype.map.call(
-          bar.querySelectorAll(".ccy-btn.on"), function (b) { return b.dataset.ccy; });
-        if (on.length) panel.setAttribute("data-flt", on.join(" "));
-        else panel.removeAttribute("data-flt");
+          bar.querySelectorAll(btnSel + ".on"), function (b) { return b.dataset[dataKey]; });
+        if (on.length) panel.setAttribute(attrName, on.join(" "));
+        else panel.removeAttribute(attrName);   // ninguno activo → todas las filas
       }
       // No arrastrar el panel (el head es el handle de GridStack) al tocar botones.
       bar.addEventListener("mousedown", function (e) { e.stopPropagation(); });
       bar.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
       bar.addEventListener("click", function (e) {
-        var btn = e.target.closest(".ccy-btn");
+        var btn = e.target.closest(btnSel);
         if (!btn) return;
         e.stopPropagation();
+        onClick(bar, btn, e);
+        apply();
+        // cambiar el filtro puede mostrar más filas → re-fit forzado (auto).
+        if (item) delete item.dataset.manual;
+        requestAnimationFrame(function () { fitPanel(item, true); });
+      });
+      apply();  // estado inicial desde los .on del markup
+    }
+    // Moneda (ARS/MEP/CABLE): single-select; con Ctrl/⌘ se eligen varias. Default MEP.
+    document.querySelectorAll(".ccy-filter").forEach(function (bar) {
+      wireRowFilter(bar, ".ccy-btn", "ccy", "data-flt", function (bar, btn, e) {
         if (e.ctrlKey || e.metaKey) {
           btn.classList.toggle("on");                       // multi: alterna esta
         } else {                                            // single: solo esta
           bar.querySelectorAll(".ccy-btn.on").forEach(function (b) { b.classList.remove("on"); });
           btn.classList.add("on");
         }
-        apply();
-        // cambiar de moneda muestra TODAS las disponibles → re-fit forzado (auto).
-        if (item) delete item.dataset.manual;
-        requestAnimationFrame(function () { fitPanel(item, true); });
       });
-      apply();  // estado inicial (MEP por defecto)
+    });
+    // Ley (AR/EXT — ONs): clic = solo esa ley; re-clic en la activa = todas.
+    document.querySelectorAll(".ley-filter").forEach(function (bar) {
+      wireRowFilter(bar, ".ley-btn", "ley", "data-ley-flt", function (bar, btn) {
+        var was = btn.classList.contains("on");
+        bar.querySelectorAll(".ley-btn.on").forEach(function (b) { b.classList.remove("on"); });
+        if (!was) btn.classList.add("on");
+      });
     });
 
     // --- Selector de plazo por panel (CI / 24hs) -------------------------- //
@@ -223,11 +265,15 @@
     // --- Toolbar del panel (Gráfico | Config | X) + persistencia ---------- //
     function lsGet(k, d) { try { var v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
     function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
-    // Personal (localStorage) > default del server (DL) > vacío.
+    function isObj(v) { return v != null && typeof v === "object" && !Array.isArray(v); }
+    // Personal (localStorage) > default del server (DL) > vacío. Validar la FORMA
+    // además del parseo: un valor guardado con tipo inesperado (versión vieja,
+    // edición a mano) tiraba TypeError acá y mataba todos los handlers de la
+    // toolbar que se registran después (botones muertos con datos refrescando).
     var HIDDEN_PANELS = lsGet("panels-hidden-v1", null);   // [gs-id]
-    if (HIDDEN_PANELS == null) HIDDEN_PANELS = (DL && DL.hidden) ? DL.hidden.slice() : [];
+    if (!Array.isArray(HIDDEN_PANELS)) HIDDEN_PANELS = (DL && Array.isArray(DL.hidden)) ? DL.hidden.slice() : [];
     var HIDDEN_COLS = lsGet("panel-cols-v1", null);        // {gs-id: [colIndex]}
-    if (HIDDEN_COLS == null) HIDDEN_COLS = (DL && DL.cols) ? JSON.parse(JSON.stringify(DL.cols)) : {};
+    if (!isObj(HIDDEN_COLS)) HIDDEN_COLS = (DL && isObj(DL.cols)) ? JSON.parse(JSON.stringify(DL.cols)) : {};
 
     function panelTitle(item) {
       var t = item.querySelector(".ph-title");
@@ -246,7 +292,7 @@
     // Estado persistido: columnas ocultas + paneles ocultos.
     el.querySelectorAll(".grid-stack-item").forEach(function (item) {
       var id = item.getAttribute("gs-id");
-      (HIDDEN_COLS[id] || []).forEach(function (n) {
+      (Array.isArray(HIDDEN_COLS[id]) ? HIDDEN_COLS[id] : []).forEach(function (n) {
         item.querySelector(".panel").classList.add("hcol-" + n);
         var b = item.querySelector('.col-menu .cfg-item[data-col="' + n + '"]');
         if (b) b.classList.remove("on");
@@ -286,16 +332,17 @@
             menu.style.bottom = (window.innerHeight - r.top + 5) + "px";
           }
         }
-      } else if (act === "chart") {
+      } else if (act === "chart" || act === "shot") {
+        // Gráfico y popup "compartir": ambos espejan los filtros ACTIVOS del panel
+        // (moneda Y ley) — la foto/curva muestra exactamente lo que está en pantalla.
+        var qs = [];
         var flt = panel.getAttribute("data-flt");
-        var url = "/panels/" + id + "/chart" + (flt ? "?ccy=" + encodeURIComponent(flt.split(" ").join(",")) : "");
+        var lflt = panel.getAttribute("data-ley-flt");
+        if (flt) qs.push("ccy=" + encodeURIComponent(flt.split(" ").join(",")));
+        if (lflt) qs.push("ley=" + encodeURIComponent(lflt.split(" ").join(",")));
+        var path = (act === "chart") ? "/chart" : "/share";
+        var url = "/panels/" + id + path + (qs.length ? "?" + qs.join("&") : "");
         if (window.htmx) htmx.ajax("GET", url, "#modal");
-      } else if (act === "shot") {
-        // Abre el popup "compartir" (cuadrado p/ WhatsApp): tabla completa + curva.
-        // El gráfico respeta el filtro de moneda actual (igual que "Gráfico").
-        var sflt = panel.getAttribute("data-flt");
-        var surl = "/panels/" + id + "/share" + (sflt ? "?ccy=" + encodeURIComponent(sflt.split(" ").join(",")) : "");
-        if (window.htmx) htmx.ajax("GET", surl, "#modal");
       }
     });
 
@@ -315,7 +362,7 @@
       var n = ci.dataset.col;
       var nowOn = ci.classList.toggle("on");
       panel.classList.toggle("hcol-" + n, !nowOn);
-      var hid = (HIDDEN_COLS[id] || []).filter(function (x) { return String(x) !== String(n); });
+      var hid = (Array.isArray(HIDDEN_COLS[id]) ? HIDDEN_COLS[id] : []).filter(function (x) { return String(x) !== String(n); });
       if (!nowOn) hid.push(parseInt(n, 10));
       HIDDEN_COLS[id] = hid;
       lsSet("panel-cols-v1", HIDDEN_COLS);

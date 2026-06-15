@@ -12,6 +12,8 @@ el Excel: el master ya es solo semilla).
 
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
 
 from typing import Optional
@@ -25,21 +27,52 @@ from apps.web.bond_detail import calculate
 from apps.web.deps import (
     get_fx, get_hub, get_indices, get_provider, get_repo, get_state,
 )
-from core.domain.instrument_groups import PANEL_LIDER
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
+_DEFAULT_SHEET = "Obligaciones_Negociables"
+
+
+def _price_of(state):
+    return state.price_of if state is not None else None
+
+
+def _render_list(request: Request, sheet: str, state, error: str = "") -> HTMLResponse:
+    """Tabla de completitud (adaptativa por hoja) para `sheet` ('' = todas)."""
+    cov = abm_store.list_instruments_coverage(_price_of(state), sheet or None)
+    return _TEMPLATES.TemplateResponse(request, "fragments/abm_list.html", {
+        "instruments": cov, "cols": abm_store.coverage_columns(sheet),
+        "sheet": sheet, "error": error,
+    })
+
+
 @router.get("/abm", response_class=HTMLResponse)
-def abm_page(request: Request):
-    from core.infrastructure.byma.universe import categories, count
+def abm_page(request: Request, state=Depends(get_state)):
+    from core.infrastructure.byma.universe import categories, count, count_unloaded
+    cov = abm_store.list_instruments_coverage(_price_of(state), _DEFAULT_SHEET)
+    try:
+        unloaded = count_unloaded()
+    except Exception:  # noqa: BLE001 — best-effort; el contador no debe romper la página
+        unloaded = None
     return _TEMPLATES.TemplateResponse(request, "pages/abm.html", {
-        "instruments": abm_store.list_instruments(),
+        "instruments": cov,
+        "cols": abm_store.coverage_columns(_DEFAULT_SHEET),
+        "sheet": _DEFAULT_SHEET,
         "sheets": list(abm_store.SHEET_SCHEMAS.keys()),
+        "loaded_total": len(abm_store.list_instruments()),
+        "unloaded": unloaded,
         "byma_cats": categories(),
         "byma_count": count(),
     })
+
+
+@router.get("/abm/list", response_class=HTMLResponse)
+def abm_list(request: Request, sheet: str = "", state=Depends(get_state)):
+    """Tabla de completitud de una hoja ('' = todas) — la cambian los chips de hoja."""
+    return _render_list(request, sheet, state)
 
 
 _UNIVERSE_PAGE = 200  # tamaño del lote del scroll infinito
@@ -57,10 +90,11 @@ def _fmt_monto(v: Optional[float]) -> str:
 
 
 def _attach_volumes(rows, hub) -> None:
-    """Adjunta a cada grupo el **monto operado del día** por moneda (ARS/MEP/CABLE) desde
-    el snapshot vivo del hub. Crudo `mh_<ccy>` (filtro/orden numérico vía data-v) +
-    formateado `mh_<ccy>_f` (M/k). Best-effort. (El promedio histórico se sigue acumulando
-    en price_history pero NO se muestra: la columna se sacó por falta de datos.)"""
+    """Adjunta a cada grupo, desde el snapshot vivo del hub:
+    - el **monto operado del día** por moneda (`mh_<ccy>` crudo + `mh_<ccy>_f` M/k).
+    - `px`: {ticker: {px, src}} para colorear cada ticker según tenga precio (referencia).
+      `src` = LAST si operó hoy (volumen/operaciones), si no CLOSE (cierre previo del feed).
+    Best-effort: si el hub no está listo, queda todo vacío y la tabla muestra '—'."""
     try:
         snap = hub.snapshot() if hub else {}
     except Exception:  # noqa: BLE001 — el hub puede no estar listo
@@ -75,11 +109,24 @@ def _attach_volumes(rows, hub) -> None:
         for key, slot in (("ars", "pesos"), ("mep", "mep"), ("cable", "cable")):
             v = _today(g["primary"][slot])
             g[f"mh_{key}"], g[f"mh_{key}_f"] = v, _fmt_monto(v)
+        px: dict = {}
+        for bucket in ("primary", "especial"):
+            for slot in ("pesos", "mep", "cable"):
+                for t in (g.get(bucket, {}).get(slot) or "").split(" · "):
+                    t = t.strip()
+                    if not t:
+                        continue
+                    row = snap.get(t.upper())
+                    c = getattr(row, "c", None) if row else None
+                    if c:
+                        traded = bool(getattr(row, "v", None) or getattr(row, "q_op", None))
+                        px[t] = {"px": c, "src": "LAST" if traded else "CLOSE"}
+        g["px"] = px
 
 
 @router.get("/abm/universe", response_class=HTMLResponse)
 def abm_universe(request: Request, q: str = "", cat: str = "", page: int = 0,
-                 hub=Depends(get_hub)):
+                 hub=Depends(get_hub), state=Depends(get_state)):
     """Buscador del universo BYMA (ticker/ISIN/emisor + filtro de categoría),
     1 fila por título valor (moneda → columna), con **scroll infinito**.
 
@@ -106,24 +153,14 @@ def abm_universe(request: Request, q: str = "", cat: str = "", page: int = 0,
            "show_leg": show_leg}
     if page == 0:
         ctx["total"] = total
+        # Hora del snapshot mostrado (el monto operado se refresca solo a pedido,
+        # botón ↻): usar last_refresh del AppState — la edad REAL del dato, el mismo
+        # reloj que el 'act' del header. El wall-clock del render mentiría si el
+        # refresh loop está caído (el dato sería viejo y la hora "fresca").
+        lr = state.last_refresh
+        ctx["asof"] = lr.strftime("%H:%M:%S") if lr else None
         return _TEMPLATES.TemplateResponse(request, "fragments/abm_universe.html", ctx)
     return _TEMPLATES.TemplateResponse(request, "fragments/abm_universe_rows.html", ctx)
-
-
-@router.get("/abm/data912", response_class=HTMLResponse)
-def abm_data912(request: Request, hub=Depends(get_hub), repo=Depends(get_repo)):
-    """Sidebar del ABM: tickers que cotizan en Data912 pero no están en el catálogo,
-    agrupados por endpoint de origen. Se computa en vivo del snapshot del hub →
-    al dar de alta una especie, el operador tiene a mano lo que falta cargar."""
-    snapshot = hub.snapshot() if hub else {}
-    sources = hub.sources() if hub else {}
-    catalog = {i.ticker for i in repo.get_all_instruments()}
-    groups = abm_store.unknown_data912_tickers(snapshot, sources, catalog, exclude=PANEL_LIDER)
-    corp_subgroups = abm_store.group_corp_tickers(groups.get("corp", [])) if "corp" in groups else None
-    return _TEMPLATES.TemplateResponse(request, "fragments/abm_data912.html", {
-        "groups": groups,
-        "corp_subgroups": corp_subgroups,
-    })
 
 
 def _live_metrics(state, values: dict, key: str):
@@ -150,11 +187,20 @@ def _live_metrics(state, values: dict, key: str):
 
 
 @router.get("/abm/form", response_class=HTMLResponse)
-def abm_form(request: Request, sheet: str, key: str = "", state=Depends(get_state)):
+def abm_form(request: Request, sheet: str = "", key: str = "", prefill: str = "",
+             state=Depends(get_state)):
+    """Form del editor (cuerpo del cajón). `key` → edición prefilleada desde la DB.
+    `prefill` (key de un grupo del Universo) → alta de 1 clic: deduce la hoja de la
+    categoría BYMA y precarga tickers/ISIN/emisor/ley."""
+    values, cashflows, metrics = {}, [], None
+    if prefill:
+        from core.infrastructure.byma.universe import prefill_for
+        pf = prefill_for(prefill)
+        if pf:
+            sheet, values = pf["sheet"], pf["fields"]
     if sheet not in abm_store.SHEET_SCHEMAS:
         return HTMLResponse("<div class='err'>Hoja desconocida</div>", status_code=400)
-    values, cashflows, metrics = {}, [], None
-    if key:
+    if key and not prefill:
         # `key` es cualquier ticker del bono → prefill con sus 3 slots de moneda.
         inst = abm_store.get_instrument(key)
         if inst:
@@ -188,25 +234,43 @@ def abm_calc(request: Request, ticker: str = Form(...),
     return _TEMPLATES.TemplateResponse(request, "fragments/calc_result.html", {"res": res})
 
 
-def _list_response(request: Request) -> HTMLResponse:
-    return _TEMPLATES.TemplateResponse(request, "fragments/abm_list.html",
-                                       {"instruments": abm_store.list_instruments()})
-
-
 @router.post("/abm/save", response_class=HTMLResponse)
-async def abm_save(request: Request, sheet: str = Form(...), repo=Depends(get_repo)):
+async def abm_save(request: Request, sheet: str = Form(...),
+                   repo=Depends(get_repo), state=Depends(get_state)):
     form = await request.form()
     fields = {k: v for k, v in form.items() if k != "sheet"}
     try:
         abm_store.save_instrument(sheet, fields)  # cashflows=None → preserva/synth
-        repo.reload(reseed_from_excel=False)       # refresca el cache desde SQLite
-    except (ValueError, KeyError):
-        pass
-    return _list_response(request)
+        repo.reload()                              # refresca el cache desde SQLite
+    except (ValueError, KeyError) as e:
+        # NUNCA tragar el error: el operador tiene que saber que NO se guardó
+        # (antes esto era `pass` y el alta "desaparecía" sin aviso).
+        logger.warning("ABM save falló (%s): %s", sheet, e)
+        return _render_list(request, sheet, state, error=str(e))
+    return _render_list(request, sheet, state)
+
+
+@router.post("/abm/cashflows", response_class=HTMLResponse)
+async def abm_cashflows(request: Request, repo=Depends(get_repo)):
+    """Guarda el flujo de fondos EDITADO en el cajón (filas date/amort/interest) →
+    `save_cashflows` (delete+insert) + reload en caliente. Devuelve un mini-flash."""
+    form = await request.form()
+    ticker = (form.get("cf_ticker") or "").strip()
+    dates = form.getlist("cf_date")
+    amorts = form.getlist("cf_amort")
+    ints = form.getlist("cf_interest")
+    cfs = [{"date": d, "amortization": a or 0, "interest": i or 0}
+           for d, a, i in zip(dates, amorts, ints) if (d or "").strip()]
+    try:
+        abm_store.save_cashflows(ticker, cfs)
+        repo.reload()
+    except (ValueError, KeyError) as e:
+        return HTMLResponse(f'<span class="abm-flash" style="color:var(--neg)">⚠ {e}</span>')
+    return HTMLResponse(f'<span class="abm-flash">✓ {len(cfs)} flujos guardados</span>')
 
 
 @router.delete("/abm/instrument/{ticker}", response_class=HTMLResponse)
-def abm_delete(ticker: str, request: Request, repo=Depends(get_repo)):
-    abm_store.delete_instrument(ticker)
-    repo.reload(reseed_from_excel=False)
-    return _list_response(request)
+def abm_delete(ticker: str, request: Request, repo=Depends(get_repo), state=Depends(get_state)):
+    res = abm_store.delete_instrument(ticker)
+    repo.reload()
+    return _render_list(request, res.get("sheet") or "", state)

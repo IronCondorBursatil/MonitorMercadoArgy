@@ -164,11 +164,10 @@
   .uni-alta--yes { color:#1ea672; }                 /* dado de alta en pricing (TIR/MD) */
   .uni-alta--no  { color:var(--text-faint); }        /* falta cargar */
   .uni-vol { font:600 11.5px var(--font-mono); color:var(--text-dim); white-space:nowrap; text-align:right; }
-  /* grupos de monto (hoy/prom) en el header + separadores de grupo */
-  .uni-table--grouped th.uni-grp--mh, .uni-table--grouped th.uni-grp--mp { color:var(--text-dim); }
-  .uni-table--grouped .uni-ccy-head th.uni-ccol--mh, .uni-table--grouped .uni-ccy-head th.uni-ccol--mp { text-align:right; }
-  .uni-table--grouped .uni-ccy-head th:nth-child(7),
-  .uni-table--grouped .uni-ccy-head th:nth-child(10) { border-left:1px solid var(--panel-border); }
+  /* grupo monto hoy en el header + separador */
+  .uni-table--grouped th.uni-grp--mh { color:var(--text-dim); }
+  .uni-table--grouped .uni-ccy-head th.uni-ccol--mh { text-align:right; }
+  .uni-table--grouped .uni-ccy-head th:nth-child(7) { border-left:1px solid var(--panel-border); }
   /* filtro por columna (estilo blotter) */
   .uni-table--grouped thead .uni-flt th { top:74px; padding:3px 6px; background:var(--head-bg); }
   .uni-fin, .uni-fsel { width:100%; min-width:50px; box-sizing:border-box; background:var(--page-bg);
@@ -202,5 +201,5 @@
   }
   function fichaClose(){ document.getElementById('cat-ficha').innerHTML=''; }
 </script>
-<script src="/static/js/uni_filters.js"></script>
+{% include "fragments/uni_filters_script.html" %}
 {% endblock %}

@@ -1,0 +1,136 @@
+/* ============================================================
+   Herramienta unificada ON — Sector › Emisor › Título en UNA tabla
+   (reemplaza Liga de sectores + Heatmap de emisores). Estilos compartidos
+   por los 10 variantes; el chart lo maquetan ellos. Theme via theme.css.
+   ============================================================ */
+
+.uni-wrap { display: flex; flex-direction: column; min-height: 0; }
+
+/* ---- toolbar ---- */
+.uni-toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  border-bottom: 1px solid var(--panel-border); background: var(--panel-bg); flex-wrap: wrap; }
+.uni-search { flex: 1 1 200px; min-width: 160px; max-width: 320px; padding: 6px 10px;
+  border: 1px solid var(--panel-border); border-radius: 7px; background: var(--page-bg);
+  color: var(--text); font: 12.5px var(--font-body); }
+.uni-search:focus { outline: none; border-color: var(--accent); }
+.uni-seg { display: inline-flex; border: 1px solid var(--panel-border); border-radius: 7px; overflow: hidden; }
+.uni-seg button { background: var(--panel-bg); color: var(--text-dim); border: none;
+  padding: 5px 11px; font: 600 11.5px var(--font-body); cursor: pointer; }
+.uni-seg button + button { border-left: 1px solid var(--panel-border); }
+.uni-seg button.on { background: var(--accent); color: #fff; }
+.uni-btn { background: var(--panel-bg); color: var(--text-dim); border: 1px solid var(--panel-border);
+  border-radius: 7px; padding: 5px 10px; font: 600 11.5px var(--font-body); cursor: pointer; }
+.uni-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- body (scroll) ---- */
+.uni-body { overflow: auto; flex: 1 1 auto; min-height: 0; }
+
+/* ---- tabla ---- */
+table.uni { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.uni thead th { position: sticky; top: 0; z-index: 3; background: var(--head-bg); color: #fff;
+  font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px;
+  padding: 7px 10px; text-align: right; white-space: nowrap; border-bottom: 2px solid var(--navy-band); }
+table.uni thead th.uni-grp-h { text-align: left; padding-left: 14px; min-width: 240px; }
+table.uni thead th.uni-sort { cursor: pointer; user-select: none; }
+table.uni thead th.uni-sort:hover { color: var(--accent-light); }
+table.uni thead th.sorted-asc::after  { content: " \25B2"; font-size: 9px; }
+table.uni thead th.sorted-desc::after { content: " \25BC"; font-size: 9px; }
+
+table.uni td { padding: 0 10px; height: 28px; white-space: nowrap; border-bottom: 1px solid var(--panel-border); }
+table.uni td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+table.uni td.tir-cell { background: var(--tir-hl); font-weight: 700; }
+table.uni .faint { color: var(--text-faint); font-size: 10px; margin-left: 2px; }
+table.uni .dim { color: var(--text-faint); }
+table.uni .pos { color: var(--pos); } table.uni .neg { color: var(--neg); }
+
+/* grupo: la 1ª celda lleva la etiqueta + caret + barra de color del sector */
+td.uni-grp { text-align: left; border-left: 4px solid var(--sc, var(--accent)); }
+.uni-caret { display: inline-block; width: 12px; color: var(--text-faint); font-size: 9px; margin-right: 4px; }
+.uni-ic { margin-right: 5px; }
+.uni-n { display: inline-block; margin-left: 7px; padding: 0 6px; border-radius: 9px;
+  background: var(--row-hover); color: var(--text-dim); font: 700 10px var(--font-mono); }
+.uni-leysplit { margin-left: 8px; font-size: 10px; }
+.uni-leysplit .ar { color: var(--accent); } .uni-leysplit .ext { color: #c07020; margin-left: 6px; font-style: normal; }
+[data-theme="dark"] .uni-leysplit .ext { color: #ED8B36; }
+
+/* fila sector — jerarquía: la categoría es la fuente MÁS GRANDE */
+tr.uni-sector { cursor: pointer; }
+tr.uni-sector > td { background: color-mix(in srgb, var(--sc) 9%, var(--panel-bg)); font-weight: 700; height: 37px; }
+tr.uni-sector:hover > td { background: color-mix(in srgb, var(--sc) 16%, var(--panel-bg)); }
+tr.uni-sector.dimmed { opacity: .4; }
+tr.uni-sector .uni-grp b { font-size: 16px; }
+tr.uni-sector .uni-ic { font-size: 18px; }
+/* categoría centrada SOLO cuando el sector está desplegado (colapsado = a la izquierda) */
+tr.uni-sector.open td.uni-grp { text-align: center; }
+
+/* fila emisor (sangría 1) — más grande que los títulos, más chica que el sector */
+tr.uni-emisor { cursor: pointer; }
+tr.uni-emisor > td { background: var(--row-alt); height: 32px; }
+tr.uni-emisor:hover > td { background: var(--row-hover); }
+td.uni-grp2 { padding-left: 24px; }
+.uni-em { font-weight: 600; font-size: 14px; color: var(--text); display: inline-block; vertical-align: middle; }
+
+/* fila título (sangría 2) — la fuente base */
+tr.uni-bond:hover > td { background: var(--row-hover); }
+tr.uni-bond.sel > td { background: var(--accent-light); }
+td.uni-grp3 { padding-left: 46px; }
+.uni-tk { font-family: var(--font-mono); font-weight: 700; font-size: 13px; color: var(--accent); }
+
+/* badges */
+.uni-ley, .uni-tipo { display: inline-block; padding: 1px 6px; border-radius: 4px;
+  font: 700 9.5px var(--font-body); }
+.uni-ley.AR { background: rgba(58,95,207,.15); color: var(--accent); }
+.uni-ley.EXT { background: rgba(237,139,54,.18); color: #c07020; }
+[data-theme="dark"] .uni-ley.EXT { color: #ED8B36; }
+.uni-tipo.HD { background: rgba(13,110,58,.14); color: var(--pos); }
+.uni-tipo.DL { background: rgba(168,36,43,.13); color: var(--neg); }
+.uni-cl { color: var(--text-dim); }
+
+/* barra de TIR prom (en la celda TIR de los grupos) */
+.uni-barwrap { display: inline-block; width: 46px; height: 7px; border-radius: 4px;
+  background: var(--row-hover); margin-right: 6px; vertical-align: middle; overflow: hidden; }
+.uni-bar { display: block; height: 100%; border-radius: 4px; }
+
+/* botón de acción en la toolbar (ej. "Ver gráfico") — CTA acentuado */
+.uni-btn.uni-action { background: var(--accent); color: #fff; border-color: var(--accent); }
+.uni-btn.uni-action:hover { filter: brightness(1.1); color: #fff; border-color: var(--accent); }
+
+/* ---- contenedor de la herramienta en /on (alto fijo, scroll interno) ---- */
+.uni-panel { display: flex; flex-direction: column; height: 74vh; min-height: 420px;
+  border: 1px solid var(--panel-border); border-radius: var(--radius);
+  overflow: hidden; background: var(--panel-bg); }
+
+/* ---- modal del gráfico TIR vs MD (variante 7) ---- */
+.uni-modal-backdrop { position: fixed; inset: 0; z-index: 200; background: rgba(4,9,24,.62);
+  backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+.uni-modal-backdrop.open { opacity: 1; pointer-events: auto; }
+.uni-modal { width: 680px; max-width: calc(100vw - 32px); height: 520px; max-height: calc(100vh - 48px);
+  background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--radius);
+  box-shadow: 0 18px 60px rgba(0,0,0,.55); display: flex; flex-direction: column; overflow: hidden;
+  transform: translateY(14px) scale(.98); opacity: 0; transition: transform .22s ease, opacity .22s ease; }
+.uni-modal-backdrop.open .uni-modal { transform: translateY(0) scale(1); opacity: 1; }
+.uni-modal-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  background: var(--navy-band); color: #fff; flex: 0 0 auto; }
+.uni-modal-head .uni-mtitle { font-weight: 700; font-size: 12.5px; letter-spacing: .4px; }
+.uni-modal-head .uni-msub { color: #c7d0ee; font-size: 11px; font-family: var(--font-mono); }
+.uni-modal-head .spacer { margin-left: auto; }
+.uni-x { background: rgba(255,255,255,.12); border: none; color: #fff; cursor: pointer;
+  width: 26px; height: 26px; border-radius: 6px; font-size: 15px; line-height: 1; }
+.uni-x:hover { background: rgba(255,255,255,.26); }
+.uni-modal-body { flex: 1 1 auto; min-height: 0; padding: 14px; position: relative; }
+.uni-canvas-wrap { position: absolute; inset: 14px; }
+.uni-modal-hint { padding: 6px 14px 12px; color: var(--text-faint); font-size: 10.5px; flex: 0 0 auto; }
+
+/* ---- colapsar el panel de facetas (gana ancho para la tabla, que es muy ancha) ---- */
+.sidebar-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  background: var(--panel-bg); color: var(--text-dim); border: 1px solid var(--panel-border);
+  border-radius: 7px; padding: 5px 11px; font: 700 12px var(--font-body); margin: 0 0 8px; }
+.sidebar-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.sidebar-toggle .sb-arrow { display: inline-block; transition: transform .15s ease; }
+/* colapsado = UNA sola columna (no "0 1fr": con el sidebar en display:none el grid
+   auto-ubicaba main-top en la col de 0px y main-body saltaba a la fila 1 → se
+   superponían los toggles). Con 1 columna, main-top y main-body se apilan bien. */
+.on-shell.sidebar-collapsed { grid-template-columns: 1fr; }
+.on-shell.sidebar-collapsed .sidebar { display: none; }
+.on-shell.sidebar-collapsed .sidebar-toggle .sb-arrow { transform: rotate(180deg); }

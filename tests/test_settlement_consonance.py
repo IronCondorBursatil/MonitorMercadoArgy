@@ -5,26 +5,28 @@ del plazo y el descuento de TIR/MD usan la MISMA fecha de settlement.
 - A nivel use-case: `GenerateMonitorReport.execute(settle_date=...)` la propaga.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 from core.domain.models import Cashflow, Instrument, MarketSnapshot
 from core.domain.services import FinancialEngine
 from core.use_cases import generate_report as gr
+from tests._clock import ref_date
 
 
 def _bullet(ticker="TT"):
-    mat = date.today() + timedelta(days=365)
+    ref = ref_date()
+    mat = ref + timedelta(days=365)
     return Instrument(
         ticker=ticker, short_name="t", instrument_type="BONAR",
-        maturity_date=mat, emission_date=date.today() - timedelta(days=365),
+        maturity_date=mat, emission_date=ref - timedelta(days=365),
         cashflows=(Cashflow(date=mat, amortization=100.0, interest=5.0),),
     )
 
 
 def test_tir_depends_on_settlement_date():
     snap = MarketSnapshot(instrument=_bullet(), price=95.0)
-    tir_t0 = FinancialEngine.calculate_tir(snap, settle_date=date.today())
-    tir_t30 = FinancialEngine.calculate_tir(snap, settle_date=date.today() + timedelta(days=30))
+    tir_t0 = FinancialEngine.calculate_tir(snap, settle_date=ref_date())
+    tir_t30 = FinancialEngine.calculate_tir(snap, settle_date=ref_date() + timedelta(days=30))
     assert tir_t0 is not None and tir_t30 is not None
     # Distinto horizonte de descuento → distinta TIR para el MISMO precio.
     assert abs(tir_t0 - tir_t30) > 1e-4
@@ -56,7 +58,7 @@ def test_generate_report_threads_settle_date(monkeypatch):
         def fetch_historical_prices(self, t, d):
             return {}
 
-    m_t0 = gr.GenerateMonitorReport(_Repo(), _Prov()).execute(["BONAR"], settle_date=date.today())
+    m_t0 = gr.GenerateMonitorReport(_Repo(), _Prov()).execute(["BONAR"], settle_date=ref_date())
     m_def = gr.GenerateMonitorReport(_Repo(), _Prov()).execute(["BONAR"])  # default T+1
 
     assert m_t0 and m_def and m_t0[0].tir is not None and m_def[0].tir is not None
@@ -69,10 +71,14 @@ def test_cer_vtec_index_date_shifts_with_settle_lag():
     settle_lag=0 (CI) usa el CER de T+0; settle_lag=1 (24hs) el de T+1."""
     from core.domain.conventions import cer_reference_date, settlement_byma_date
 
-    mat = date.today() + timedelta(days=400)
+    # Anclar a fecha fija (martes 2026-06-10): T+0 ≠ T+1 de forma determinística,
+    # sin depender del calendario real (el assert v24 != vci fallaba ~1/3 de los días
+    # cuando settlement_byma_date(today, 0) coincidía con settlement_byma_date(today, 1)).
+    ref = ref_date()
+    mat = ref + timedelta(days=400)
     inst = Instrument(
         ticker="TX99", short_name="t", instrument_type="BONCER",
-        maturity_date=mat, emission_date=date.today() - timedelta(days=100),
+        maturity_date=mat, emission_date=ref - timedelta(days=100),
         cer_base=100.0, cer_lag=10,
         cashflows=(Cashflow(date=mat, amortization=100.0, interest=0.0),),
     )
@@ -87,10 +93,9 @@ def test_cer_vtec_index_date_shifts_with_settle_lag():
 
     snap = MarketSnapshot(instrument=inst, price=100.0)
     idx = _Idx()
-    v24 = FinancialEngine.calculate_technical_value(snap, idx, settle_lag=1)
-    vci = FinancialEngine.calculate_technical_value(snap, idx, settle_lag=0)
+    v24 = FinancialEngine.calculate_technical_value(snap, idx, ref_date=ref, settle_lag=1)
+    vci = FinancialEngine.calculate_technical_value(snap, idx, ref_date=ref, settle_lag=0)
 
     assert v24 != vci  # T+1 != T+0 → ref CER distinto → V.Téc distinta
-    today = date.today()
-    assert cer_reference_date(settlement_byma_date(today, 1), 10) in idx.calls
-    assert cer_reference_date(settlement_byma_date(today, 0), 10) in idx.calls
+    assert cer_reference_date(settlement_byma_date(ref, 1), 10) in idx.calls
+    assert cer_reference_date(settlement_byma_date(ref, 0), 10) in idx.calls

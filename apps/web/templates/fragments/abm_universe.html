@@ -3,7 +3,9 @@
    maneja el centinela del partial `abm_universe_rows.html` (no hay paginado). #}
 {% if rows %}
 <div class="uni-meta">{{ total }} títulos
-  {%- if q %} · «{{ q }}»{% endif %}{% if cat %} · {{ cat }}{% endif %}</div>
+  {%- if q %} · «{{ q }}»{% endif %}{% if cat %} · {{ cat }}{% endif %}
+  {#- hora del render: de cuándo es el monto operado (se actualiza con ↻) #}
+  {%- if asof %} · act {{ asof }}{% endif %}</div>
 <div class="uni-tablewrap">
   <table class="uni-table uni-table--grouped">
     <thead>

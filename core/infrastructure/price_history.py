@@ -32,7 +32,7 @@ import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import date
 from typing import Dict, List, Optional
 
 from config.settings import settings
@@ -129,39 +129,12 @@ class PriceHistoryStore:
                 return 0
             # Update incremental del cache (ya persistido en disco arriba). Si la
             # carga del cache falló (None), no lo tocamos: el próximo read reintenta
-            # la carga completa desde disco (que ya incluye este write). El cache solo
-            # guarda close (el volumen lo lee `avg_volumes` directo de disco).
+            # la carga completa desde disco (que ya incluye este write).
             self._ensure_cache()
             if self._cache is not None:
                 for t, d, c, _v in clean:
                     self._cache.setdefault(t, {})[d] = c
         return len(clean)
-
-    def avg_volumes(self, tickers, days: int = 90) -> Dict[str, float]:
-        """`{ticker: monto operado promedio}` sobre los días con volumen registrado en
-        la ventana de `days` días corridos (~60 ruedas hábiles para days=90). Tickers
-        sin volumen acumulado se omiten. Lee directo de disco (no usa el cache de close)."""
-        tks = list(dict.fromkeys((t or "").upper().strip() for t in tickers if t))
-        if not tks:
-            return {}
-        since = (date.today() - timedelta(days=max(1, days))).isoformat()
-        out: Dict[str, float] = {}
-        try:
-            with closing(self._connect()) as con:
-                # Chunk de 900: el IN(...) tiene tope de ~999 variables en SQLite y la
-                # vista "cargar toda la categoría" puede pedir miles de tickers.
-                for i in range(0, len(tks), 900):
-                    batch = tks[i:i + 900]
-                    qmarks = ",".join("?" * len(batch))
-                    for tk, avgv in con.execute(
-                            f"SELECT ticker, AVG(volume) FROM price_history "
-                            f"WHERE ticker IN ({qmarks}) AND day >= ? AND volume IS NOT NULL "
-                            f"GROUP BY ticker", (*batch, since)):
-                        if avgv is not None:
-                            out[str(tk)] = float(avgv)
-        except sqlite3.Error as e:
-            logger.warning("price_history: avg_volumes failed (%s)", e)
-        return out
 
     def upsert(self, ticker: str, points: Dict[date, float]) -> int:
         """Backfill de una serie completa de un ticker (idempotente por (ticker, day))."""

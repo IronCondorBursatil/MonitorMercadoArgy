@@ -1,0 +1,1696 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>21 · Mesa ON · 3 vistas (power) — O.N's</title>
+<link rel="stylesheet" href="_shared/theme.css">
+<link rel="stylesheet" href="_shared/unified.css">
+<script src="_shared/on_data.js"></script>
+<script src="_shared/sectors.js"></script>
+<script src="_shared/util.js"></script>
+<script src="_shared/unified.js"></script>
+<script src="_shared/chart.umd.min.js"></script>
+<style>
+/* ============================================================
+   SHELL + SIDEBAR + CHIPS + KPI BAR  (de 20-power-user)
+   ============================================================ */
+.shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 0;
+  min-height: calc(100vh - 80px);
+}
+.sidebar {
+  grid-row: 1 / 3;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--panel-border);
+  overflow-y: auto;
+  padding: 0 0 32px 0;
+  position: sticky;
+  top: 80px;
+  max-height: calc(100vh - 80px);
+}
+.main-top { padding: 12px 16px 0 16px; background: var(--page-bg); }
+.main-body { padding: 0 16px 24px 16px; background: var(--page-bg); }
+
+.facet-section { border-bottom: 1px solid var(--panel-border); padding: 10px 14px 12px; }
+.facet-title {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px;
+  font-weight: 700; color: var(--text-faint); margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.facet-title .clr-link {
+  font-size: 10px; color: var(--accent); cursor: pointer;
+  text-transform: none; letter-spacing: 0; font-weight: 600;
+}
+.facet-title .clr-link:hover { text-decoration: underline; }
+.facet-opts { display: flex; flex-direction: column; gap: 4px; }
+.facet-row {
+  display: flex; align-items: center; gap: 7px; cursor: pointer;
+  padding: 3px 5px; border-radius: 5px; font-size: 12.5px;
+  user-select: none; transition: background .12s;
+}
+.facet-row:hover { background: var(--row-hover); }
+.facet-row input[type="radio"], .facet-row input[type="checkbox"] {
+  accent-color: var(--accent); cursor: pointer; width: 14px; height: 14px; margin: 0; flex-shrink: 0;
+}
+.facet-row .f-label { flex: 1; color: var(--text); }
+.facet-row .f-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); min-width: 22px; text-align: right; }
+.facet-row .f-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.range-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+.range-input-wrap { display: flex; flex-direction: column; gap: 2px; }
+.range-input-wrap label { font-size: 10.5px; color: var(--text-faint); font-weight: 600; }
+.range-input-wrap input[type="number"] {
+  background: var(--page-bg); border: 1px solid var(--panel-border); border-radius: 5px;
+  padding: 4px 7px; font-size: 12px; font-family: var(--font-mono); color: var(--text); width: 100%;
+}
+.range-input-wrap input[type="number"]:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+.reset-btn {
+  display: block; width: calc(100% - 28px); margin: 14px auto 0;
+  background: transparent; border: 1px solid var(--panel-border); border-radius: 6px;
+  padding: 7px 0; font-size: 12.5px; font-weight: 700; color: var(--text-dim);
+  cursor: pointer; letter-spacing: .2px; transition: all .15s;
+}
+.reset-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.chips-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-height: 30px; margin-bottom: 8px; }
+.active-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 10px;
+  background: var(--accent-light); border: 1px solid var(--accent); color: var(--accent);
+  border-radius: 14px; font-size: 11.5px; font-weight: 600;
+}
+[data-theme="dark"] .active-chip { color: #9db5f5; }
+.active-chip .x-btn { cursor: pointer; font-size: 12px; font-weight: 700; line-height: 1; opacity: .7; padding: 0 1px; }
+.active-chip .x-btn:hover { opacity: 1; }
+.chips-note { font-size: 11px; color: var(--text-faint); margin-left: 4px; }
+
+.kpi-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px; }
+.kpi-bar .kpi .k-val { font-size: 18px; }
+
+/* ---- sub-tab bar ---- */
+.subtab-bar { display: flex; gap: 4px; border-bottom: 1px solid var(--panel-border); margin: 4px 0 0; }
+.subtab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--text-faint); font-weight: 700; font-size: 13px; padding: 9px 16px;
+  cursor: pointer; margin-bottom: -1px; font-family: var(--font-body); letter-spacing: .2px;
+}
+.subtab:hover { color: var(--text-dim); }
+.subtab.on { color: var(--accent); border-bottom-color: var(--accent); }
+
+.tab-pane { display: flex; flex-direction: column; gap: 14px; padding-top: 14px; }
+.tab-pane[hidden] { display: none; }
+
+@media (max-width: 1100px) { .kpi-bar { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .sidebar { position: static; max-height: none; }
+}
+
+/* ============================================================
+   TAB SECTORES  (de 03 tarjetas + 12 liga + 06 heatmap)
+   ============================================================ */
+#tab-sectores .sec-cards-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#tab-sectores .sec-cards-bar .lbl { font-size: 11.5px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px; }
+#tab-sectores .sec-cards-bar select {
+  background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--text);
+  border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer;
+}
+#tab-sectores .sec-cards-section { display: flex; flex-direction: column; gap: 12px; }
+#tab-sectores .sec-cards-toggle { background: var(--row-alt); border: 1px solid var(--panel-border); color: var(--text-dim); border-radius: 6px; width: 26px; height: 24px; cursor: pointer; font-size: 10px; line-height: 1; flex-shrink: 0; transition: transform .15s ease, color .12s; }
+#tab-sectores .sec-cards-toggle:hover { color: var(--accent); border-color: var(--accent); }
+#tab-sectores .sec-cards-section.collapsed .sec-cards-toggle { transform: rotate(-90deg); }
+#tab-sectores .sec-cards-section.collapsed .sec-cards-grid { display: none; }
+#tab-sectores .sec-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+
+#tab-sectores .scard {
+  background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--radius);
+  box-shadow: var(--shadow-panel); overflow: hidden; display: flex; flex-direction: column;
+}
+#tab-sectores .scard-bar { height: 4px; width: 100%; flex-shrink: 0; }
+#tab-sectores .scard-head { display: flex; align-items: center; gap: 10px; padding: 11px 14px 9px; border-bottom: 1px solid var(--panel-border); }
+#tab-sectores .scard-icon { font-size: 20px; line-height: 1; flex-shrink: 0; }
+#tab-sectores .scard-name { font-size: 13px; font-weight: 700; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tab-sectores .scard-counts { display: flex; gap: 5px; align-items: center; flex-shrink: 0; }
+#tab-sectores .cnt-pill { font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 10px; border: 1px solid transparent; font-family: var(--font-mono); }
+#tab-sectores .cnt-ar  { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+#tab-sectores .cnt-ext { background: var(--tir-hl); color: var(--text); border-color: var(--panel-border); }
+#tab-sectores .cnt-all { background: var(--row-alt); color: var(--text-dim); border-color: var(--panel-border); }
+#tab-sectores .scard-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-bottom: 1px solid var(--panel-border); }
+#tab-sectores .scard-kpi { padding: 9px 12px 8px; border-right: 1px solid var(--panel-border); text-align: center; }
+#tab-sectores .scard-kpi:last-child { border-right: none; }
+#tab-sectores .sk-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); }
+#tab-sectores .sk-val { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; line-height: 1.2; }
+#tab-sectores .sk-sub { font-size: 10.5px; color: var(--text-dim); margin-top: 1px; }
+#tab-sectores .scard-chart { padding: 10px 12px 6px; border-bottom: 1px solid var(--panel-border); }
+#tab-sectores .scard-chart canvas { width: 100% !important; height: 130px !important; display: block; }
+#tab-sectores .scard-top { padding: 8px 12px 10px; }
+#tab-sectores .top3-head { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .35px; color: var(--text-faint); margin-bottom: 6px; }
+#tab-sectores .top3-tabs { display: flex; gap: 3px; margin-left: auto; }
+#tab-sectores .top3-tab { font-size: 10px; padding: 2px 7px; border-radius: 5px; border: none; cursor: pointer; font-weight: 600; background: var(--row-alt); color: var(--text-dim); }
+#tab-sectores .top3-tab.on { background: var(--accent); color: #fff; }
+#tab-sectores .top3-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 5px; transition: background .12s; }
+#tab-sectores .top3-row:hover { background: var(--row-hover); }
+#tab-sectores .top3-num { font-size: 10px; font-weight: 700; color: var(--text-faint); width: 14px; flex-shrink: 0; text-align: right; }
+#tab-sectores .top3-tk { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--accent); flex-shrink: 0; min-width: 60px; }
+#tab-sectores .top3-em { font-size: 11px; color: var(--text-dim); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tab-sectores .top3-val { font-family: var(--font-mono); font-size: 12px; font-weight: 700; flex-shrink: 0; }
+#tab-sectores .top3-ley { font-size: 9.5px; padding: 1px 5px; border-radius: 4px; flex-shrink: 0; font-weight: 700; }
+#tab-sectores .top3-ley.ley-ar  { background: var(--accent-light); color: var(--accent); }
+#tab-sectores .top3-ley.ley-ext { background: var(--tir-hl); color: var(--text-dim); }
+#tab-sectores .expand-btn {
+  display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%;
+  border: none; background: transparent; color: var(--text-dim); font-size: 11.5px; font-weight: 600;
+  padding: 7px 0 8px; cursor: pointer; border-top: 1px solid var(--panel-border);
+  transition: background .12s, color .12s; font-family: var(--font-body);
+}
+#tab-sectores .expand-btn:hover { background: var(--row-hover); color: var(--accent); }
+
+/* liga */
+#tab-sectores .sec-liga-grid { display: grid; grid-template-columns: 1fr 340px; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { #tab-sectores .sec-liga-grid { grid-template-columns: 1fr; } }
+#tab-sectores .liga-wrap { overflow: auto; max-height: 72vh; }
+#tab-sectores table.liga { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+#tab-sectores table.liga thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--head-bg); color: #fff;
+  font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px;
+  padding: 8px 10px; text-align: right; white-space: nowrap; cursor: pointer; user-select: none;
+}
+#tab-sectores table.liga thead th:first-child { text-align: left; padding-left: 14px; }
+#tab-sectores table.liga thead th.sorted-asc::after  { content: " \25B2"; }
+#tab-sectores table.liga thead th.sorted-desc::after { content: " \25BC"; }
+#tab-sectores .liga tr.sect-row { cursor: pointer; transition: background .12s; }
+#tab-sectores .liga tr.sect-row:hover td { background: var(--row-hover); }
+#tab-sectores .liga tr.sect-row td { padding: 0; border-bottom: 1px solid var(--panel-border); vertical-align: middle; }
+#tab-sectores .liga td.rank { width: 30px; text-align: center; font-family: var(--font-mono); font-weight: 700; font-size: 15px; color: var(--text-faint); padding: 10px 0 10px 10px; }
+#tab-sectores .liga td.sect-name { text-align: left; padding: 10px 12px 10px 6px; min-width: 180px; }
+#tab-sectores .sect-icon { font-size: 16px; margin-right: 6px; }
+#tab-sectores .sect-label { font-weight: 700; font-size: 12.5px; }
+#tab-sectores .sect-count { margin-left: 7px; font-size: 11px; color: var(--text-faint); background: var(--row-alt); border-radius: 10px; padding: 1px 7px; }
+#tab-sectores .sect-ley { margin-left: 5px; font-size: 10.5px; }
+#tab-sectores .sect-ley .ar  { color: var(--accent); font-weight: 600; }
+#tab-sectores .sect-ley .ext { color: #ED8B36; font-weight: 600; }
+#tab-sectores .liga td.tir-bar-cell { padding: 10px 12px; min-width: 150px; }
+#tab-sectores .tir-bar-wrap { display: flex; align-items: center; gap: 8px; }
+#tab-sectores .tir-bar-bg { flex: 1; height: 10px; background: var(--panel-border); border-radius: 5px; overflow: hidden; min-width: 50px; }
+#tab-sectores .tir-bar-fill { height: 100%; border-radius: 5px; transition: width .35s ease; }
+#tab-sectores .tir-val { font-family: var(--font-mono); font-weight: 700; font-size: 12.5px; white-space: nowrap; min-width: 46px; text-align: right; }
+#tab-sectores .liga td.num-cell { text-align: right; padding: 10px 12px; font-family: var(--font-mono); font-size: 12.5px; white-space: nowrap; }
+#tab-sectores .split-wrap { display: flex; gap: 3px; align-items: center; }
+#tab-sectores .split-bar { height: 14px; border-radius: 2px; }
+#tab-sectores .split-ar { background: var(--accent); opacity: .85; }
+#tab-sectores .split-ext { background: #ED8B36; opacity: .85; }
+#tab-sectores .split-txt { font-size: 10.5px; color: var(--text-dim); min-width: 50px; text-align: right; }
+#tab-sectores .liga td.expand-cell { text-align: center; padding: 10px 10px; width: 24px; color: var(--text-faint); font-size: 13px; }
+#tab-sectores .sect-row.open td.expand-cell { color: var(--accent); }
+#tab-sectores .liga tr.sect-row td:first-child { border-left: 4px solid var(--sect-color, var(--accent)); }
+#tab-sectores .liga tr.bond-row td:first-child { border-left: 4px solid var(--sect-color, var(--accent)); }
+#tab-sectores .liga tr.bond-row td { padding: 0; border-bottom: none; }
+#tab-sectores .liga tr.bond-row.last td { border-bottom: 1px solid var(--panel-border); }
+#tab-sectores .bond-inner { display: none; overflow: hidden; }
+#tab-sectores .bond-inner.open { display: block; }
+#tab-sectores table.sub { width: 100%; border-collapse: collapse; font-size: 11.5px; background: var(--row-alt); }
+#tab-sectores table.sub thead th { background: var(--navy-band); color: #c7d0ee; font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .2px; padding: 5px 10px; text-align: right; white-space: nowrap; cursor: pointer; user-select: none; }
+#tab-sectores table.sub thead th:first-child { text-align: left; padding-left: 32px; }
+#tab-sectores table.sub thead th.sorted-asc::after  { content: " \25B2"; }
+#tab-sectores table.sub thead th.sorted-desc::after { content: " \25BC"; }
+#tab-sectores table.sub tbody td { padding: 5px 10px; text-align: right; border-bottom: 1px solid var(--panel-border); white-space: nowrap; font-family: var(--font-mono); }
+#tab-sectores table.sub tbody td:first-child { text-align: left; padding-left: 32px; font-family: var(--font-body); }
+#tab-sectores table.sub tbody tr:hover td { background: var(--row-hover); }
+#tab-sectores table.sub tbody tr:last-child td { border-bottom: none; }
+#tab-sectores table.sub td.tir { background: var(--tir-hl); font-weight: 700; }
+#tab-sectores .sub-em { display: inline-block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; font-family: var(--font-body); }
+#tab-sectores .sub-cl { font-family: var(--font-body); color: var(--text-dim); }
+#tab-sectores .sub-ley { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: var(--font-body); margin-right: 4px; }
+#tab-sectores .sub-ley.AR { background: rgba(58,95,207,.15); color: var(--accent); }
+#tab-sectores .sub-ley.EXT { background: rgba(237,139,54,.18); color: #c07020; }
+[data-theme="dark"] #tab-sectores .sub-ley.EXT { color: #ED8B36; }
+#tab-sectores .medal-1 { color: #c9a800; }
+#tab-sectores .medal-2 { color: #8993b8; }
+#tab-sectores .medal-3 { color: #c07020; }
+#tab-sectores .sec-scatter-panel { position: sticky; top: 8px; }
+#tab-sectores .sec-chart-wrap { height: 300px; }
+
+/* heatmap (06) */
+#tab-sectores .hm-wrap { overflow-x: auto; }
+#tab-sectores .hm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 680px; }
+#tab-sectores .hm-sector-row td { padding: 6px 10px; font-weight: 700; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: #fff; border-top: 2px solid transparent; white-space: nowrap; }
+#tab-sectores .hm-sector-row .sec-icon { margin-right: 5px; font-size: 13px; }
+#tab-sectores .hm-table thead th {
+  position: sticky; top: 0; z-index: 20; background: var(--head-bg); color: #fff;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  padding: 8px 10px; text-align: right; white-space: nowrap; border-bottom: 2px solid var(--accent); cursor: pointer;
+}
+#tab-sectores .hm-table thead th:first-child { text-align: left; min-width: 200px; }
+#tab-sectores .hm-table thead th.col-tir { color: #b9c9ff; }
+#tab-sectores .hm-table tbody tr.emit-row td { padding: 0; border-bottom: 1px solid var(--panel-border); vertical-align: middle; }
+#tab-sectores .hm-table tbody tr.emit-row:nth-child(even) td.cell-label { background: var(--row-alt); }
+#tab-sectores .cell-label { padding: 7px 10px !important; text-align: left; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+#tab-sectores .cell-label .emit-name { font-weight: 600; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; display: block; }
+#tab-sectores .cell-label .emit-meta { font-size: 10.5px; color: var(--text-faint); margin-top: 1px; }
+#tab-sectores .cell-label .ley-badge { display: inline-block; font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+#tab-sectores .ley-badge.ley-ar  { background: #1a3a6e22; color: var(--accent); border: 1px solid var(--accent); }
+#tab-sectores .ley-badge.ley-ext { background: #6c2f6022; color: #d06abf; border: 1px solid #d06abf; }
+#tab-sectores .hm-cell { position: relative; width: 130px; min-width: 110px; padding: 0 !important; text-align: right; }
+#tab-sectores .hm-cell-inner { display: flex; align-items: center; justify-content: flex-end; padding: 6px 10px; height: 100%; position: relative; font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; transition: filter .12s; cursor: default; }
+#tab-sectores .hm-cell-inner::before { content: ''; position: absolute; inset: 0; background: var(--fill, transparent); border-radius: 2px; margin: 2px 3px; transition: opacity .15s; opacity: .85; }
+#tab-sectores .hm-cell-inner span { position: relative; z-index: 1; }
+#tab-sectores .hm-cell-inner::after { content: ''; position: absolute; left: 3px; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--bar-color, transparent); opacity: var(--bar-opacity, 0); }
+#tab-sectores .hm-table tbody tr.emit-row:hover td.hm-cell .hm-cell-inner { filter: brightness(1.08); }
+#tab-sectores .cell-sector-strip { width: 4px; display: inline-block; border-radius: 2px; margin-right: 6px; vertical-align: middle; flex-shrink: 0; }
+#tab-sectores .hm-table tbody tr.sector-summary td { background: color-mix(in srgb, var(--sector-color, #8993b8) 8%, var(--panel-bg)); border-top: 1px solid var(--panel-border); border-bottom: 2px solid var(--sector-color, #8993b8); font-size: 11px; color: var(--text-dim); font-style: italic; }
+#tab-sectores .hm-table tbody tr.sector-summary td.cell-label { color: var(--sector-color, #8993b8); font-style: normal; font-size: 10.5px; font-weight: 600; padding-left: 24px !important; }
+#tab-sectores .hm-table td:first-child, #tab-sectores .hm-table th:first-child { position: sticky; left: 0; z-index: 10; }
+#tab-sectores .hm-table td.cell-label { background: var(--panel-bg); }
+#tab-sectores .hm-table thead th.col-sorted::after { content: ' \25BC'; }
+#tab-sectores .hm-table thead th.col-sorted.asc::after { content: ' \25B2'; }
+#tab-sectores .hm-table thead th.col-sorted { color: #ffe564; }
+#tab-sectores .hm-legend { display: flex; align-items: center; gap: 8px; }
+#tab-sectores .legend-gradient { height: 12px; width: 160px; border-radius: 4px; border: 1px solid var(--panel-border);
+  background: linear-gradient(to right, #a8242b 0%, #c9545a 20%, #e8a0a3 35%, var(--panel-bg) 50%, #9dcfb3 65%, #4faf7e 80%, #0d6e3a 100%); }
+[data-theme="dark"] #tab-sectores .legend-gradient { background: linear-gradient(to right, #f28a8f 0%, #d06060 20%, #7a3535 35%, var(--panel-bg) 50%, #1e5c35 65%, #2e8c5e 80%, #4fcf85 100%); }
+
+/* ============================================================
+   TAB CARDS + COMPARADOR  (de 10 mazo + 11 comparador)
+   ============================================================ */
+#tab-cards .cards-cmp-layout { display: grid; grid-template-columns: 1fr 360px; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { #tab-cards .cards-cmp-layout { grid-template-columns: 1fr; } #tab-cards .cmp-sticky { position: static; } }
+#tab-cards .cards-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#tab-cards .card-deck-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#tab-cards .search-box { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--panel-border); background: var(--panel-bg); color: var(--text); font-size: 12.5px; width: 200px; outline: none; }
+#tab-cards .search-box:focus { border-color: var(--accent); }
+#tab-cards .sort-sel { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--panel-border); background: var(--panel-bg); color: var(--text); font-size: 12px; cursor: pointer; outline: none; }
+#tab-cards .sort-dir { background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--text); border-radius: 7px; padding: 5px 10px; font-size: 13px; cursor: pointer; }
+#tab-cards .sort-dir:hover { border-color: var(--accent); }
+#tab-cards .count-badge { color: var(--text-faint); font-size: 11.5px; white-space: nowrap; margin-left: auto; }
+#tab-cards .deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; align-items: start; }
+#tab-cards .bond-card { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--radius); box-shadow: var(--shadow-panel); overflow: hidden; cursor: pointer; transition: box-shadow .18s, transform .13s; display: flex; flex-direction: column; position: relative; }
+#tab-cards .bond-card:hover { box-shadow: 0 6px 22px rgba(10,29,74,.18); transform: translateY(-2px); }
+#tab-cards .bond-card.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+#tab-cards .bond-card.selected .card-pick { display: flex; }
+#tab-cards .card-pick { display: none; position: absolute; top: 6px; right: 6px; z-index: 2; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; }
+#tab-cards .card-stripe { height: 4px; width: 100%; flex-shrink: 0; }
+#tab-cards .card-top { display: flex; align-items: flex-start; justify-content: space-between; padding: 9px 11px 4px; }
+#tab-cards .card-ticker { font-family: var(--font-mono); font-size: 17px; font-weight: 700; letter-spacing: .5px; line-height: 1.15; color: var(--text); }
+#tab-cards .card-badges { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+#tab-cards .badge-ley { font-size: 9.5px; font-weight: 700; letter-spacing: .4px; padding: 2px 6px; border-radius: 4px; }
+#tab-cards .badge-ley.ar { background: var(--accent-light); color: var(--accent); }
+#tab-cards .badge-ley.ext { background: rgba(237,139,54,.18); color: #b96b1a; }
+[data-theme="dark"] #tab-cards .badge-ley.ext { color: #f5aa5f; }
+#tab-cards .sector-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+#tab-cards .card-emisor { padding: 0 11px 5px; font-size: 10.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+#tab-cards .card-tir-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 11px 0; }
+#tab-cards .card-tir-val { font-family: var(--font-mono); font-size: 26px; font-weight: 700; line-height: 1.1; }
+#tab-cards .card-tir-lbl { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px; padding-bottom: 3px; }
+#tab-cards .card-mini-wrap { padding: 6px 11px 2px; position: relative; }
+#tab-cards .card-mini-canvas { width: 100% !important; height: 60px !important; display: block; }
+#tab-cards .card-metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; padding: 6px 11px 4px; border-top: 1px solid var(--panel-border); margin-top: 6px; }
+#tab-cards .card-metric { display: flex; flex-direction: column; }
+#tab-cards .card-metric .m-lbl { font-size: 9.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .3px; font-weight: 600; }
+#tab-cards .card-metric .m-val { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--text); margin-top: 1px; }
+#tab-cards .card-footer { display: flex; align-items: center; justify-content: space-between; padding: 5px 11px 8px; border-top: 1px solid var(--panel-border); }
+#tab-cards .card-change { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; }
+#tab-cards .card-vol { font-size: 10.5px; color: var(--text-dim); }
+#tab-cards .card-dias { font-size: 10px; color: var(--text-faint); }
+#tab-cards .deck-empty { grid-column: 1/-1; text-align: center; color: var(--text-faint); padding: 50px 20px; font-size: 14px; }
+
+#tab-cards .cmp-sticky { position: sticky; top: 8px; }
+#tab-cards .sel-count { font-size: 12px; color: var(--text-dim); }
+#tab-cards .sel-count strong { color: var(--accent); }
+#tab-cards .btn-clr { font-size: 11px; color: #fff; background: rgba(255,255,255,.15); border: none; cursor: pointer; padding: 3px 8px; border-radius: 5px; }
+#tab-cards .btn-clr:hover { background: rgba(255,255,255,.28); }
+#tab-cards .sel-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; }
+#tab-cards .sel-chip { display: flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; border-radius: 14px; font-size: 12px; font-weight: 600; background: var(--row-alt); border: 1.5px solid var(--panel-border); cursor: pointer; transition: border-color .15s; }
+#tab-cards .sel-chip:hover { border-color: var(--neg); }
+#tab-cards .sel-chip .chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+#tab-cards .sel-chip .chip-x { font-size: 11px; color: var(--text-faint); margin-left: 2px; }
+#tab-cards .sel-chip:hover .chip-x { color: var(--neg); }
+#tab-cards .sel-chips-empty { padding: 10px 14px; color: var(--text-faint); font-size: 12.5px; font-style: italic; }
+#tab-cards .cmp-table-wrap { overflow-x: auto; padding: 0 0 6px; }
+#tab-cards table.cmp { border-collapse: collapse; width: 100%; font-size: 12px; }
+#tab-cards table.cmp th, #tab-cards table.cmp td { padding: 6px 10px; border-bottom: 1px solid var(--panel-border); white-space: nowrap; }
+#tab-cards table.cmp thead th { background: var(--navy-band); color: #fff; font-weight: 600; font-size: 11px; text-align: center; }
+#tab-cards table.cmp tbody tr:nth-child(even) td { background: var(--row-alt); }
+#tab-cards table.cmp tbody td.row-lbl { font-weight: 600; font-size: 10.5px; color: var(--text-dim); letter-spacing: .04em; text-transform: uppercase; background: var(--panel-bg); border-right: 2px solid var(--panel-border); }
+#tab-cards table.cmp td.num { font-family: var(--font-mono); text-align: right; }
+#tab-cards table.cmp td.best { background: color-mix(in srgb, var(--pos) 12%, transparent) !important; }
+#tab-cards table.cmp td.worst { background: color-mix(in srgb, var(--neg) 10%, transparent) !important; }
+#tab-cards .col-sector-bar { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+#tab-cards .cmp-ticker-hd { font-family: var(--font-mono); font-weight: 700; font-size: 12px; }
+#tab-cards .pr-ley { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
+#tab-cards .pr-ley.ar { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+#tab-cards .pr-ley.ext { background: color-mix(in srgb, #C9A227 15%, transparent); color: #C9A227; }
+#tab-cards .cmp-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; gap: 8px; color: var(--text-faint); border: 2px dashed var(--panel-border); border-radius: var(--radius); padding: 22px; margin: 12px 14px; }
+#tab-cards .cmp-empty .cmp-empty-ico { font-size: 30px; opacity: .4; }
+#tab-cards .cmp-empty p { font-size: 13px; margin: 0; text-align: center; }
+#tab-cards .cmp-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 14px 4px; }
+#tab-cards .cmp-charts canvas { width: 100% !important; height: 150px !important; }
+#tab-cards .cmp-chart-title { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; }
+#tab-cards .cmp-scatter-wrap { padding: 6px 14px 12px; }
+#tab-cards .cmp-scatter-wrap canvas { width: 100% !important; height: 240px !important; }
+
+/* ============================================================
+   TAB DASHBOARD  (de 17 KPIs/breakdown/movers + 18 cuadrantes)
+   ============================================================ */
+#tab-dash .kpi-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+@media (max-width: 1200px) { #tab-dash .kpi-strip { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px) { #tab-dash .kpi-strip { grid-template-columns: repeat(2, 1fr); } }
+#tab-dash .kpi-strip .kpi { position: relative; overflow: hidden; }
+#tab-dash .kpi-strip .kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); border-radius: 3px 0 0 3px; }
+#tab-dash .kpi-strip .kpi.k-ar::before  { background: #2FA4C9; }
+#tab-dash .kpi-strip .kpi.k-ext::before { background: #6C5CE0; }
+#tab-dash .kpi-strip .kpi.k-md::before  { background: #ED8B36; }
+#tab-dash .kpi-strip .kpi.k-vol::before { background: #2FB36B; }
+#tab-dash .kpi-strip .kpi.k-sec::before { background: #C9A227; }
+
+#tab-dash .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 1050px) { #tab-dash .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+#tab-dash .q-kpi { background: var(--panel-bg); border: 2px solid var(--panel-border); border-radius: var(--radius); padding: 12px 15px 10px; box-shadow: var(--shadow-panel); cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .1s; position: relative; overflow: hidden; user-select: none; }
+#tab-dash .q-kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--q-color, var(--panel-border)); border-radius: var(--radius) 0 0 var(--radius); }
+#tab-dash .q-kpi:hover { border-color: var(--q-color, var(--accent)); box-shadow: 0 6px 20px rgba(10,29,74,.18); transform: translateY(-1px); }
+#tab-dash .q-kpi.active { border-color: var(--q-color, var(--accent)); background: var(--accent-light); }
+#tab-dash .q-kpi .q-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--q-color, var(--text-faint)); margin-bottom: 4px; }
+#tab-dash .q-kpi .q-icon { position: absolute; top: 10px; right: 12px; font-size: 20px; opacity: .22; }
+#tab-dash .q-kpi .q-count { font-family: var(--font-mono); font-size: 26px; font-weight: 800; color: var(--text); line-height: 1; }
+#tab-dash .q-kpi .q-stats { display: flex; gap: 14px; margin-top: 5px; }
+#tab-dash .q-kpi .q-stat { display: flex; flex-direction: column; }
+#tab-dash .q-kpi .q-stat-v { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-dim); }
+#tab-dash .q-kpi .q-stat-l { font-size: 10px; color: var(--text-faint); }
+
+#tab-dash .dash-main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { #tab-dash .dash-main-grid { grid-template-columns: 1fr; } }
+#tab-dash .dash-scatter-panel { position: relative; }
+#tab-dash .dash-chart-wrap { position: relative; height: 420px; }
+#tab-dash .dash-chart-wrap canvas { width: 100% !important; height: 100% !important; }
+#tab-dash .sector-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--panel-border); }
+#tab-dash .median-legend { display: flex; gap: 16px; align-items: center; padding: 7px 14px; border-top: 1px solid var(--panel-border); font-size: 11px; color: var(--text-dim); flex-wrap: wrap; }
+#tab-dash .median-legend span { display: flex; align-items: center; gap: 5px; }
+#tab-dash .median-legend .line-h { width: 20px; height: 2px; border-top: 2px dashed var(--accent); }
+#tab-dash .median-legend .line-v { width: 2px; height: 14px; border-left: 2px dashed var(--accent); }
+#tab-dash .q-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; letter-spacing: .3px; color: #fff; background: var(--q-color, var(--accent)); }
+#tab-dash .q-badge .q-x { cursor: pointer; opacity: .75; margin-left: 2px; }
+#tab-dash .q-badge .q-x:hover { opacity: 1; }
+
+#tab-dash .breakdown-list { display: flex; flex-direction: column; gap: 0; }
+#tab-dash .bk-sort-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--panel-border); padding: 0 14px; }
+#tab-dash .bk-sort-tabs button { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-faint); font-size: 11px; font-weight: 600; padding: 7px 10px; cursor: pointer; margin-bottom: -1px; text-transform: uppercase; letter-spacing: .3px; transition: color .15s; }
+#tab-dash .bk-sort-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+#tab-dash .bk-row { display: grid; grid-template-columns: 1fr auto 56px 56px; align-items: center; gap: 8px; padding: 7px 14px; border-bottom: 1px solid var(--panel-border); cursor: pointer; transition: background .12s; }
+#tab-dash .bk-row:last-child { border-bottom: none; }
+#tab-dash .bk-row:hover { background: var(--row-hover); }
+#tab-dash .bk-row.active { background: var(--tir-hl); }
+#tab-dash .bk-row .bk-name { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tab-dash .bk-row .bk-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+#tab-dash .bk-row .bk-bar-wrap { width: 100%; height: 5px; border-radius: 3px; background: var(--panel-border); }
+#tab-dash .bk-row .bk-bar { height: 5px; border-radius: 3px; transition: width .3s; }
+#tab-dash .bk-row .bk-val { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); text-align: right; white-space: nowrap; }
+#tab-dash .bk-row .bk-tir { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--text); text-align: right; white-space: nowrap; }
+#tab-dash .dash-bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 900px) { #tab-dash .dash-bottom-grid { grid-template-columns: 1fr; } }
+#tab-dash .tbl-wrap { max-height: 280px; overflow: auto; }
+#tab-dash table.on tbody td.tk { font-weight: 700; font-size: 12px; }
+#tab-dash table.on tbody td.sector-dot { padding-left: 4px; padding-right: 4px; width: 6px; }
+#tab-dash .s-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+#tab-dash .rank-num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; font-family: var(--font-mono); }
+#tab-dash .rank-num.gold { background: #c9a227; }
+#tab-dash .rank-num.silver { background: #8993b8; }
+#tab-dash .rank-num.bronze { background: #c0573c; }
+#tab-dash .ley-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+#tab-dash .ley-badge.ar  { background: rgba(47,164,201,.18); color: #2FA4C9; }
+#tab-dash .ley-badge.ext { background: rgba(108,92,224,.18); color: #6C5CE0; }
+
+/* ---- heatmap tooltip (global, en body) ---- */
+.hm-tooltip { position: fixed; background: var(--navy-dark); color: #e9edf7; border: 1px solid var(--accent); border-radius: 7px; padding: 9px 13px; font-size: 12px; line-height: 1.6; pointer-events: none; z-index: 99999; display: none; max-width: 260px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+.hm-tooltip .tt-ticker { font-weight: 700; font-size: 13px; color: #fff; margin-bottom: 3px; }
+.hm-tooltip .tt-row { display: flex; justify-content: space-between; gap: 20px; }
+.hm-tooltip .tt-val { font-family: var(--font-mono); font-weight: 600; }
+.hm-tooltip .tt-z { color: var(--text-faint); font-size: 11px; }
+</style>
+</head>
+<body>
+<script>ON.header("21 · Mesa ON · 3 vistas (power)", "shell con facetas + 3 vistas fusionadas");</script>
+
+<div class="shell on-shell">
+  <!-- ======== SIDEBAR (facetas) ======== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="facet-section">
+      <div class="facet-title">Moneda</div>
+      <div class="facet-opts" id="fct-ccy">
+        <label class="facet-row"><input type="radio" name="ccy" value="ARS"> <span class="f-label">ARS (pesos)</span></label>
+        <label class="facet-row"><input type="radio" name="ccy" value="MEP" checked> <span class="f-label">MEP (D)</span></label>
+        <label class="facet-row"><input type="radio" name="ccy" value="CABLE"> <span class="f-label">CABLE (C)</span></label>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Ley <span class="clr-link" data-clr="ley">limpiar</span></div>
+      <div class="facet-opts" id="fct-ley">
+        <label class="facet-row"><input type="checkbox" name="ley" value="AR" checked> <span class="f-label">Ley AR</span> <span class="f-count" id="cnt-ley-ar">—</span></label>
+        <label class="facet-row"><input type="checkbox" name="ley" value="EXT" checked> <span class="f-label">Ley EXT</span> <span class="f-count" id="cnt-ley-ext">—</span></label>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Tipo <span class="clr-link" data-clr="tipo">limpiar</span></div>
+      <div class="facet-opts" id="fct-tipo">
+        <label class="facet-row"><input type="checkbox" name="tipo" value="HD" checked> <span class="f-label">Hard Dollar</span> <span class="f-count" id="cnt-tipo-hd">—</span></label>
+        <label class="facet-row"><input type="checkbox" name="tipo" value="DL"> <span class="f-label">Dollar Linked</span> <span class="f-count" id="cnt-tipo-dl">—</span></label>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Sector <span class="clr-link" data-clr="sector">limpiar</span></div>
+      <div class="facet-opts" id="fct-sector"></div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Vencimiento (año) <span class="clr-link" data-clr="vto">limpiar</span></div>
+      <div class="range-row">
+        <div class="range-input-wrap"><label>Desde</label><input type="number" id="vto-min" placeholder="2026" step="1"></div>
+        <div class="range-input-wrap"><label>Hasta</label><input type="number" id="vto-max" placeholder="2035" step="1"></div>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">TIR (%) <span class="clr-link" data-clr="tir">limpiar</span></div>
+      <div class="range-row">
+        <div class="range-input-wrap"><label>Mínima</label><input type="number" id="tir-min" placeholder="0" step="0.5"></div>
+        <div class="range-input-wrap"><label>Máxima</label><input type="number" id="tir-max" placeholder="20" step="0.5"></div>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Paridad (%) <span class="clr-link" data-clr="par">limpiar</span></div>
+      <div class="range-row">
+        <div class="range-input-wrap"><label>Mínima</label><input type="number" id="par-min" placeholder="80" step="1"></div>
+        <div class="range-input-wrap"><label>Máxima</label><input type="number" id="par-max" placeholder="120" step="1"></div>
+      </div>
+    </div>
+    <button class="reset-btn" id="reset-btn">↺ Resetear filtros</button>
+  </aside>
+
+  <!-- ======== MAIN TOP ======== -->
+  <div class="main-top">
+    <button id="sidebar-toggle" class="sidebar-toggle" title="Ocultar / mostrar el panel de filtros"><span class="sb-arrow">‹</span> Filtros</button>
+    <div class="chips-bar" id="chips-bar"><span class="chips-note" id="chips-note"></span></div>
+    <div class="subtab-bar" id="subtab-bar">
+      <button class="subtab on" data-tab="sectores">Sectores</button>
+      <button class="subtab" data-tab="cards">Cards + Comparador</button>
+      <button class="subtab" data-tab="dash">Dashboard</button>
+    </div>
+  </div>
+
+  <!-- ======== MAIN BODY ======== -->
+  <div class="main-body">
+
+    <!-- ===== TAB 1: SECTORES ===== -->
+    <section id="tab-sectores" class="tab-pane">
+      <!-- Tarjetas por sector (colapsables) ARRIBA + herramienta unificada Sector›Emisor›Título
+           (reemplaza liga + heatmap). El gráfico TIR-vs-MD vive en un modal ("Ver gráfico"). -->
+      <div class="sec-cards-section" id="sec-cards-section">
+        <div class="sec-cards-bar">
+          <button class="sec-cards-toggle" id="sec-cards-toggle" title="Mostrar / ocultar tarjetas por sector">▼</button>
+          <span class="lbl">¿Qué rinde cada sector?</span>
+          <span style="flex:1"></span>
+          <label class="lbl" for="sec-sort">Ordenar</label>
+          <select id="sec-sort">
+            <option value="tir_desc">TIR prom ↓</option>
+            <option value="tir_asc">TIR prom ↑</option>
+            <option value="md_desc">MD prom ↓</option>
+            <option value="vol_desc">Vol total ↓</option>
+            <option value="count_desc">Cantidad ↓</option>
+            <option value="canonical" selected>Orden canónico</option>
+          </select>
+        </div>
+        <div class="sec-cards-grid" id="sec-cards"></div>
+      </div>
+      <div id="uni-tool" class="uni-panel"></div>
+    </section>
+
+    <!-- ===== TAB 2: CARDS + COMPARADOR ===== -->
+    <section id="tab-cards" class="tab-pane" hidden>
+      <div class="cards-cmp-layout">
+        <div class="cards-main">
+          <div class="card-deck-toolbar">
+            <input class="search-box" id="deck-search" type="search" placeholder="Buscar ticker / emisor…">
+            <select class="sort-sel" id="deck-sort-key">
+              <option value="tir">Orden: TIR</option>
+              <option value="md">Orden: MD</option>
+              <option value="volume">Orden: Vol</option>
+              <option value="dias">Orden: Días</option>
+              <option value="paridad">Orden: Paridad</option>
+              <option value="change_pct">Orden: %Día</option>
+              <option value="ticker">Orden: Ticker</option>
+            </select>
+            <button class="sort-dir" id="deck-sort-dir" title="Invertir orden">↓</button>
+            <span class="count-badge" id="deck-count"></span>
+          </div>
+          <div class="deck-grid" id="deck-grid"></div>
+        </div>
+
+        <aside class="cmp-sticky">
+          <div class="panel">
+            <div class="panel-head">
+              Comparador <span class="spacer"></span>
+              <span class="sel-count" id="cmp-count"><strong>0</strong> / 5</span>
+              <button class="btn-clr" id="cmp-clr" title="Limpiar selección">✕</button>
+            </div>
+            <div id="cmp-chips-area"></div>
+            <div class="cmp-table-wrap" id="cmp-table-area"></div>
+            <div id="cmp-charts-area"></div>
+          </div>
+          <p class="muted-note" style="padding:8px 2px 0">Clic en una card para sumarla a comparar (hasta 5). Clic en un chip para quitarla.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===== TAB 3: DASHBOARD + CUADRANTES ===== -->
+    <section id="tab-dash" class="tab-pane" hidden>
+      <div class="kpi-strip" id="dash-kpi-strip">
+        <div class="kpi"><div class="k-label"># ONs</div><div class="k-val" id="dash-kv-n">—</div><div class="k-sub" id="dash-ks-n">—</div></div>
+        <div class="kpi k-ar"><div class="k-label">TIR prom · AR</div><div class="k-val" id="dash-kv-tir-ar">—</div><div class="k-sub" id="dash-ks-tir-ar">mediana —</div></div>
+        <div class="kpi k-ext"><div class="k-label">TIR prom · EXT</div><div class="k-val" id="dash-kv-tir-ext">—</div><div class="k-sub" id="dash-ks-tir-ext">mediana —</div></div>
+        <div class="kpi k-md"><div class="k-label">MD prom</div><div class="k-val" id="dash-kv-md">—</div><div class="k-sub" id="dash-ks-md">rango —</div></div>
+        <div class="kpi k-vol"><div class="k-label">Vol total</div><div class="k-val" id="dash-kv-vol">—</div><div class="k-sub" id="dash-ks-vol">—</div></div>
+        <div class="kpi k-sec"><div class="k-label"># Sectores</div><div class="k-val" id="dash-kv-sec">—</div><div class="k-sub" id="dash-ks-sec">—</div></div>
+      </div>
+
+      <div class="kpi-row" id="dash-quad-kpis"></div>
+
+      <div class="dash-main-grid">
+        <div class="panel dash-scatter-panel">
+          <div class="panel-head">
+            SCATTER TIR vs MD · cuadrantes por medianas
+            <span class="spacer"></span>
+            <span id="dash-q-badge" style="margin-right:6px"></span>
+            <span id="dash-scatter-count" class="faint" style="font-weight:400;font-size:11px"></span>
+          </div>
+          <div class="dash-chart-wrap"><canvas id="dash-quad-canvas"></canvas></div>
+          <div class="median-legend">
+            <span><span class="line-v"></span> Mediana MD: <strong id="dash-med-md">—</strong></span>
+            <span><span class="line-h"></span> Mediana TIR: <strong id="dash-med-tir">—</strong></span>
+            <span class="faint" style="margin-left:auto">Clic en cuadrante (KPI o punto) → filtra las tablas</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">Breakdown por sector <span class="spacer"></span><span class="faint" style="font-size:10.5px;font-weight:400" id="dash-bk-note">todos</span></div>
+          <div class="bk-sort-tabs" id="dash-bk-tabs">
+            <button class="on" data-bk="count">Cant</button>
+            <button data-bk="vol">Vol</button>
+            <button data-bk="tir">TIR prom</button>
+          </div>
+          <div class="breakdown-list" id="dash-breakdown"></div>
+        </div>
+      </div>
+
+      <div class="dash-bottom-grid">
+        <div class="panel">
+          <div class="panel-head">Top movers por % día <span class="spacer"></span>
+            <div class="seg" id="dash-seg-dir"><button data-v="pos" class="on">Alza</button><button data-v="neg">Baja</button></div>
+          </div>
+          <div class="tbl-wrap">
+            <table class="on" id="dash-tbl-movers">
+              <thead><tr>
+                <th style="width:22px;text-align:center">#</th><th style="width:6px"></th>
+                <th style="text-align:left">Ticker</th><th style="text-align:left">Emisor</th>
+                <th>Ley</th><th class="tir">TIR</th><th>Paridad</th><th>%Día</th><th>Vol</th>
+              </tr></thead>
+              <tbody id="dash-tbody-movers"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">Top yield <span class="spacer"></span><span class="faint" style="font-size:10.5px;font-weight:400">mayor TIR válida</span></div>
+          <div class="tbl-wrap">
+            <table class="on" id="dash-tbl-yield">
+              <thead><tr>
+                <th style="width:22px;text-align:center">#</th><th style="width:6px"></th>
+                <th style="text-align:left">Ticker</th><th style="text-align:left">Emisor</th>
+                <th>Ley</th><th>Vto</th><th>MD</th><th class="tir">TIR</th><th>Par.</th>
+              </tr></thead>
+              <tbody id="dash-tbody-yield"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="muted-note" id="footer-note"></p>
+  </div>
+</div>
+
+<!-- heatmap tooltip (global) -->
+<!-- modal del gráfico TIR vs MD · por sector (se abre desde la toolbar de la herramienta) -->
+<div class="uni-modal-backdrop" id="uni-chart-backdrop" aria-hidden="true">
+  <div class="uni-modal" role="dialog" aria-modal="true" aria-label="TIR vs MD por sector">
+    <div class="uni-modal-head">
+      <span class="uni-mtitle">TIR vs MD · por sector</span>
+      <span class="uni-msub" id="uni-chart-sub"></span>
+      <span class="spacer"></span>
+      <button class="uni-x" id="uni-chart-close" title="Cerrar (Esc)">✕</button>
+    </div>
+    <div class="uni-modal-body"><div class="uni-canvas-wrap"><canvas id="uni-chart"></canvas></div></div>
+    <div class="uni-modal-hint">Burbuja = sector · radio ∝ Nº bonos · click para resaltar en la tabla. <span id="uni-chart-selnote"></span></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+     ESTADO UNIFICADO
+  ============================================================ */
+  var state = {
+    ccy: "MEP",
+    ley: { AR: true, EXT: true },
+    tipo: { HD: true, DL: false },   // default: solo Hard Dollar (DL se prende a mano)
+    sectors: {},
+    vtoMin: null, vtoMax: null,
+    tirMin: null, tirMax: null,
+    parMin: null, parMax: null,
+    activeTab: "sectores",
+    sec:   { sortCards: "canonical", openSects: new Set(), subSorts: {}, highlighted: null, ligaSort: "tir_avg", ligaDir: -1, hmCol: "tir", hmAsc: false },
+    cards: { search: "", sortKey: "tir", sortAsc: false, selected: [], seeded: false },
+    dash:  { bkSort: "count", moversDir: "pos", activeSector: null, quadrant: null, medMD: 0, medTIR: 0 }
+  };
+  ON.SECTORS.forEach(function (s) { state.sectors[s.key] = true; });
+  state.sectors["Otros"] = true;
+
+  var MAX_SEL = 5;
+
+  /* ============================================================
+     MOTOR COMPARTIDO (de 20)
+  ============================================================ */
+  function vtoYear(b) { return b.vto ? parseInt(b.vto.slice(0, 4), 10) : 9999; }
+
+  // 1 fila por ON para la moneda activa, con fallback: ARS = solo pesos; MEP/CABLE son
+  // ambos USD → si falta la pata de la moneda activa se usa la otra USD. Así una ON que no
+  // cotiza en esa moneda (ej. CLISA sin MEP) igual aparece, sin mezclar pesos con USD.
+  var _CCY_PREF = { ARS: ["ARS"], MEP: ["MEP", "CABLE"], CABLE: ["CABLE", "MEP"] };
+  function dedupLegs(ccy) {
+    var pref = _CCY_PREF[ccy] || [ccy], byBase = {};
+    ON.DATA.bonds.forEach(function (b) {
+      var t = b.ticker || "", base = (t.length > 1 && "ODC".indexOf(t.slice(-1)) >= 0) ? t.slice(0, -1) : t;
+      (byBase[base] = byBase[base] || {})[b.ccy] = b;
+    });
+    var out = [];
+    Object.keys(byBase).forEach(function (base) {
+      var L = byBase[base];
+      for (var i = 0; i < pref.length; i++) { if (L[pref[i]]) { out.push(L[pref[i]]); break; } }
+    });
+    return out;
+  }
+
+  function filteredList() {
+    return dedupLegs(state.ccy).filter(function (b) {
+      if (!state.ley[b.ley]) return false;
+      if (b.tipo && !state.tipo[b.tipo]) return false;
+      if (!state.sectors[b.sector]) return false;
+      var yr = vtoYear(b);
+      if (state.vtoMin !== null && yr < state.vtoMin) return false;
+      if (state.vtoMax !== null && yr > state.vtoMax) return false;
+      if (state.tirMin !== null && b.tir < state.tirMin) return false;
+      if (state.tirMax !== null && b.tir > state.tirMax) return false;
+      if (state.parMin !== null && b.paridad < state.parMin) return false;
+      if (state.parMax !== null && b.paridad > state.parMax) return false;
+      return true;
+    });
+  }
+
+  function buildSectorFacet() {
+    var container = document.getElementById("fct-sector");
+    ON.SECTORS.forEach(function (s) {
+      var row = document.createElement("label");
+      row.className = "facet-row";
+      row.innerHTML =
+        '<input type="checkbox" name="sector" value="' + s.key + '" checked>' +
+        '<span class="f-dot" style="background:' + s.color + '"></span>' +
+        '<span class="f-label">' + s.short + '</span>' +
+        '<span class="f-count" id="cnt-sec-' + s.key.replace(/[^a-zA-Z0-9]/g, "_") + '">—</span>';
+      container.appendChild(row);
+    });
+  }
+
+  function updateCounts(allForCcy) {
+    var noLey = allForCcy.filter(function (b) {
+      if (!state.sectors[b.sector]) return false;
+      var yr = vtoYear(b);
+      if (state.vtoMin !== null && yr < state.vtoMin) return false;
+      if (state.vtoMax !== null && yr > state.vtoMax) return false;
+      if (state.tirMin !== null && b.tir < state.tirMin) return false;
+      if (state.tirMax !== null && b.tir > state.tirMax) return false;
+      if (state.parMin !== null && b.paridad < state.parMin) return false;
+      if (state.parMax !== null && b.paridad > state.parMax) return false;
+      return true;
+    });
+    document.getElementById("cnt-ley-ar").textContent = noLey.filter(function (b) { return b.ley === "AR"; }).length;
+    document.getElementById("cnt-ley-ext").textContent = noLey.filter(function (b) { return b.ley === "EXT"; }).length;
+
+    var noSec = allForCcy.filter(function (b) {
+      if (!state.ley[b.ley]) return false;
+      var yr = vtoYear(b);
+      if (state.vtoMin !== null && yr < state.vtoMin) return false;
+      if (state.vtoMax !== null && yr > state.vtoMax) return false;
+      if (state.tirMin !== null && b.tir < state.tirMin) return false;
+      if (state.tirMax !== null && b.tir > state.tirMax) return false;
+      if (state.parMin !== null && b.paridad < state.parMin) return false;
+      if (state.parMax !== null && b.paridad > state.parMax) return false;
+      return true;
+    });
+    var secMap = {};
+    noSec.forEach(function (b) { secMap[b.sector] = (secMap[b.sector] || 0) + 1; });
+    ON.SECTORS.forEach(function (s) {
+      var el = document.getElementById("cnt-sec-" + s.key.replace(/[^a-zA-Z0-9]/g, "_"));
+      if (el) el.textContent = secMap[s.key] || 0;
+    });
+
+    // conteo Tipo (HD/DL) respetando el resto de los filtros (no el de tipo)
+    var hd = 0, dl = 0;
+    allForCcy.forEach(function (b) {
+      if (!state.ley[b.ley]) return;
+      if (!state.sectors[b.sector]) return;
+      var yr = vtoYear(b);
+      if (state.vtoMin !== null && yr < state.vtoMin) return;
+      if (state.vtoMax !== null && yr > state.vtoMax) return;
+      if (state.tirMin !== null && b.tir < state.tirMin) return;
+      if (state.tirMax !== null && b.tir > state.tirMax) return;
+      if (state.parMin !== null && b.paridad < state.parMin) return;
+      if (state.parMax !== null && b.paridad > state.parMax) return;
+      if (b.tipo === "HD") hd++; else if (b.tipo === "DL") dl++;
+    });
+    var elHd = document.getElementById("cnt-tipo-hd"); if (elHd) elHd.textContent = hd;
+    var elDl = document.getElementById("cnt-tipo-dl"); if (elDl) elDl.textContent = dl;
+  }
+
+  function renderKPIs(list) {
+    if (!document.getElementById("kpi-n")) return;   // barra de KPIs removida → no-op
+    var tirs = list.map(function (b) { return b.tir; }).filter(function (v) { return v != null && !isNaN(v); });
+    var mds  = list.map(function (b) { return b.md; }).filter(function (v) { return v != null && !isNaN(v) && v > 0; });
+    var pars = list.map(function (b) { return b.paridad; }).filter(function (v) { return v != null && !isNaN(v); });
+    var vols = list.map(function (b) { return b.volume || 0; });
+    document.getElementById("kpi-n").textContent = list.length;
+    document.getElementById("kpi-ar").textContent = list.filter(function (b) { return b.ley === "AR"; }).length;
+    document.getElementById("kpi-ext").textContent = list.filter(function (b) { return b.ley === "EXT"; }).length;
+    var tirMed = ON.median(tirs), tirAvg = ON.avg(tirs);
+    document.getElementById("kpi-tir-med").textContent = tirMed != null ? ON.num(tirMed, 2) + "%" : "—";
+    document.getElementById("kpi-tir-avg").textContent = tirAvg != null ? ON.num(tirAvg, 2) + "%" : "—";
+    var mdMed = ON.median(mds), mdAvg = ON.avg(mds);
+    document.getElementById("kpi-md-med").textContent = mdMed != null ? ON.num(mdMed, 2) + "a" : "—";
+    document.getElementById("kpi-md-avg").textContent = mdAvg != null ? ON.num(mdAvg, 2) + "a" : "—";
+    var parMed = ON.median(pars);
+    var pMin = pars.length ? Math.min.apply(null, pars) : null;
+    var pMax = pars.length ? Math.max.apply(null, pars) : null;
+    document.getElementById("kpi-par-med").textContent = parMed != null ? ON.num(parMed, 1) + "%" : "—";
+    document.getElementById("kpi-par-range").textContent = (pMin != null && pMax != null) ? ON.num(pMin, 0) + "–" + ON.num(pMax, 0) : "—";
+    document.getElementById("kpi-vol").textContent = ON.vol(ON.sum(vols));
+    document.getElementById("kpi-vol-sub").textContent = "HOY · " + state.ccy;
+  }
+
+  function renderChips(allForCcy) {
+    var bar = document.getElementById("chips-bar");
+    while (bar.firstChild) bar.removeChild(bar.firstChild);
+    var chips = [];
+    chips.push({ label: state.ccy, clear: null });
+    var leyKeys = Object.keys(state.ley).filter(function (k) { return state.ley[k]; });
+    if (leyKeys.length === 1) chips.push({ label: "Ley " + leyKeys[0], clear: "ley" });
+    var allSecKeys = ON.SECTORS.map(function (s) { return s.key; }).concat(["Otros"]);
+    var activeSec = allSecKeys.filter(function (k) { return state.sectors[k]; });
+    var inactiveSec = allSecKeys.filter(function (k) { return !state.sectors[k]; });
+    if (inactiveSec.length > 0 && activeSec.length <= 3) {
+      activeSec.forEach(function (k) { var sm = ON.sectorMeta(k); chips.push({ label: sm.short, color: sm.color, clear: null }); });
+    } else if (inactiveSec.length > 0) {
+      chips.push({ label: activeSec.length + " sectores", clear: "sector" });
+    }
+    if (state.vtoMin !== null) chips.push({ label: "Vto ≥ " + state.vtoMin, clear: "vtoMin" });
+    if (state.vtoMax !== null) chips.push({ label: "Vto ≤ " + state.vtoMax, clear: "vtoMax" });
+    if (state.tirMin !== null) chips.push({ label: "TIR ≥ " + state.tirMin + "%", clear: "tirMin" });
+    if (state.tirMax !== null) chips.push({ label: "TIR ≤ " + state.tirMax + "%", clear: "tirMax" });
+    if (state.parMin !== null) chips.push({ label: "Par ≥ " + state.parMin + "%", clear: "parMin" });
+    if (state.parMax !== null) chips.push({ label: "Par ≤ " + state.parMax + "%", clear: "parMax" });
+    chips.forEach(function (c) {
+      var el = document.createElement("span");
+      el.className = "active-chip";
+      if (c.color) el.innerHTML = '<span class="f-dot" style="background:' + c.color + ';width:8px;height:8px;border-radius:50%;flex-shrink:0"></span>' + c.label;
+      else el.textContent = c.label;
+      if (c.clear) {
+        var xb = document.createElement("span"); xb.className = "x-btn"; xb.textContent = "×"; xb.title = "Quitar filtro";
+        (function (k) { xb.addEventListener("click", function () { clearFacet(k); }); })(c.clear);
+        el.appendChild(xb);
+      }
+      bar.appendChild(el);
+    });
+    var note = document.createElement("span"); note.className = "chips-note";
+    note.textContent = "(" + filteredList().length + " de " + allForCcy.length + ")";
+    bar.appendChild(note);
+  }
+
+  function clearFacet(key) {
+    if (key === "ley") { state.ley = { AR: true, EXT: true }; document.querySelectorAll("input[name='ley']").forEach(function (el) { el.checked = true; }); }
+    else if (key === "sector") { ON.SECTORS.forEach(function (s) { state.sectors[s.key] = true; }); state.sectors["Otros"] = true; document.querySelectorAll("input[name='sector']").forEach(function (el) { el.checked = true; }); }
+    else if (key === "tipo") { state.tipo = { HD: true, DL: true }; document.querySelectorAll("input[name='tipo']").forEach(function (el) { el.checked = true; }); }
+    else if (key === "vtoMin") { state.vtoMin = null; document.getElementById("vto-min").value = ""; }
+    else if (key === "vtoMax") { state.vtoMax = null; document.getElementById("vto-max").value = ""; }
+    else if (key === "vto") { state.vtoMin = state.vtoMax = null; document.getElementById("vto-min").value = ""; document.getElementById("vto-max").value = ""; }
+    else if (key === "tirMin") { state.tirMin = null; document.getElementById("tir-min").value = ""; }
+    else if (key === "tirMax") { state.tirMax = null; document.getElementById("tir-max").value = ""; }
+    else if (key === "tir") { state.tirMin = state.tirMax = null; document.getElementById("tir-min").value = ""; document.getElementById("tir-max").value = ""; }
+    else if (key === "parMin") { state.parMin = null; document.getElementById("par-min").value = ""; }
+    else if (key === "parMax") { state.parMax = null; document.getElementById("par-max").value = ""; }
+    else if (key === "par") { state.parMin = state.parMax = null; document.getElementById("par-min").value = ""; document.getElementById("par-max").value = ""; }
+    refresh();
+  }
+
+  /* ============================================================
+     GLUE: registro de charts + dispatch de tabs
+  ============================================================ */
+  var charts = { sectores: [], cards: [], dash: [] };
+  function trackChart(tab, c) { charts[tab].push(c); return c; }
+  var TAB_TEARDOWN = {
+    sectores: function () { uniChartDestroy(); cardMinis.forEach(function (c) { try { c.destroy(); } catch (e) {} }); cardMinis = []; },
+    cards: function () { cmpDestroy(); }
+  };
+  function destroyTab(tab) {
+    charts[tab].forEach(function (c) { try { c.destroy(); } catch (e) {} });
+    charts[tab] = [];
+    if (TAB_TEARDOWN[tab]) TAB_TEARDOWN[tab]();
+  }
+  var TAB_RENDER = { sectores: renderSectores, cards: renderCards, dash: renderDash };
+  function renderActiveTab() { TAB_RENDER[state.activeTab](); }
+  function switchTab(tab) {
+    if (tab === state.activeTab) return;
+    destroyTab(state.activeTab);
+    state.activeTab = tab;
+    document.querySelectorAll(".subtab").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === tab); });
+    document.querySelectorAll(".tab-pane").forEach(function (p) { p.hidden = (p.id !== "tab-" + tab); });
+    renderActiveTab();
+  }
+
+  function refresh() {
+    var allForCcy = dedupLegs(state.ccy);
+    updateCounts(allForCcy);
+    renderKPIs(filteredList());
+    renderChips(allForCcy);
+    renderActiveTab();
+    document.getElementById("footer-note").textContent =
+      "Datos: " + (ON.DATA.generated || "—") + " · " + filteredList().length + " resultados · " + state.ccy +
+      " · vista: " + state.activeTab + " · O.N's Monitor Balanz";
+  }
+
+  /* ============================================================
+     TAB 1 — SECTORES (herramienta unificada + modal del gráfico)
+  ============================================================ */
+  // La tabla Sector›Emisor›Título la monta window.Unified (de _shared/unified.js),
+  // alimentada por filteredList() (el sidebar de facetas global). El gráfico TIR-vs-MD
+  // por sector vive en un modal que se abre desde la toolbar de la herramienta.
+  var uniMounted = false;
+  var uniChart = null;     // instancia Chart del modal
+  var uniAggs = [];        // últimos agregados por sector (redibujo/recolor)
+  var uniSel = null;       // sector resaltado (toggle)
+
+  function uniRadius(count) { return Math.max(8, Math.min(28, 6 + count * 1.3)); }
+
+  function uniChartDatasets(aggs) {
+    return (aggs || []).filter(function (a) { return a.md_avg != null && a.tir_avg != null && a.count > 0; })
+      .map(function (a) {
+        return {
+          label: a.short,
+          data: [{ x: a.md_avg, y: a.tir_avg, _key: a.key, _short: a.short, _count: a.count, _tir: a.tir_avg, _md: a.md_avg }],
+          backgroundColor: a.color + "cc", borderColor: a.color, borderWidth: 2,
+          radius: uniRadius(a.count), hoverRadius: uniRadius(a.count) + 3
+        };
+      });
+  }
+
+  function uniChartOptions() {
+    var t = ON.chartTheme();
+    return {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 260 },
+      onClick: function (evt, els) {
+        if (!els || !els.length) return;
+        var d = uniChart.data.datasets[els[0].datasetIndex];
+        var key = d.data[0]._key;
+        uniSel = (uniSel === key) ? null : key;
+        Unified.highlight(uniSel);
+        uniUpdateSelNote();
+      },
+      scales: {
+        x: { title: { display: true, text: "MD prom (años)", color: t.txt }, ticks: { color: t.txt }, grid: { color: t.grid }, border: { color: t.grid } },
+        y: { title: { display: true, text: "TIR prom (%)", color: t.txt }, ticks: { color: t.txt, callback: function (v) { return v + "%"; } }, grid: { color: t.grid }, border: { color: t.grid } }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: function (c) { var r = c.raw || {}; return r._short + " (" + r._count + " bonos) · TIR prom " + (r._tir != null ? r._tir.toFixed(2) : "?") + "% · MD prom " + (r._md != null ? r._md.toFixed(2) : "?") + " a"; } } }
+      }
+    };
+  }
+
+  function uniEnsureChart() {
+    if (uniChart || !window.Chart) return;
+    var cv = document.getElementById("uni-chart");
+    if (!cv) return;
+    uniChart = trackChart("sectores", new Chart(cv.getContext("2d"), { type: "bubble", data: { datasets: uniChartDatasets(uniAggs) }, options: uniChartOptions() }));
+  }
+  function uniChartDestroy() { if (uniChart) { try { uniChart.destroy(); } catch (e) {} uniChart = null; } }
+
+  function uniRedrawChart(aggs) {
+    if (aggs) uniAggs = aggs;
+    if (!uniChart) { uniEnsureChart(); return; }
+    uniChart.data.datasets = uniChartDatasets(uniAggs);
+    uniChart.options = uniChartOptions();
+    uniChart.update();
+  }
+
+  function uniUpdateSelNote() {
+    var note = document.getElementById("uni-chart-selnote");
+    var sub = document.getElementById("uni-chart-sub");
+    if (uniSel) {
+      var m = ON.sectorMeta(uniSel);
+      if (note) note.innerHTML = '· resaltado: <b style="color:' + m.color + '">' + m.short + '</b> (click de nuevo para limpiar)';
+      if (sub) sub.textContent = m.short;
+    } else {
+      if (note) note.textContent = "";
+      if (sub) sub.textContent = "";
+    }
+  }
+
+  function openUniModal() {
+    var bd = document.getElementById("uni-chart-backdrop");
+    bd.classList.add("open"); bd.setAttribute("aria-hidden", "false");
+    uniEnsureChart();
+    if (uniChart) requestAnimationFrame(function () { uniChart.resize(); uniChart.update("none"); });
+  }
+  function closeUniModal() {
+    var bd = document.getElementById("uni-chart-backdrop");
+    bd.classList.remove("open"); bd.setAttribute("aria-hidden", "true");
+  }
+
+  // ----- Tarjetas por sector (colapsables) — overview arriba de la herramienta -----
+  var cardMinis = [];
+
+  function secSortedSectors(secMap) {
+    var entries = [];
+    secMap.forEach(function (bonds, key) {
+      var tirs = bonds.map(function (b) { return b.tir; }).filter(function (v) { return v != null && !isNaN(v); });
+      var mds = bonds.map(function (b) { return b.md; }).filter(function (v) { return v != null && v > 0; });
+      var vols = bonds.map(function (b) { return b.volume || 0; });
+      entries.push({ key: key, bonds: bonds, tir_avg: ON.avg(tirs), md_avg: ON.avg(mds), vol_total: ON.sum(vols), count: bonds.length });
+    });
+    var fn;
+    switch (state.sec.sortCards) {
+      case "tir_desc":   fn = function (a, b) { return (b.tir_avg || 0) - (a.tir_avg || 0); }; break;
+      case "tir_asc":    fn = function (a, b) { return (a.tir_avg || 0) - (b.tir_avg || 0); }; break;
+      case "md_desc":    fn = function (a, b) { return (b.md_avg || 0) - (a.md_avg || 0); }; break;
+      case "vol_desc":   fn = function (a, b) { return (b.vol_total || 0) - (a.vol_total || 0); }; break;
+      case "count_desc": fn = function (a, b) { return b.count - a.count; }; break;
+      default:
+        var order = {}; ON.SECTORS.forEach(function (s, i) { order[s.key] = i; });
+        fn = function (a, b) { return (order[a.key] == null ? 99 : order[a.key]) - (order[b.key] == null ? 99 : order[b.key]); };
+    }
+    return entries.sort(fn);
+  }
+
+  function secTop3Html(bonds, sortKey) {
+    var sorted = bonds.slice().sort(function (a, b) {
+      if (sortKey === "vol") return (b.volume || 0) - (a.volume || 0);
+      // Usar null-coalesce explícito: tir=0.0 es legítimo, no debe caer a -Infinity.
+      return (b.tir != null ? b.tir : -Infinity) - (a.tir != null ? a.tir : -Infinity);
+    }).slice(0, 3);
+    return sorted.map(function (b, i) {
+      var valStr = sortKey === "vol" ? ON.vol(b.volume) : ON.pct(b.tir);
+      var valClass = sortKey === "vol" ? "" : ON.sign(b.tir);
+      var em = (b.emisor || "").replace(/\s*-\s*Clase.*$/i, "").replace(/\s*S\.A\..*$/i, "").trim();
+      var ley = b.ley === "AR" ? '<span class="top3-ley ley-ar">AR</span>' : '<span class="top3-ley ley-ext">EXT</span>';
+      return '<div class="top3-row"><span class="top3-num">' + (i + 1) + '</span><span class="top3-tk">' + b.ticker + '</span>' + ley +
+        '<span class="top3-em">' + em + '</span><span class="top3-val ' + valClass + '">' + valStr + '</span></div>';
+    }).join("");
+  }
+
+  function secBuildMini(canvasId, bonds, color) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas || window.Chart === undefined) return;
+    var pts = ON.scatterPoints(bonds);
+    var t = ON.chartTheme();
+    var fit = ON.logFit(pts);
+    var datasets = [];
+    if (fit && pts.length >= 3) {
+      var xs = pts.map(function (p) { return p.x; });
+      var xmin = Math.min.apply(null, xs) * 0.9, xmax = Math.max.apply(null, xs) * 1.1;
+      if (xmin <= 0) xmin = 0.01;
+      datasets.push({ type: "line", data: fit.curve(xmin, xmax, 30), borderColor: color + "88", borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.4, parsing: false });
+    }
+    var arPts = pts.filter(function (p) { return p.ley === "AR"; });
+    var extPts = pts.filter(function (p) { return p.ley === "EXT"; });
+    if (arPts.length) datasets.push({ type: "scatter", data: arPts, backgroundColor: color + "cc", borderColor: color, borderWidth: 1.2, pointRadius: 4, pointHoverRadius: 6, parsing: false });
+    if (extPts.length) datasets.push({ type: "scatter", data: extPts, backgroundColor: color + "55", borderColor: color, borderWidth: 1.2, pointRadius: 4, pointHoverRadius: 6, pointStyle: "triangle", parsing: false });
+    if (!datasets.length) { canvas.style.display = "none"; return; }
+    var opts = {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { ticks: { color: t.txt, font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: t.grid + "88" } },
+        y: { ticks: { color: t.txt, font: { size: 9 }, maxTicksLimit: 5, callback: function (v) { return v.toFixed(0) + "%"; } }, grid: { color: t.grid + "88" } }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: function (c) { var r = c.raw || {}; return (r.t || "") + "  MD " + (r.x != null ? r.x.toFixed(2) : "?") + "  TIR " + (r.y != null ? r.y.toFixed(2) : "?") + "%"; } } }
+      }
+    };
+    cardMinis.push(new Chart(canvas, { type: "scatter", data: { datasets: datasets }, options: opts }));
+  }
+
+  function secRenderCards() {
+    cardMinis.forEach(function (c) { try { c.destroy(); } catch (e) {} }); cardMinis = [];
+    var list = filteredList();
+    var entries = secSortedSectors(ON.bySector(list));
+    var grid = document.getElementById("sec-cards");
+    grid.innerHTML = "";
+    if (!entries.length) { grid.innerHTML = '<div style="color:var(--text-faint);padding:30px;text-align:center;grid-column:1/-1">Sin datos para la selección actual.</div>'; return; }
+    entries.forEach(function (entry, i) {
+      var meta = ON.sectorMeta(entry.key), bonds = entry.bonds, color = meta.color;
+      var ar = bonds.filter(function (b) { return b.ley === "AR"; }).length;
+      var ext = bonds.filter(function (b) { return b.ley === "EXT"; }).length;
+      var canvasId = "scard-cv-" + i, top3Id = "scard-top3-" + i;
+      var card = document.createElement("div");
+      card.className = "scard";
+      card.innerHTML =
+        '<div class="scard-bar" style="background:' + color + '"></div>' +
+        '<div class="scard-head"><span class="scard-icon">' + meta.icon + '</span>' +
+          '<span class="scard-name" style="color:' + color + '">' + meta.short + '</span>' +
+          '<span class="scard-counts">' +
+            (ar ? '<span class="cnt-pill cnt-ar">AR ' + ar + '</span>' : '') +
+            (ext ? '<span class="cnt-pill cnt-ext">EXT ' + ext + '</span>' : '') +
+            '<span class="cnt-pill cnt-all">' + entry.count + ' ONs</span>' +
+          '</span></div>' +
+        '<div class="scard-kpis">' +
+          '<div class="scard-kpi"><div class="sk-label">TIR prom</div><div class="sk-val ' + ON.sign(entry.tir_avg) + '">' + ON.pct(entry.tir_avg) + '</div><div class="sk-sub">anual</div></div>' +
+          '<div class="scard-kpi"><div class="sk-label">MD prom</div><div class="sk-val">' + (entry.md_avg != null ? ON.num(entry.md_avg) : "—") + '</div><div class="sk-sub">años</div></div>' +
+          '<div class="scard-kpi"><div class="sk-label">Vol hoy</div><div class="sk-val">' + ON.vol(entry.vol_total) + '</div><div class="sk-sub">nominal</div></div>' +
+        '</div>' +
+        '<div class="scard-chart"><canvas id="' + canvasId + '"></canvas></div>' +
+        '<div class="scard-top"><div class="top3-head">Top 3<div class="top3-tabs"><button class="top3-tab on" data-s="tir">TIR</button><button class="top3-tab" data-s="vol">Vol</button></div></div><div id="' + top3Id + '">' + secTop3Html(bonds, "tir") + '</div></div>' +
+        '<button class="expand-btn" data-sec="' + entry.key + '"><span>Ver bonos ↓</span></button>';
+      grid.appendChild(card);
+      card.querySelectorAll(".top3-tab").forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          card.querySelectorAll(".top3-tab").forEach(function (x) { x.classList.toggle("on", x === tab); });
+          document.getElementById(top3Id).innerHTML = secTop3Html(bonds, tab.dataset.s);
+        });
+      });
+      card.querySelector(".expand-btn").addEventListener("click", function () { secOpenLiga(entry.key); });
+      (function (id, b, c) { requestAnimationFrame(function () { secBuildMini(id, b, c); }); })(canvasId, bonds, color);
+    });
+  }
+
+  // "Ver bonos ↓" → expandir ese sector en la herramienta unificada y hacer scroll
+  function secOpenLiga(key) { if (window.Unified && Unified.openSector) Unified.openSector(key); }
+
+  function renderSectores() {
+    if (!state.sec.cardsCollapsed) secRenderCards();
+    else { var g = document.getElementById("sec-cards"); if (g) g.innerHTML = ""; }
+    if (!uniMounted) {
+      Unified.render(document.getElementById("uni-tool"), {
+        bondsFn: filteredList,                                  // sigue el sidebar de facetas global
+        actions: [{ label: "📊 Ver gráfico", onClick: openUniModal }],
+        onRender: function (bonds, aggs) {
+          if (uniSel && !aggs.some(function (a) { return a.key === uniSel; })) { uniSel = null; uniUpdateSelNote(); }
+          uniRedrawChart(aggs);
+        }
+      });
+      uniMounted = true;
+    } else {
+      Unified.rerender();   // re-aplica filtros + redibuja el gráfico (vía onRender)
+    }
+  }
+
+  /* ============================================================
+     TAB 2 — CARDS + COMPARADOR
+  ============================================================ */
+  var cardBgCache = {};
+  function cardGetBg(ccy) { if (!cardBgCache[ccy]) cardBgCache[ccy] = ON.scatterPoints(ON.legs(ccy)); return cardBgCache[ccy]; }
+
+  function renderCards() {
+    destroyTab("cards");
+    cardRenderDeck();
+    cmpRender();
+  }
+
+  function cardRenderDeck() {
+    var base = filteredList();
+    var q = state.cards.search.trim().toLowerCase();
+    var list = base.filter(function (b) {
+      if (!q) return true;
+      return b.ticker.toLowerCase().indexOf(q) !== -1 || (b.emisor || "").toLowerCase().indexOf(q) !== -1;
+    });
+    var k = state.cards.sortKey, asc = state.cards.sortAsc;
+    list = list.slice().sort(function (a, b) {
+      var av = a[k], bv = b[k];
+      if (typeof av === "string") av = av.toLowerCase();
+      if (typeof bv === "string") bv = bv.toLowerCase();
+      if (av == null) return 1; if (bv == null) return -1;
+      return asc ? (av < bv ? -1 : av > bv ? 1 : 0) : (av > bv ? -1 : av < bv ? 1 : 0);
+    });
+    document.getElementById("deck-count").textContent = list.length + " / " + base.length + " ONs";
+    var allPts = cardGetBg(state.ccy);
+    var grid = document.getElementById("deck-grid");
+    grid.innerHTML = "";
+    if (!list.length) { grid.innerHTML = '<div class="deck-empty">Sin bonos para los filtros seleccionados.</div>'; return; }
+    list.forEach(function (bond) { grid.appendChild(cardBuildCard(bond, allPts)); });
+  }
+
+  function cardBuildMini(canvas, bond, allPts) {
+    var t = ON.chartTheme(), sc = ON.sectorColor(bond.sector);
+    var bgDs = { data: allPts, pointRadius: 2.3, pointHoverRadius: 2.3, backgroundColor: t.grid, borderWidth: 0, showLine: false };
+    var thisDs = { data: (bond.md != null && bond.tir != null) ? [{ x: bond.md, y: bond.tir, t: bond.ticker }] : [], pointRadius: 6, pointHoverRadius: 7, backgroundColor: sc, borderColor: "#fff", borderWidth: 1.5, showLine: false };
+    trackChart("cards", new Chart(canvas, {
+      type: "scatter",
+      data: { datasets: [bgDs, thisDs] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false }, tooltip: { filter: function (it) { return it.datasetIndex === 1; }, callbacks: { label: function (ctx) { var r = ctx.raw || {}; return ctx.datasetIndex === 1 && r.t ? r.t + "  MD " + (r.x != null ? r.x.toFixed(2) : "?") + "  TIR " + (r.y != null ? r.y.toFixed(2) : "?") + "%" : null; } } } },
+        scales: { x: { display: false, grid: { display: false } }, y: { display: false, grid: { display: false } } }
+      }
+    }));
+  }
+
+  function cardBuildCard(bond, allPts) {
+    var sm = ON.sectorMeta(bond.sector), sc = sm.color;
+    var card = document.createElement("div");
+    card.className = "bond-card" + (state.cards.selected.indexOf(bond.ticker) !== -1 ? " selected" : "");
+    card.dataset.tk = bond.ticker;
+    var tirNum = (bond.tir != null && !isNaN(bond.tir)) ? bond.tir : null;
+    var tirColor = tirNum == null ? "" : (tirNum >= 0 ? "var(--pos)" : "var(--neg)");
+    var em = (bond.emisor || "");
+    em = em.length > 32 ? em.replace(/ [-–] Clase .*$/, "").substring(0, 34) : em;
+    var ch = bond.change_pct;
+    var chHtml = (ch != null && !isNaN(ch)) ? '<span class="card-change ' + (ch >= 0 ? "pos" : "neg") + '">' + (ch >= 0 ? "+" : "") + ch.toFixed(2) + '%</span>' : '<span class="card-change dim">—</span>';
+    card.innerHTML =
+      '<span class="card-pick">✓</span>' +
+      '<div class="card-stripe" style="background:' + sc + '"></div>' +
+      '<div class="card-top"><div class="card-ticker">' + ON.esc(bond.ticker) + '</div><div class="card-badges"><span class="badge-ley ' + bond.ley.toLowerCase() + '">' + bond.ley + '</span><span class="sector-dot" style="background:' + sc + '" title="' + ON.esc(sm.short) + '"></span></div></div>' +
+      '<div class="card-emisor" title="' + ON.esc(bond.emisor) + '">' + ON.esc(em) + '</div>' +
+      '<div class="card-tir-row"><span class="card-tir-val" style="color:' + tirColor + '">' + (tirNum != null ? tirNum.toFixed(2) + "%" : "—") + '</span><span class="card-tir-lbl">TIR</span></div>' +
+      '<div class="card-mini-wrap"><canvas class="card-mini-canvas"></canvas></div>' +
+      '<div class="card-metrics"><div class="card-metric"><span class="m-lbl">MD</span><span class="m-val">' + (bond.md != null ? bond.md.toFixed(2) + "a" : "—") + '</span></div><div class="card-metric"><span class="m-lbl">Paridad</span><span class="m-val">' + (bond.paridad != null ? bond.paridad.toFixed(1) + "%" : "—") + '</span></div><div class="card-metric"><span class="m-lbl">Días</span><span class="m-val">' + (bond.dias != null ? bond.dias + "d" : "—") + '</span></div></div>' +
+      '<div class="card-footer">' + chHtml + '<span class="card-vol">Vol ' + ON.vol(bond.volume) + '</span><span class="card-dias">' + ON.date(bond.vto) + '</span></div>';
+    var canvas = card.querySelector(".card-mini-canvas");
+    requestAnimationFrame(function () { cardBuildMini(canvas, bond, allPts); });
+    return card;
+  }
+
+  function cardToggleSelect(tk) {
+    var idx = state.cards.selected.indexOf(tk);
+    if (idx !== -1) state.cards.selected.splice(idx, 1);
+    else { if (state.cards.selected.length >= MAX_SEL) return; state.cards.selected.push(tk); }
+    var card = document.querySelector('#deck-grid .bond-card[data-tk="' + tk + '"]');
+    if (card) card.classList.toggle("selected", state.cards.selected.indexOf(tk) !== -1);
+    cmpRender();
+  }
+
+  // ----- comparador (de 11) -----
+  var cmpCharts = [];
+  function cmpDestroy() { cmpCharts.forEach(function (c) { try { c.destroy(); } catch (e) {} }); cmpCharts = []; }
+  function cmpTruncate(s, n) { if (!s) return ""; return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+  function cmpHexAlpha(hex, a) { var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16); return "rgba(" + r + "," + g + "," + b + "," + a + ")"; }
+  function cmpSelectedBonds() {
+    var all = ON.legs(state.ccy);
+    return state.cards.selected.map(function (tk) { return all.filter(function (b) { return b.ticker === tk; })[0]; }).filter(Boolean);
+  }
+
+  var CMP_ROWS = [
+    { key: "tir", label: "TIR (%)", fmt: function (v) { return ON.pct(v); }, higher: true },
+    { key: "md", label: "Dur. (años)", fmt: function (v) { return ON.num(v); }, higher: false },
+    { key: "paridad", label: "Paridad (%)", fmt: function (v) { return ON.pct(v); }, higher: true },
+    { key: "price", label: "Precio", fmt: function (v) { return ON.num(v); }, higher: false },
+    { key: "change_pct", label: "% Día", fmt: function (v) { return ON.pctSigned(v); }, higher: true },
+    { key: "volume", label: "Volumen", fmt: function (v) { return ON.vol(v); }, higher: true },
+    { key: "vto", label: "Vto", fmt: function (v) { return ON.date(v); }, higher: false },
+    { key: "dias", label: "Días", fmt: function (v) { return ON.num(v, 0); }, higher: false },
+    { key: "ley", label: "Ley", fmt: function (v) { return v; }, higher: false },
+    { key: "sector", label: "Sector", fmt: function (v) { return v; }, higher: false }
+  ];
+
+  function cmpRender() {
+    cmpDestroy();
+    var bonds = cmpSelectedBonds();
+    document.getElementById("cmp-count").innerHTML = "<strong>" + state.cards.selected.length + "</strong> / " + MAX_SEL;
+    // chips
+    var chipsArea = document.getElementById("cmp-chips-area");
+    if (!state.cards.selected.length) chipsArea.innerHTML = '<div class="sel-chips-empty">Ninguna ON seleccionada aún</div>';
+    else chipsArea.innerHTML = '<div class="sel-chips">' + state.cards.selected.map(function (tk) {
+      var b = bonds.filter(function (x) { return x.ticker === tk; })[0];
+      var color = b ? ON.sectorColor(b.sector) : "#8993b8";
+      return '<span class="sel-chip" data-rm="' + tk + '"><span class="chip-dot" style="background:' + color + '"></span>' + tk + '<span class="chip-x">✕</span></span>';
+    }).join("") + '</div>';
+    // table
+    var tArea = document.getElementById("cmp-table-area");
+    if (bonds.length < 2) {
+      tArea.innerHTML = '<div class="cmp-empty"><div class="cmp-empty-ico">⚖️</div><p>Elegí al menos 2 ONs (clic en las cards) para comparar</p></div>';
+    } else {
+      var html = '<table class="cmp"><thead><tr><th class="row-lbl" style="text-align:left">Métrica</th>';
+      bonds.forEach(function (b) {
+        var sm = ON.sectorMeta(b.sector);
+        html += '<th style="border-top:3px solid ' + sm.color + '"><span class="cmp-ticker-hd">' + b.ticker + '</span></th>';
+      });
+      html += '</tr></thead><tbody>';
+      CMP_ROWS.forEach(function (row) {
+        var vals = bonds.map(function (b) { return b[row.key]; });
+        var bestIdx = -1, worstIdx = -1;
+        if (row.higher) {
+          var nums = vals.map(parseFloat), maxV = -Infinity, minV = Infinity;
+          nums.forEach(function (v, i) { if (!isNaN(v)) { if (v > maxV) { maxV = v; bestIdx = i; } if (v < minV) { minV = v; worstIdx = i; } } });
+          if (bestIdx === worstIdx) { bestIdx = -1; worstIdx = -1; }
+        }
+        html += '<tr><td class="row-lbl">' + row.label + '</td>';
+        vals.forEach(function (v, i) {
+          var cls = "num";
+          if (i === bestIdx) cls += " best"; else if (i === worstIdx) cls += " worst";
+          var disp = row.fmt(v);
+          if (row.key === "sector") { disp = '<span class="col-sector-bar" style="background:' + ON.sectorColor(v) + '"></span>' + ON.sectorMeta(v).short; cls = ""; }
+          if (row.key === "ley") { disp = '<span class="pr-ley ' + (v || "").toLowerCase() + '">' + v + '</span>'; cls = ""; }
+          if (row.key === "change_pct") cls += " " + ON.sign(v);
+          html += '<td class="' + cls + '">' + disp + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      tArea.innerHTML = html;
+    }
+    // charts
+    var chartsArea = document.getElementById("cmp-charts-area");
+    if (!bonds.length) { chartsArea.innerHTML = ""; return; }
+    chartsArea.innerHTML =
+      '<div class="cmp-charts"><div><div class="cmp-chart-title">TIR (%)</div><canvas id="cmp-bar-tir"></canvas></div><div><div class="cmp-chart-title">MD (años)</div><canvas id="cmp-bar-md"></canvas></div></div>' +
+      '<div class="cmp-scatter-wrap"><div class="cmp-chart-title">TIR vs MD · selección + universo filtrado</div><canvas id="cmp-scatter"></canvas></div>';
+    var t = ON.chartTheme();
+    var barColors = bonds.map(function (b) { return ON.sectorColor(b.sector); });
+    cmpCharts.push(new Chart(document.getElementById("cmp-bar-tir"), {
+      type: "bar", data: { labels: bonds.map(function (b) { return b.ticker; }), datasets: [{ data: bonds.map(function (b) { return b.tir; }), backgroundColor: barColors, borderRadius: 4, borderSkipped: false }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return ON.pct(c.parsed.y); } } } }, scales: { x: { ticks: { color: t.txt }, grid: { color: t.grid } }, y: { ticks: { color: t.txt, callback: function (v) { return v.toFixed(1) + "%"; } }, grid: { color: t.grid } } } }
+    }));
+    cmpCharts.push(new Chart(document.getElementById("cmp-bar-md"), {
+      type: "bar", data: { labels: bonds.map(function (b) { return b.ticker; }), datasets: [{ data: bonds.map(function (b) { return b.md; }), backgroundColor: barColors, borderRadius: 4, borderSkipped: false }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return ON.num(c.parsed.y) + " años"; } } } }, scales: { x: { ticks: { color: t.txt }, grid: { color: t.grid } }, y: { ticks: { color: t.txt, callback: function (v) { return v.toFixed(2); } }, grid: { color: t.grid } } } }
+    }));
+    cmpRenderScatter(bonds);
+  }
+
+  function cmpTickerLabels(selBonds) {
+    return {
+      id: "cmp-ticker-labels",
+      afterDatasetsDraw: function (chart) {
+        var ctx = chart.ctx, n = chart.data.datasets.length, nBg = n - selBonds.length;
+        ctx.save(); ctx.font = "bold 11px monospace"; ctx.textAlign = "center";
+        selBonds.forEach(function (b, i) {
+          var ds = chart.getDatasetMeta(nBg + i);
+          if (!ds || !ds.data || !ds.data[0]) return;
+          var pt = ds.data[0];
+          ctx.fillStyle = ON.sectorMeta(b.sector).color;
+          ctx.fillText(b.ticker, pt.x, pt.y - 14);
+        });
+        ctx.restore();
+      }
+    };
+  }
+
+  function cmpRenderScatter(selBonds) {
+    var selTk = {}; state.cards.selected.forEach(function (tk) { selTk[tk] = true; });
+    var bg = filteredList().filter(function (b) { return !selTk[b.ticker]; });
+    var bgDatasets = [];
+    ON.bySector(bg).forEach(function (bonds, skey) {
+      var pts = ON.scatterPoints(bonds);
+      if (!pts.length) return;
+      bgDatasets.push({ label: ON.sectorMeta(skey).short, data: pts, backgroundColor: cmpHexAlpha(ON.sectorColor(skey), 0.20), pointRadius: 3.5, pointHoverRadius: 5, order: 10 });
+    });
+    var selDatasets = selBonds.map(function (b) {
+      return { label: b.ticker, data: ON.scatterPoints([b]), backgroundColor: ON.sectorMeta(b.sector).color, borderColor: "#fff", borderWidth: 2, pointRadius: 9, pointHoverRadius: 11, order: 1 };
+    });
+    var opts = ON.baseScatterOpts({ xLabel: "MD (años)", yLabel: "TIR (%)" });
+    opts.plugins.tooltip.callbacks.label = function (c) { var r = c.raw || {}; return (r.t || "") + "  MD " + (r.x != null ? r.x.toFixed(2) : "?") + "  TIR " + (r.y != null ? r.y.toFixed(2) : "?") + "%"; };
+    opts.plugins.legend = { display: false };
+    cmpCharts.push(new Chart(document.getElementById("cmp-scatter"), {
+      type: "scatter", data: { datasets: bgDatasets.concat(selDatasets) }, options: opts,
+      plugins: selBonds.length ? [cmpTickerLabels(selBonds)] : []
+    }));
+  }
+
+  /* ============================================================
+     TAB 3 — DASHBOARD + CUADRANTES
+  ============================================================ */
+  var DASH_QUADS = [
+    { id: "Q1", label: "Corto / Alto rinde", icon: "↗", emoji: "⚡", test: function (b, mMD, mT) { return b.md < mMD && b.tir >= mT; } },
+    { id: "Q2", label: "Largo / Alto rinde", icon: "↗", emoji: "🎯", test: function (b, mMD, mT) { return b.md >= mMD && b.tir >= mT; } },
+    { id: "Q3", label: "Corto / Bajo rinde", icon: "↙", emoji: "💤", test: function (b, mMD, mT) { return b.md < mMD && b.tir < mT; } },
+    { id: "Q4", label: "Largo / Bajo rinde", icon: "↙", emoji: "⚠️", test: function (b, mMD, mT) { return b.md >= mMD && b.tir < mT; } }
+  ];
+  function dashQuadColor(id) { var t = ON.chartTheme(); return ({ Q1: t.pos, Q2: t.accent, Q3: t.txt, Q4: t.neg })[id] || t.grid; }
+  function dashQuadCSS(id) { return ({ Q1: "var(--pos)", Q2: "var(--accent)", Q3: "var(--text-faint)", Q4: "var(--neg)" })[id] || "var(--panel-border)"; }
+  function dashAssignQuad(b, mMD, mT) { for (var i = 0; i < DASH_QUADS.length; i++) if (DASH_QUADS[i].test(b, mMD, mT)) return DASH_QUADS[i].id; return null; }
+
+  // dashBase = universo filtrado con MD/TIR válidos (para medianas/scatter/quad-kpis)
+  function dashBase() { return filteredList().filter(function (b) { return b.md != null && b.md > 0 && b.tir != null; }); }
+  // dashActive = dashBase filtrado por sector activo + cuadrante (para tablas movers/yield + KPIs strip)
+  function dashActive() {
+    return dashBase().filter(function (b) {
+      if (state.dash.activeSector && b.sector !== state.dash.activeSector) return false;
+      if (state.dash.quadrant && dashAssignQuad(b, state.dash.medMD, state.dash.medTIR) !== state.dash.quadrant) return false;
+      return true;
+    });
+  }
+
+  var dashQuadPlugin = {
+    id: "dash-quadrants",
+    afterDraw: function (ch) {
+      if (ch.canvas.id !== "dash-quad-canvas") return;
+      if (!state.dash.medMD || !state.dash.medTIR) return;
+      var ctx = ch.ctx, xS = ch.scales.x, yS = ch.scales.y;
+      var xMed = xS.getPixelForValue(state.dash.medMD), yMed = yS.getPixelForValue(state.dash.medTIR);
+      var left = ch.chartArea.left, right = ch.chartArea.right, top = ch.chartArea.top, bottom = ch.chartArea.bottom;
+      var t = ON.chartTheme();
+      ctx.save();
+      ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = t.accent; ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.moveTo(xMed, top); ctx.lineTo(xMed, bottom); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(left, yMed); ctx.lineTo(right, yMed); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.font = "bold 11px -apple-system, 'Segoe UI', sans-serif"; ctx.textBaseline = "top";
+      var labels = [
+        { id: "Q1", text: "Corto / Alto rinde", x: left + 8, y: top + 8, tx: "left" },
+        { id: "Q2", text: "Largo / Alto rinde", x: right - 8, y: top + 8, tx: "right" },
+        { id: "Q3", text: "Corto / Bajo rinde", x: left + 8, y: bottom - 20, tx: "left" },
+        { id: "Q4", text: "Largo / Bajo rinde", x: right - 8, y: bottom - 20, tx: "right" }
+      ];
+      labels.forEach(function (lb) {
+        var col = dashQuadColor(lb.id), isActive = state.dash.quadrant === lb.id;
+        ctx.textAlign = lb.tx;
+        var w = ctx.measureText(lb.text).width, pad = 6;
+        var bx = lb.tx === "left" ? lb.x - pad : lb.x - w - pad;
+        ctx.fillStyle = isActive ? col : t.grid; ctx.globalAlpha = isActive ? 0.22 : 0.12;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(bx, lb.y - 2, w + pad * 2, 17, 4); else ctx.rect(bx, lb.y - 2, w + pad * 2, 17);
+        ctx.fill(); ctx.globalAlpha = 1;
+        ctx.fillStyle = col; ctx.globalAlpha = isActive ? 1 : 0.65; ctx.fillText(lb.text, lb.x, lb.y); ctx.globalAlpha = 1;
+      });
+      ctx.restore();
+    }
+  };
+  if (window.Chart && !window._onQuadReg) { Chart.register(dashQuadPlugin); window._onQuadReg = true; }
+
+  function renderDash() {
+    destroyTab("dash");
+    var base = dashBase();
+    var medMD = ON.median(base.map(function (b) { return b.md; }));
+    var medTIR = ON.median(base.map(function (b) { return b.tir; }));
+    state.dash.medMD = medMD || 0; state.dash.medTIR = medTIR || 0;
+    document.getElementById("dash-med-md").textContent = ON.num(state.dash.medMD, 2) + "a";
+    document.getElementById("dash-med-tir").textContent = ON.pct(state.dash.medTIR);
+    document.getElementById("dash-scatter-count").textContent = base.length + " bonos con MD/TIR";
+    dashKpis(dashActive());
+    dashRenderQuadKpis(base);
+    dashRenderQBadge();
+    dashBuildScatter(base);
+    dashRenderBreakdown(dashBase());
+    dashRenderMovers();
+    dashRenderTopYield();
+  }
+
+  function dashKpis(list) {
+    var parts = ON.byLey(list), ar = parts.AR || [], ext = parts.EXT || [];
+    document.getElementById("dash-kv-n").textContent = list.length;
+    document.getElementById("dash-ks-n").textContent = "AR " + ar.length + " / EXT " + ext.length;
+    var tirAR = ar.map(function (b) { return b.tir; }).filter(function (v) { return v != null && v > 0; });
+    document.getElementById("dash-kv-tir-ar").textContent = ON.avg(tirAR) != null ? ON.pct(ON.avg(tirAR)) : "—";
+    document.getElementById("dash-ks-tir-ar").textContent = "mediana " + (tirAR.length ? ON.pct(ON.median(tirAR)) : "—");
+    var tirEXT = ext.map(function (b) { return b.tir; }).filter(function (v) { return v != null && v > 0; });
+    document.getElementById("dash-kv-tir-ext").textContent = ON.avg(tirEXT) != null ? ON.pct(ON.avg(tirEXT)) : "—";
+    document.getElementById("dash-ks-tir-ext").textContent = "mediana " + (tirEXT.length ? ON.pct(ON.median(tirEXT)) : "—");
+    var mds = list.map(function (b) { return b.md; }).filter(function (v) { return v != null && v > 0; });
+    document.getElementById("dash-kv-md").textContent = ON.avg(mds) != null ? ON.num(ON.avg(mds)) + "a" : "—";
+    document.getElementById("dash-ks-md").textContent = mds.length ? "rango " + ON.num(Math.min.apply(null, mds)) + "–" + ON.num(Math.max.apply(null, mds)) + "a" : "rango —";
+    var vols = list.map(function (b) { return b.volume || 0; });
+    document.getElementById("dash-kv-vol").textContent = ON.vol(ON.sum(vols));
+    document.getElementById("dash-ks-vol").textContent = vols.filter(function (v) { return v > 0; }).length + " con operaciones";
+    document.getElementById("dash-kv-sec").textContent = ON.bySector(list).size;
+    document.getElementById("dash-ks-sec").textContent = "de " + ON.SECTORS.length + " sectores";
+  }
+
+  function dashRenderQuadKpis(base) {
+    var row = document.getElementById("dash-quad-kpis");
+    row.innerHTML = "";
+    DASH_QUADS.forEach(function (q) {
+      var bonos = base.filter(function (b) { return dashAssignQuad(b, state.dash.medMD, state.dash.medTIR) === q.id; });
+      var tirs = bonos.map(function (b) { return b.tir; }), mds = bonos.map(function (b) { return b.md; });
+      var div = document.createElement("div");
+      div.className = "q-kpi" + (state.dash.quadrant === q.id ? " active" : "");
+      div.style.setProperty("--q-color", dashQuadCSS(q.id));
+      div.dataset.qid = q.id;
+      div.innerHTML = '<div class="q-label">' + q.icon + " " + q.label + '</div><div class="q-icon">' + q.emoji + '</div><div class="q-count">' + bonos.length + '</div>' +
+        '<div class="q-stats"><div class="q-stat"><span class="q-stat-v">' + ON.pct(ON.avg(tirs)) + '</span><span class="q-stat-l">TIR prom</span></div><div class="q-stat"><span class="q-stat-v">' + ON.num(ON.avg(mds), 2) + 'a</span><span class="q-stat-l">MD prom</span></div></div>';
+      row.appendChild(div);
+    });
+  }
+
+  function dashRenderQBadge() {
+    var el = document.getElementById("dash-q-badge");
+    if (!state.dash.quadrant) { el.innerHTML = ""; return; }
+    var qm = DASH_QUADS.filter(function (q) { return q.id === state.dash.quadrant; })[0];
+    if (!qm) { el.innerHTML = ""; return; }
+    el.innerHTML = '<span class="q-badge" style="--q-color:' + dashQuadCSS(state.dash.quadrant) + ';background:' + dashQuadCSS(state.dash.quadrant) + '">' + qm.label + '<span class="q-x" data-clearq="1" title="Quitar filtro">✕</span></span>';
+  }
+
+  function dashBuildScatter(base) {
+    var sectorMap = new Map();
+    base.forEach(function (b) {
+      var q = dashAssignQuad(b, state.dash.medMD, state.dash.medTIR), key = b.sector;
+      if (!sectorMap.has(key)) sectorMap.set(key, { label: ON.sectorMeta(key).short, color: ON.sectorColor(key), points: [] });
+      sectorMap.get(key).points.push({ x: b.md, y: b.tir, t: b.ticker, e: b.emisor, ley: b.ley, paridad: b.paridad, quad: q });
+    });
+    var datasets = [];
+    sectorMap.forEach(function (v) { datasets.push({ label: v.label, data: v.points, backgroundColor: v.color + "cc", borderColor: v.color, borderWidth: 1.2, pointRadius: 6, pointHoverRadius: 9 }); });
+    var opts = ON.baseScatterOpts({ xLabel: "Modified Duration (años)", yLabel: "TIR (%)" });
+    opts.plugins.tooltip.callbacks.label = function (c) {
+      var r = c.raw || {}, qm = DASH_QUADS.filter(function (q) { return q.id === r.quad; })[0];
+      return [r.t + " · " + (r.e || ""), "  MD " + (r.x != null ? r.x.toFixed(2) : "?") + "a  ·  TIR " + (r.y != null ? r.y.toFixed(2) : "?") + "%", "  Paridad " + ON.pct(r.paridad) + "  ·  " + (r.ley || ""), qm ? "  ► " + qm.label : ""];
+    };
+    opts.animation = { duration: 250 };
+    opts.onClick = function (evt, elements) {
+      if (!elements || !elements.length) return;
+      var el = elements[0], pt = dashScatterChart.data.datasets[el.datasetIndex].data[el.index];
+      if (pt && pt.quad) dashToggleQuadrant(pt.quad);
+    };
+    dashScatterChart = trackChart("dash", new Chart(document.getElementById("dash-quad-canvas"), { type: "scatter", data: { datasets: datasets }, options: opts }));
+  }
+  var dashScatterChart = null;
+
+  function dashRenderBreakdown(list) {
+    var container = document.getElementById("dash-breakdown");
+    var rows = [];
+    ON.bySector(list).forEach(function (bonds, key) {
+      rows.push({ key: key, meta: ON.sectorMeta(key), count: bonds.length, vol: ON.sum(bonds.map(function (b) { return b.volume || 0; })), tir: ON.avg(bonds.map(function (b) { return b.tir; }).filter(function (v) { return v != null && v > 0; })) });
+    });
+    var sortKey = state.dash.bkSort;
+    rows.sort(function (a, b) { var va = a[sortKey], vb = b[sortKey]; if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1; return vb - va; });
+    var maxVal = rows.reduce(function (m, r) { var v = r[sortKey]; return v != null && v > m ? v : m; }, 0);
+    container.innerHTML = "";
+    rows.forEach(function (r) {
+      var val = r[sortKey];
+      var barPct = (val != null && maxVal > 0) ? Math.max(2, (val / maxVal) * 100) : 0;
+      var label = sortKey === "count" ? r.count + " ONs" : sortKey === "vol" ? ON.vol(r.vol) : (r.tir != null ? ON.pct(r.tir) : "—");
+      var row = document.createElement("div");
+      row.className = "bk-row" + (state.dash.activeSector === r.key ? " active" : "");
+      row.dataset.sector = r.key;
+      row.innerHTML = '<div class="bk-name"><span class="bk-dot" style="background:' + r.meta.color + '"></span><span title="' + r.key + '">' + r.meta.short + '</span></div>' +
+        '<div style="flex:1;min-width:40px"><div class="bk-bar-wrap"><div class="bk-bar" style="width:' + barPct.toFixed(1) + '%;background:' + r.meta.color + '88"></div></div></div>' +
+        '<div class="bk-val">' + label + '</div><div class="bk-tir">' + (r.tir != null ? ON.pct(r.tir, 1) : "—") + '</div>';
+      container.appendChild(row);
+    });
+  }
+
+  function dashRankNum(i) { var cls = i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : ""; return '<span class="rank-num ' + cls + '">' + (i + 1) + '</span>'; }
+
+  function dashRenderMovers() {
+    var list = dashActive(), dir = state.dash.moversDir;
+    var sorted = list.slice().filter(function (b) { return b.change_pct != null; }).sort(function (a, b) { return dir === "pos" ? b.change_pct - a.change_pct : a.change_pct - b.change_pct; }).slice(0, 10);
+    var tbody = document.getElementById("dash-tbody-movers");
+    tbody.innerHTML = sorted.map(function (b, i) {
+      var meta = ON.sectorMeta(b.sector);
+      return '<tr><td style="text-align:center">' + dashRankNum(i) + '</td><td class="sector-dot"><span class="s-dot" style="background:' + meta.color + '" title="' + ON.esc(meta.short) + '"></span></td>' +
+        '<td class="tk" style="text-align:left">' + ON.esc(b.ticker) + '</td><td style="text-align:left;color:var(--text-dim);max-width:120px;overflow:hidden;text-overflow:ellipsis">' + ON.esc(b.emisor) + '</td>' +
+        '<td>' + (b.ley === "AR" ? '<span class="ley-badge ar">AR</span>' : '<span class="ley-badge ext">EXT</span>') + '</td><td class="tir num">' + ON.pct(b.tir) + '</td><td class="num">' + ON.pct(b.paridad) + '</td><td class="num ' + ON.sign(b.change_pct) + '">' + ON.pctSigned(b.change_pct) + '</td><td class="num dim">' + ON.vol(b.volume) + '</td></tr>';
+    }).join("") || '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-faint)">Sin datos.</td></tr>';
+  }
+
+  function dashRenderTopYield() {
+    var list = dashActive();
+    var sorted = list.slice().filter(function (b) { return b.tir != null && b.tir > 0; }).sort(function (a, b) { return b.tir - a.tir; }).slice(0, 10);
+    var tbody = document.getElementById("dash-tbody-yield");
+    tbody.innerHTML = sorted.map(function (b, i) {
+      var meta = ON.sectorMeta(b.sector);
+      return '<tr><td style="text-align:center">' + dashRankNum(i) + '</td><td class="sector-dot"><span class="s-dot" style="background:' + meta.color + '" title="' + ON.esc(meta.short) + '"></span></td>' +
+        '<td class="tk" style="text-align:left">' + ON.esc(b.ticker) + '</td><td style="text-align:left;color:var(--text-dim);max-width:120px;overflow:hidden;text-overflow:ellipsis">' + ON.esc(b.emisor) + '</td>' +
+        '<td>' + (b.ley === "AR" ? '<span class="ley-badge ar">AR</span>' : '<span class="ley-badge ext">EXT</span>') + '</td><td class="num dim">' + ON.date(b.vto) + '</td><td class="num">' + (b.md != null ? ON.num(b.md) + "a" : "—") + '</td><td class="tir num">' + ON.pct(b.tir) + '</td><td class="num">' + ON.pct(b.paridad, 1) + '</td></tr>';
+    }).join("") || '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-faint)">Sin datos.</td></tr>';
+  }
+
+  function dashToggleQuadrant(qid) { state.dash.quadrant = (state.dash.quadrant === qid) ? null : qid; renderDash(); }
+
+  /* ============================================================
+     WIRING
+  ============================================================ */
+  function wireSidebar() {
+    // colapsar/expandir el panel de facetas (gana ancho para la tabla); persistido
+    var sbToggle = document.getElementById("sidebar-toggle");
+    var shell = document.querySelector(".on-shell");
+    if (sbToggle && shell) {
+      try { if (localStorage.getItem("on_sidebar_collapsed") === "1") shell.classList.add("sidebar-collapsed"); } catch (e) {}
+      sbToggle.addEventListener("click", function () {
+        var collapsed = shell.classList.toggle("sidebar-collapsed");
+        try { localStorage.setItem("on_sidebar_collapsed", collapsed ? "1" : "0"); } catch (e) {}
+      });
+    }
+    document.querySelectorAll("input[name='ccy']").forEach(function (el) {
+      el.addEventListener("change", function () {
+        if (!this.checked) return;
+        state.ccy = this.value;
+        cardBgCache = {};
+        var keep = {}; ON.legs(state.ccy).forEach(function (b) { keep[b.ticker] = true; });
+        state.cards.selected = state.cards.selected.filter(function (tk) { return keep[tk]; });
+        refresh();
+      });
+    });
+    document.querySelectorAll("input[name='ley']").forEach(function (el) {
+      el.addEventListener("change", function () {
+        state.ley[this.value] = this.checked;
+        if (!Object.keys(state.ley).some(function (k) { return state.ley[k]; })) { state.ley[this.value] = true; this.checked = true; }
+        refresh();
+      });
+    });
+    document.querySelectorAll("input[name='tipo']").forEach(function (el) {
+      el.addEventListener("change", function () {
+        state.tipo[this.value] = this.checked;
+        if (!Object.keys(state.tipo).some(function (k) { return state.tipo[k]; })) { state.tipo[this.value] = true; this.checked = true; }
+        refresh();
+      });
+    });
+    document.getElementById("fct-sector").addEventListener("change", function (e) {
+      if (e.target && e.target.name === "sector") {
+        state.sectors[e.target.value] = e.target.checked;
+        if (!Object.keys(state.sectors).some(function (k) { return state.sectors[k]; })) { state.sectors[e.target.value] = true; e.target.checked = true; }
+        refresh();
+      }
+    });
+    document.querySelectorAll(".clr-link").forEach(function (el) { el.addEventListener("click", function () { clearFacet(this.dataset.clr); }); });
+    var timer = null;
+    function onRange() {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        function g(id) { var v = document.getElementById(id).value; return v !== "" ? v : null; }
+        state.vtoMin = g("vto-min") != null ? parseInt(g("vto-min"), 10) : null;
+        state.vtoMax = g("vto-max") != null ? parseInt(g("vto-max"), 10) : null;
+        state.tirMin = g("tir-min") != null ? parseFloat(g("tir-min")) : null;
+        state.tirMax = g("tir-max") != null ? parseFloat(g("tir-max")) : null;
+        state.parMin = g("par-min") != null ? parseFloat(g("par-min")) : null;
+        state.parMax = g("par-max") != null ? parseFloat(g("par-max")) : null;
+        refresh();
+      }, 250);
+    }
+    ["vto-min", "vto-max", "tir-min", "tir-max", "par-min", "par-max"].forEach(function (id) { document.getElementById(id).addEventListener("input", onRange); });
+    document.getElementById("reset-btn").addEventListener("click", function () {
+      state.ccy = "MEP"; state.ley = { AR: true, EXT: true }; state.tipo = { HD: true, DL: false };
+      ON.SECTORS.forEach(function (s) { state.sectors[s.key] = true; }); state.sectors["Otros"] = true;
+      state.vtoMin = state.vtoMax = state.tirMin = state.tirMax = state.parMin = state.parMax = null;
+      document.querySelectorAll("input[name='ccy']").forEach(function (el) { el.checked = el.value === "MEP"; });
+      document.querySelectorAll("input[name='ley']").forEach(function (el) { el.checked = true; });
+      document.querySelectorAll("input[name='tipo']").forEach(function (el) { el.checked = el.value === "HD"; });
+      document.querySelectorAll("input[name='sector']").forEach(function (el) { el.checked = true; });
+      ["vto-min", "vto-max", "tir-min", "tir-max", "par-min", "par-max"].forEach(function (id) { document.getElementById(id).value = ""; });
+      cardBgCache = {};
+      refresh();
+    });
+  }
+
+  function wireTabsAndControls() {
+    document.getElementById("subtab-bar").addEventListener("click", function (e) {
+      var btn = e.target.closest(".subtab"); if (btn) switchTab(btn.dataset.tab);
+    });
+
+    // tab 1: tarjetas por sector — orden + colapsar (persistido en localStorage)
+    try { state.sec.cardsCollapsed = localStorage.getItem("on_cards_collapsed") === "1"; } catch (e) {}
+    var cardsSection = document.getElementById("sec-cards-section");
+    function applyCardsCollapsed() { if (cardsSection) cardsSection.classList.toggle("collapsed", !!state.sec.cardsCollapsed); }
+    applyCardsCollapsed();
+    document.getElementById("sec-cards-toggle").addEventListener("click", function () {
+      state.sec.cardsCollapsed = !state.sec.cardsCollapsed;
+      try { localStorage.setItem("on_cards_collapsed", state.sec.cardsCollapsed ? "1" : "0"); } catch (e) {}
+      applyCardsCollapsed();
+      if (!state.sec.cardsCollapsed) secRenderCards();   // re-render al expandir
+    });
+    document.getElementById("sec-sort").addEventListener("change", function () { state.sec.sortCards = this.value; secRenderCards(); });
+
+    // tab 1: modal del gráfico TIR-vs-MD (se abre desde el botón "Ver gráfico" de la toolbar)
+    var uniBd = document.getElementById("uni-chart-backdrop");
+    document.getElementById("uni-chart-close").addEventListener("click", closeUniModal);
+    uniBd.addEventListener("click", function (e) { if (e.target === uniBd) closeUniModal(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && uniBd.classList.contains("open")) closeUniModal(); });
+
+    // tab 2: deck controls
+    var searchTimer;
+    document.getElementById("deck-search").addEventListener("input", function () {
+      clearTimeout(searchTimer); var v = this.value;
+      searchTimer = setTimeout(function () { state.cards.search = v; cardRenderDeck(); }, 160);
+    });
+    document.getElementById("deck-sort-key").addEventListener("change", function () { state.cards.sortKey = this.value; cardRenderDeck(); });
+    document.getElementById("deck-sort-dir").addEventListener("click", function () { state.cards.sortAsc = !state.cards.sortAsc; this.textContent = state.cards.sortAsc ? "↑" : "↓"; cardRenderDeck(); });
+    document.getElementById("deck-grid").addEventListener("click", function (e) {
+      var card = e.target.closest(".bond-card"); if (card) cardToggleSelect(card.dataset.tk);
+    });
+    document.getElementById("cmp-clr").addEventListener("click", function () {
+      state.cards.selected = [];
+      document.querySelectorAll("#deck-grid .bond-card.selected").forEach(function (c) { c.classList.remove("selected"); });
+      cmpRender();
+    });
+    document.getElementById("cmp-chips-area").addEventListener("click", function (e) {
+      var chip = e.target.closest("[data-rm]"); if (!chip) return;
+      cardToggleSelect(chip.dataset.rm);
+    });
+
+    // tab 3: dashboard controls
+    document.getElementById("dash-bk-tabs").addEventListener("click", function (e) {
+      var btn = e.target.closest("button"); if (!btn) return;
+      state.dash.bkSort = btn.dataset.bk;
+      this.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b === btn); });
+      dashRenderBreakdown(dashBase());
+    });
+    document.getElementById("dash-seg-dir").addEventListener("click", function (e) {
+      var btn = e.target.closest("button"); if (!btn) return;
+      state.dash.moversDir = btn.dataset.v;
+      this.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b === btn); });
+      dashRenderMovers();
+    });
+    document.getElementById("dash-quad-kpis").addEventListener("click", function (e) {
+      var box = e.target.closest(".q-kpi"); if (box) dashToggleQuadrant(box.dataset.qid);
+    });
+    document.getElementById("dash-breakdown").addEventListener("click", function (e) {
+      var row = e.target.closest(".bk-row"); if (!row) return;
+      state.dash.activeSector = (state.dash.activeSector === row.dataset.sector) ? null : row.dataset.sector;
+      document.getElementById("dash-bk-note").textContent = state.dash.activeSector ? ON.sectorMeta(state.dash.activeSector).short : "todos";
+      renderDash();
+    });
+    document.getElementById("dash-q-badge").addEventListener("click", function (e) {
+      if (e.target.closest("[data-clearq]")) { state.dash.quadrant = null; renderDash(); }
+    });
+  }
+
+  // theme change → rebuild active tab
+  window.addEventListener("on:themechange", function () {
+    cardBgCache = {};
+    renderKPIs(filteredList());
+    renderActiveTab();
+  });
+
+  /* ============================================================
+     INIT
+  ============================================================ */
+  buildSectorFacet();
+  wireSidebar();
+  wireTabsAndControls();
+  refresh();
+
+})();
+</script>
+</body>
+</html>

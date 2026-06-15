@@ -29,3 +29,39 @@ if _REPO_ROOT not in sys.path:
 # refresh/BEI correrían pricing con índices reales en background y contaminarían
 # los caches de módulo (avg TAMAR), rompiendo test_pricing_equivalence.
 os.environ.setdefault("MONITOR_DISABLE_LOOPS", "1")
+
+
+# --------------------------------------------------------------------------- #
+# Helpers compartidos (antes copiados por archivo — un fix de flakiness o de
+# teardown se aplica acá UNA vez y lo heredan todos los tests).
+# --------------------------------------------------------------------------- #
+
+import socket  # noqa: E402
+
+import pytest  # noqa: E402
+
+
+def listening_socket():
+    """Socket TCP escuchando en un puerto efímero de localhost. Para los guards
+    de server-vivo (ingest_master / restore_catalog): abierto = monitor 'corriendo';
+    cerrarlo deja un puerto que se sabe libre. El caller hace s.close()."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    s.listen(1)
+    return s
+
+
+@pytest.fixture
+def tmp_db(tmp_path):
+    """Aísla el engine SQLite a una DB temporal y lo restaura al salir.
+
+    `configure()` dispone el engine anterior → el archivo temp queda cerrado
+    antes del cleanup de tmp_path (sin locks en Windows). Imports adentro:
+    `settings`/`core` deben importarse DESPUÉS de los env MONITOR_* de arriba."""
+    from config.settings import settings
+    from core.infrastructure.db import engine as db_engine
+    db_engine.configure(tmp_path / "test.db")
+    try:
+        yield tmp_path
+    finally:
+        db_engine.configure(settings.catalog_db)

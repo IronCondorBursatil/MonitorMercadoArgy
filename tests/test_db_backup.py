@@ -73,6 +73,27 @@ def test_backup_rotation_keeps_n_most_recent(tmp_path):
     assert "2026-01-03" in names[0] and "2026-01-04" in names[1]
 
 
+def test_backup_tagged_is_unconditional(tmp_path):
+    """Con `tag` (red de seguridad pre-operación destructiva) el snapshot se crea
+    SIEMPRE, aunque el diario de hoy ya exista — un diario de la mañana no contiene
+    las altas ABM del día, así que el pre-reseed no puede delegar en él."""
+    db = tmp_path / "catalog.db"
+    _make_db(db, 4)
+    bdir = tmp_path / "backups"
+
+    daily = backup_db(db, bdir, now=datetime(2026, 1, 2, 9, 0, 0))
+    tagged = backup_db(db, bdir, now=datetime(2026, 1, 2, 18, 30, 0), tag="pre-reseed")
+
+    assert daily is not None and tagged is not None
+    assert "pre-reseed" in tagged.name and "T183000" in tagged.name
+    assert _count(tagged) == 4
+    # el 'T' ordena el tagged DESPUÉS del diario del mismo día (restore --latest)
+    assert list_backups(bdir)[-1] == tagged
+    # dos tagged el mismo día también conviven (timestamps distintos)
+    tagged2 = backup_db(db, bdir, now=datetime(2026, 1, 2, 18, 45, 0), tag="pre-reseed")
+    assert tagged2 is not None and tagged2 != tagged
+
+
 def test_restore_overwrites_live_db(tmp_path):
     db = tmp_path / "catalog.db"
     _make_db(db, 7)

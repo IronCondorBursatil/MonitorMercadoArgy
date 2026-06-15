@@ -1,7 +1,19 @@
 {# Filas del universo BYMA (scroll infinito): un lote de <tr> + un centinela que
    carga el lote siguiente al entrar en viewport. Lo usa tanto el shell (1er lote,
    embebido en el <tbody>) como el endpoint de append (page>0, reemplaza al
-   centinela vía outerHTML). El centinela lleva su propio q/cat/page → autocontenido. #}
+   centinela vía outerHTML). El centinela lleva su propio q/cat/page → autocontenido.
+
+   Las columnas y los filtros NO cambian. Lo único nuevo: cada ticker se pinta según
+   tenga precio (verde=LAST · azul=CLOSE/cierre previo · gris=sin precio) con el valor
+   en el tooltip (referencia), y la celda "Alta?" trae un ＋ para alta de 1 clic. #}
+{% macro ucell(cell, px) -%}
+  {%- if not cell -%}—{%- else -%}
+    {%- for t in cell.split(' · ') -%}
+      {%- set p = px.get(t) if px else none -%}
+      <span class="uni-tkc{% if p %} priced{% if p.src == 'CLOSE' %} close{% endif %}{% else %} noprice{% endif %}"{% if p %} title="{{ p.src }} {{ '%.2f'|format(p.px) }}"{% endif %}>{{ t }}</span>{% if not loop.last %} · {% endif %}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endmacro %}
 {% for r in rows %}
 <tr>
   <td class="uni-tk{% if r.has_ficha %} uni-tk--ficha{% endif %}"
@@ -10,13 +22,13 @@
   {% if show_leg %}<td class="uni-leg">{{ r.legislacion or "—" }}</td>{% endif %}
   <td class="uni-isin">{{ r.isin or "—" }}</td>
   <td class="uni-alta uni-alta--{{ 'yes' if r.loaded else 'no' }}" data-f="{{ 'Sí' if r.loaded else 'No' }}"
-      title="{{ '✓ dado de alta — se le calcula TIR/MD' if r.loaded else 'sin alta — agregalo para calcular TIR' }}">{{ '✓' if r.loaded else '—' }}</td>
-  <td class="uni-cell uni-sep" onclick="uniCopy(this)">{{ r.primary.pesos or "—" }}</td>
-  <td class="uni-cell" onclick="uniCopy(this)">{{ r.primary.mep or "—" }}</td>
-  <td class="uni-cell" onclick="uniCopy(this)">{{ r.primary.cable or "—" }}</td>
-  <td class="uni-cell uni-esp uni-sep" onclick="uniCopy(this)">{{ r.especial.pesos or "—" }}</td>
-  <td class="uni-cell uni-esp" onclick="uniCopy(this)">{{ r.especial.mep or "—" }}</td>
-  <td class="uni-cell uni-esp" onclick="uniCopy(this)">{{ r.especial.cable or "—" }}</td>
+      title="{{ '✓ dado de alta — se le calcula TIR/MD' if r.loaded else 'sin alta — clic en ＋ para cargarlo prefilleado' }}">{% if r.loaded %}✓{% else %}<button type="button" class="uni-plus" hx-get="/abm/form?prefill={{ r.key|urlencode }}" hx-target="#abm-editor" hx-swap="innerHTML" onclick="abmOpenDrawer()" title="dar de alta (cajón prefilleado)">＋</button>{% endif %}</td>
+  <td class="uni-cell uni-sep" onclick="uniCopy(this)">{{ ucell(r.primary.pesos, r.px) }}</td>
+  <td class="uni-cell" onclick="uniCopy(this)">{{ ucell(r.primary.mep, r.px) }}</td>
+  <td class="uni-cell" onclick="uniCopy(this)">{{ ucell(r.primary.cable, r.px) }}</td>
+  <td class="uni-cell uni-esp uni-sep" onclick="uniCopy(this)">{{ ucell(r.especial.pesos, r.px) }}</td>
+  <td class="uni-cell uni-esp" onclick="uniCopy(this)">{{ ucell(r.especial.mep, r.px) }}</td>
+  <td class="uni-cell uni-esp" onclick="uniCopy(this)">{{ ucell(r.especial.cable, r.px) }}</td>
   <td>{{ r.categoria or "—" }}</td>
   <td class="uni-faint">{{ r.security_type or "—" }}</td>
   <td class="uni-faint">{{ r.panel or "—" }}</td>

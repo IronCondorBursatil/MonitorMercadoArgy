@@ -54,37 +54,25 @@ def test_record_live_closes_from_snapshot(store):
     assert store.get_series("BAD") == {}
 
 
-def test_avg_volumes_window_and_average(store):
-    """avg_volumes promedia el monto operado dentro de la ventana; lo viejo no cuenta."""
-    from datetime import timedelta
-    today = date.today()
-    store.record_closes({"TLCPD": 110.0}, today - timedelta(days=1), volumes={"TLCPD": 1000.0})
-    store.record_closes({"TLCPD": 111.0}, today - timedelta(days=2), volumes={"TLCPD": 2000.0})
-    store.record_closes({"TLCPD": 50.0}, today - timedelta(days=200),
-                        volumes={"TLCPD": 999999.0})  # fuera de la ventana de 90d
-    avg = store.avg_volumes(["tlcpd"], days=90)        # case-insensitive
-    assert avg["TLCPD"] == pytest.approx(1500.0)        # (1000+2000)/2; el viejo excluido
-    assert store.avg_volumes(["NOPE"], days=90) == {}   # sin volumen → ausente
-
-
-def test_close_only_write_preserves_volume(store):
-    """Un write close-only (sin volumes) NO borra el volumen ya acumulado (COALESCE)."""
+def test_close_only_write_updates_close(store):
+    """Un write close-only (sin volumes) actualiza el close; COALESCE SQL lo preserva."""
     from datetime import timedelta
     d = date.today() - timedelta(days=1)
     store.record_closes({"AL30D": 63.0}, d, volumes={"AL30D": 5000.0})
-    store.record_closes({"AL30D": 64.0}, d)             # close-only → preserva volumen
-    assert store.avg_volumes(["AL30D"], days=90) == {"AL30D": pytest.approx(5000.0)}
-    assert store.get_series("AL30D") == {d: 64.0}       # el close sí se actualizó
+    store.record_closes({"AL30D": 64.0}, d)             # close-only → preserva volumen, actualiza close
+    assert store.get_series("AL30D") == {d: 64.0}
 
 
-def test_record_live_closes_captures_volume(store):
-    """record_live_closes toma `row.v` (monto operado) cuando es > 0."""
+def test_record_live_closes_writes_valid_rows(store):
+    """record_live_closes escribe closes para filas con precio > 0 (independiente del volumen)."""
     class _Row:
         def __init__(self, c, v=None):
             self.c, self.v = c, v
     snap = {"TLCPD": _Row(110.0, 1234.0), "NOVOL": _Row(50.0, None), "ZEROV": _Row(40.0, 0.0)}
     record_live_closes(snap, store, date.today())
-    assert store.avg_volumes(["TLCPD", "NOVOL", "ZEROV"], days=90) == {"TLCPD": pytest.approx(1234.0)}
+    assert store.get_series("TLCPD") == {date.today(): 110.0}
+    assert store.get_series("NOVOL") == {date.today(): 50.0}
+    assert store.get_series("ZEROV") == {date.today(): 40.0}
 
 
 def test_prime_from_data912_writes_covered_skips_empty(store):

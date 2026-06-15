@@ -1,17 +1,49 @@
-{% for i in instruments %}
-<div class="abm-item" data-hoja="{{ i.sheet }}" data-tk="{{ i.tickers|join(' ')|lower }} {{ i.sheet|lower }}">
-  <a class="abm-item-main" hx-get="/abm/form?sheet={{ i.sheet }}&key={{ i.key }}"
-     hx-target="#abm-editor" hx-swap="innerHTML" onclick="abmSelect(this)">
-    <span class="abm-item-tks">
-      {% for t in i.tickers %}<b class="{{ 'main' if loop.first else '' }}">{{ t }}</b>{% endfor %}
-    </span>
-    <span class="abm-badge">{{ i.sheet.replace('_',' ') }}</span>
-  </a>
-  <button class="delx" hx-delete="/abm/instrument/{{ i.key }}"
-          hx-target="#abm-list" hx-swap="innerHTML"
-          hx-confirm="¿Borrar {{ i.display }} del master?"
-          onclick="event.stopPropagation()" title="Baja">✕</button>
-</div>
-{% else %}
-<div class="abm-faint" style="padding:16px">Sin instrumentos</div>
-{% endfor %}
+{# Tabla de completitud (adaptativa por hoja): 1 fila por bono. Columnas = campos
+   relevantes de la hoja activa (coverage_columns); celdas vacías resaltadas
+   (rojo=requerido, ámbar=opcional) + Cashflows / Precio / % de completitud + Editar.
+   Con sheet='' (Todas) cae a un set universal (Hoja + Emisor). #}
+{% if error %}<div class="abm-err">⚠ No se guardó: {{ error }}</div>{% endif %}
+<table class="abm-t">
+  <thead>
+    <tr>
+      <th title="Salud de carga: verde=completo · ámbar=falta opcional · rojo=falta requerido">●</th>
+      <th>Ticker</th>
+      {% if cols %}
+        {% for c in cols %}<th title="{{ 'requerido' if c.required else 'opcional' }}">{{ c.label }}{% if c.required %} <b class="abm-rq">*</b>{% endif %}</th>{% endfor %}
+      {% else %}
+        <th>Hoja</th><th>Emisor</th>
+      {% endif %}
+      <th title="Cashflows materializados en la DB">CF</th>
+      <th title="Precio vivo (referencia, no entra en la completitud)">Precio</th>
+      <th>Compl.</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for it in instruments %}
+    <tr class="abm-row" data-tk="{{ it.tickers|join(' ')|lower }} {{ it.emisor|lower }}" data-emisor="{{ it.emisor|lower }}" data-health="{{ it.health }}">
+      <td><span class="abm-dot abm-dot--{{ it.health }}" title="{{ 'completo' if it.health=='g' else ('falta opcional' if it.health=='a' else 'falta requerido') }}"></span></td>
+      <td><span class="abm-tk">{{ it.key }}</span></td>
+      {% if cols %}
+        {% for c in cols %}
+          {% set v = it.vals.get(c.key) %}
+          {% if v not in (none, '') %}
+            <td><span title="{{ v }}">{{ v|string|truncate(18, true) }}</span></td>
+          {% else %}
+            <td><span class="abm-miss{{ '' if c.required else '-opt' }}">{{ 'falta' if c.required else '—' }}</span></td>
+          {% endif %}
+        {% endfor %}
+      {% else %}
+        <td class="abm-dim">{{ it.sheet.replace('_',' ') }}</td>
+        <td class="abm-dim" title="{{ it.emisor }}">{{ it.emisor|truncate(28, true) or '—' }}</td>
+      {% endif %}
+      <td>{% if it.cf %}<span class="abm-ok num">✓ {{ it.cf }}</span>{% else %}<span class="abm-miss">✗</span>{% endif %}</td>
+      <td>{% if it.price %}<span class="num">{{ '%.2f'|format(it.price) }}</span>{% else %}<span class="abm-miss-opt">sin px</span>{% endif %}</td>
+      <td><span class="abm-cbar"><span class="abm-bar"><i class="abm-fill--{{ it.health }}" style="width:{{ it.pct }}%"></i></span><span class="abm-cpct num">{{ it.pct }}%</span></span></td>
+      <td><button class="abm-edit" hx-get="/abm/form?sheet={{ it.sheet }}&key={{ it.key }}" hx-target="#abm-editor" hx-swap="innerHTML" onclick="abmOpenDrawer()">Editar</button></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="20" class="abm-empty">Sin instrumentos en esta hoja.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>

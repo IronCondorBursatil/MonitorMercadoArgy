@@ -108,14 +108,11 @@ def test_empty_active_source_backstops_to_data912():
     asyncio.run(run())
 
 
-def test_no_backstop_once_active_has_delivered():
-    """Si la fuente activa ya entregó datos, un ciclo vacío posterior NO dispara el
-    backstop: el stale-safe preserva el precio vivo, no lo piso con cierre previo."""
-    calls = {"n": 0}
-
+def test_floor_does_not_clobber_live_price_on_transient_empty():
+    """Floor Data912: un ciclo vacío transitorio de la activa NO pisa el precio vivo ya
+    entregado — el floor solo rellena símbolos que la activa NO cubre (AL30 ya es de BYMA)."""
     def handler(request):
         if "data912.com" in str(request.url):
-            calls["n"] += 1
             return httpx.Response(200, json=[{"symbol": "AL30", "c": 70.5}])
         return httpx.Response(200, json=[])
 
@@ -139,10 +136,40 @@ def test_no_backstop_once_active_has_delivered():
         hub = ProviderHub(c)
         try:
             hub.set_source(_Flaky())
-            await hub.refresh_all()         # BYMA 99.0
-            snap = await hub.refresh_all()  # vacío → stale-safe mantiene 99.0
-            assert snap["AL30"].c == 99.0   # NO se pisó con cierre previo
-            assert calls["n"] == 0          # backstop nunca se llamó
+            await hub.refresh_all()         # BYMA 99.0 → AL30 lo cubre la activa
+            snap = await hub.refresh_all()  # BYMA vacío → AL30 retiene 99.0 (no 70.5 del floor)
+            assert snap["AL30"].c == 99.0
+        finally:
+            await c.aclose()
+    asyncio.run(run())
+
+
+def test_floor_fills_symbols_active_does_not_list():
+    """BYMA lista solo AL30; Data912 (floor) trae AL30 y GD30 → el snapshot tiene ambos:
+    AL30 de BYMA (la activa manda) y GD30 del floor Data912 (lo que BYMA no lista)."""
+    def handler(request):
+        if "data912.com" in str(request.url):
+            return httpx.Response(200, json=[{"symbol": "AL30", "c": 70.5},
+                                             {"symbol": "GD30", "c": 55.0}])
+        return httpx.Response(200, json=[])
+
+    class _Partial:
+        mode = "byma_open"
+        label = "BYMA open"
+        delayed = True
+
+        async def fetch(self, client):
+            return ({"24": {"AL30": Data912Row(symbol="AL30", c=99.0)}, "CI": {}},
+                    {"AL30": "bonds"})
+
+    async def run():
+        c = ResilientClient(transport=httpx.MockTransport(handler))
+        hub = ProviderHub(c)
+        try:
+            hub.set_source(_Partial())
+            snap = await hub.refresh_all()
+            assert snap["AL30"].c == 99.0    # la activa (BYMA) manda donde lista
+            assert snap["GD30"].c == 55.0    # el floor Data912 rellena lo que BYMA no lista
         finally:
             await c.aclose()
     asyncio.run(run())

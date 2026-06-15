@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}O.N's · Obligaciones Negociables — Monitor Renta Fija AR{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="/static/css/on.css">
+  <script src="/static/vendor/chart.umd.min.js"></script>
+{% endblock %}
+{% block content %}
+<main style="display:block">
+<div class="shell on-shell">
+  <!-- ======== SIDEBAR (facetas) ======== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="facet-section">
+      <div class="facet-title">Moneda</div>
+      <div class="facet-opts" id="fct-ccy">
+        <label class="facet-row"><input type="radio" name="ccy" value="ARS"> <span class="f-label">ARS (pesos)</span></label>
+        <label class="facet-row"><input type="radio" name="ccy" value="MEP" checked> <span class="f-label">MEP (D)</span></label>
+        <label class="facet-row"><input type="radio" name="ccy" value="CABLE"> <span class="f-label">CABLE (C)</span></label>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Ley <span class="clr-link" data-clr="ley">limpiar</span></div>
+      <div class="facet-opts" id="fct-ley">
+        <label class="facet-row"><input type="checkbox" name="ley" value="AR" checked> <span class="f-label">Ley AR</span> <span class="f-count" id="cnt-ley-ar">—</span></label>
+        <label class="facet-row"><input type="checkbox" name="ley" value="EXT" checked> <span class="f-label">Ley EXT</span> <span class="f-count" id="cnt-ley-ext">—</span></label>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Tipo <span class="clr-link" data-clr="tipo">limpiar</span></div>
+      <div class="facet-opts" id="fct-tipo">
+        <label class="facet-row"><input type="checkbox" name="tipo" value="HD" checked> <span class="f-label">Hard Dollar</span> <span class="f-count" id="cnt-tipo-hd">—</span></label>
+        <label class="facet-row"><input type="checkbox" name="tipo" value="DL"> <span class="f-label">Dollar Linked</span> <span class="f-count" id="cnt-tipo-dl">—</span></label>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Sector <span class="clr-link" data-clr="sector">limpiar</span></div>
+      <div class="facet-opts" id="fct-sector"></div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Vencimiento (año) <span class="clr-link" data-clr="vto">limpiar</span></div>
+      <div class="range-row">
+        <div class="range-input-wrap"><label>Desde</label><input type="number" id="vto-min" placeholder="2026" step="1"></div>
+        <div class="range-input-wrap"><label>Hasta</label><input type="number" id="vto-max" placeholder="2035" step="1"></div>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">TIR (%) <span class="clr-link" data-clr="tir">limpiar</span></div>
+      <div class="range-row">
+        <div class="range-input-wrap"><label>Mínima</label><input type="number" id="tir-min" placeholder="0" step="0.5"></div>
+        <div class="range-input-wrap"><label>Máxima</label><input type="number" id="tir-max" placeholder="20" step="0.5"></div>
+      </div>
+    </div>
+    <div class="facet-section">
+      <div class="facet-title">Paridad (%) <span class="clr-link" data-clr="par">limpiar</span></div>
+      <div class="range-row">
+        <div class="range-input-wrap"><label>Mínima</label><input type="number" id="par-min" placeholder="80" step="1"></div>
+        <div class="range-input-wrap"><label>Máxima</label><input type="number" id="par-max" placeholder="120" step="1"></div>
+      </div>
+    </div>
+    <button class="reset-btn" id="reset-btn">↺ Resetear filtros</button>
+  </aside>
+
+  <!-- ======== MAIN TOP ======== -->
+  <div class="main-top">
+    <button id="sidebar-toggle" class="sidebar-toggle" title="Ocultar / mostrar el panel de filtros"><span class="sb-arrow">‹</span> Filtros</button>
+    <div class="chips-bar" id="chips-bar"><span class="chips-note" id="chips-note"></span></div>
+    <div class="subtab-bar" id="subtab-bar">
+      <button class="subtab on" data-tab="sectores">Sectores</button>
+      <button class="subtab" data-tab="cards">Cards + Comparador</button>
+      <button class="subtab" data-tab="dash">Dashboard</button>
+    </div>
+  </div>
+
+  <!-- ======== MAIN BODY ======== -->
+  <div class="main-body">
+
+    <!-- ===== TAB 1: SECTORES (tarjetas colapsables + herramienta unificada) ===== -->
+    <section id="tab-sectores" class="tab-pane">
+      <!-- Tarjetas por sector (colapsables) + herramienta unificada Sector›Emisor›Título
+           (reemplaza liga + heatmap). El gráfico TIR-vs-MD vive en un modal. -->
+      <div class="sec-cards-section" id="sec-cards-section">
+        <div class="sec-cards-bar">
+          <button class="sec-cards-toggle" id="sec-cards-toggle" title="Mostrar / ocultar tarjetas por sector">▼</button>
+          <span class="lbl">¿Qué rinde cada sector?</span>
+          <span style="flex:1"></span>
+          <label class="lbl" for="sec-sort">Ordenar</label>
+          <select id="sec-sort">
+            <option value="tir_desc">TIR prom ↓</option>
+            <option value="tir_asc">TIR prom ↑</option>
+            <option value="md_desc">MD prom ↓</option>
+            <option value="vol_desc">Vol total ↓</option>
+            <option value="count_desc">Cantidad ↓</option>
+            <option value="canonical" selected>Orden canónico</option>
+          </select>
+        </div>
+        <div class="sec-cards-grid" id="sec-cards"></div>
+      </div>
+      <div id="uni-tool" class="uni-panel"></div>
+    </section>
+
+    <!-- ===== TAB 2: CARDS + COMPARADOR ===== -->
+    <section id="tab-cards" class="tab-pane" hidden>
+      <div class="cards-cmp-layout">
+        <div class="cards-main">
+          <div class="card-deck-toolbar">
+            <input class="search-box" id="deck-search" type="search" placeholder="Buscar ticker / emisor…">
+            <select class="sort-sel" id="deck-sort-key">
+              <option value="tir">Orden: TIR</option>
+              <option value="md">Orden: MD</option>
+              <option value="volume">Orden: Vol</option>
+              <option value="dias">Orden: Días</option>
+              <option value="paridad">Orden: Paridad</option>
+              <option value="change_pct">Orden: %Día</option>
+              <option value="ticker">Orden: Ticker</option>
+            </select>
+            <button class="sort-dir" id="deck-sort-dir" title="Invertir orden">↓</button>
+            <span class="count-badge" id="deck-count"></span>
+          </div>
+          <div class="deck-grid" id="deck-grid"></div>
+        </div>
+
+        <aside class="cmp-sticky">
+          <div class="panel">
+            <div class="panel-head">
+              Comparador <span class="spacer"></span>
+              <span class="sel-count" id="cmp-count"><strong>0</strong> / 5</span>
+              <button class="btn-clr" id="cmp-clr" title="Limpiar selección">✕</button>
+            </div>
+            <div id="cmp-chips-area"></div>
+            <div class="cmp-table-wrap" id="cmp-table-area"></div>
+            <div id="cmp-charts-area"></div>
+          </div>
+          <p class="muted-note" style="padding:8px 2px 0">Clic en una card para sumarla a comparar (hasta 5). Clic en un chip para quitarla.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===== TAB 3: DASHBOARD + CUADRANTES ===== -->
+    <section id="tab-dash" class="tab-pane" hidden>
+      <div class="kpi-strip" id="dash-kpi-strip">
+        <div class="kpi"><div class="k-label"># ONs</div><div class="k-val" id="dash-kv-n">—</div><div class="k-sub" id="dash-ks-n">—</div></div>
+        <div class="kpi k-ar"><div class="k-label">TIR prom · AR</div><div class="k-val" id="dash-kv-tir-ar">—</div><div class="k-sub" id="dash-ks-tir-ar">mediana —</div></div>
+        <div class="kpi k-ext"><div class="k-label">TIR prom · EXT</div><div class="k-val" id="dash-kv-tir-ext">—</div><div class="k-sub" id="dash-ks-tir-ext">mediana —</div></div>
+        <div class="kpi k-md"><div class="k-label">MD prom</div><div class="k-val" id="dash-kv-md">—</div><div class="k-sub" id="dash-ks-md">rango —</div></div>
+        <div class="kpi k-vol"><div class="k-label">Vol total</div><div class="k-val" id="dash-kv-vol">—</div><div class="k-sub" id="dash-ks-vol">—</div></div>
+        <div class="kpi k-sec"><div class="k-label"># Sectores</div><div class="k-val" id="dash-kv-sec">—</div><div class="k-sub" id="dash-ks-sec">—</div></div>
+      </div>
+
+      <div class="kpi-row" id="dash-quad-kpis"></div>
+
+      <div class="dash-main-grid">
+        <div class="panel dash-scatter-panel">
+          <div class="panel-head">
+            SCATTER TIR vs MD · cuadrantes por medianas
+            <span class="spacer"></span>
+            <span id="dash-q-badge" style="margin-right:6px"></span>
+            <span id="dash-scatter-count" class="faint" style="font-weight:400;font-size:11px"></span>
+          </div>
+          <div class="dash-chart-wrap"><canvas id="dash-quad-canvas"></canvas></div>
+          <div class="median-legend">
+            <span><span class="line-v"></span> Mediana MD: <strong id="dash-med-md">—</strong></span>
+            <span><span class="line-h"></span> Mediana TIR: <strong id="dash-med-tir">—</strong></span>
+            <span class="faint" style="margin-left:auto">Clic en cuadrante (KPI o punto) → filtra las tablas</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">Breakdown por sector <span class="spacer"></span><span class="faint" style="font-size:10.5px;font-weight:400" id="dash-bk-note">todos</span></div>
+          <div class="bk-sort-tabs" id="dash-bk-tabs">
+            <button class="on" data-bk="count">Cant</button>
+            <button data-bk="vol">Vol</button>
+            <button data-bk="tir">TIR prom</button>
+          </div>
+          <div class="breakdown-list" id="dash-breakdown"></div>
+        </div>
+      </div>
+
+      <div class="dash-bottom-grid">
+        <div class="panel">
+          <div class="panel-head">Top movers por % día <span class="spacer"></span>
+            <div class="seg" id="dash-seg-dir"><button data-v="pos" class="on">Alza</button><button data-v="neg">Baja</button></div>
+          </div>
+          <div class="tbl-wrap">
+            <table class="on" id="dash-tbl-movers">
+              <thead><tr>
+                <th style="width:22px;text-align:center">#</th><th style="width:6px"></th>
+                <th style="text-align:left">Ticker</th><th style="text-align:left">Emisor</th>
+                <th>Ley</th><th class="tir">TIR</th><th>Paridad</th><th>%Día</th><th>Vol</th>
+              </tr></thead>
+              <tbody id="dash-tbody-movers"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">Top yield <span class="spacer"></span><span class="faint" style="font-size:10.5px;font-weight:400">mayor TIR válida</span></div>
+          <div class="tbl-wrap">
+            <table class="on" id="dash-tbl-yield">
+              <thead><tr>
+                <th style="width:22px;text-align:center">#</th><th style="width:6px"></th>
+                <th style="text-align:left">Ticker</th><th style="text-align:left">Emisor</th>
+                <th>Ley</th><th>Vto</th><th>MD</th><th class="tir">TIR</th><th>Par.</th>
+              </tr></thead>
+              <tbody id="dash-tbody-yield"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="muted-note" id="footer-note"></p>
+  </div>
+</div>
+
+<!-- modal del gráfico TIR vs MD · por sector (se abre desde la toolbar de la herramienta) -->
+<div class="uni-modal-backdrop" id="uni-chart-backdrop" aria-hidden="true">
+  <div class="uni-modal" role="dialog" aria-modal="true" aria-label="TIR vs MD por sector">
+    <div class="uni-modal-head">
+      <span class="uni-mtitle">TIR vs MD · por sector</span>
+      <span class="uni-msub" id="uni-chart-sub"></span>
+      <span class="spacer"></span>
+      <button class="uni-x" id="uni-chart-close" title="Cerrar (Esc)">✕</button>
+    </div>
+    <div class="uni-modal-body"><div class="uni-canvas-wrap"><canvas id="uni-chart"></canvas></div></div>
+    <div class="uni-modal-hint">Burbuja = sector · radio ∝ Nº bonos · click para resaltar en la tabla. <span id="uni-chart-selnote"></span></div>
+  </div>
+</div>
+</main>
+<script src="/static/js/on.js" defer></script>
+{% endblock %}

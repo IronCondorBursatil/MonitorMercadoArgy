@@ -87,6 +87,14 @@ class InstrumentORM(Base):
     )
 
 
+# Índices aditivos (forward-only): lookup por pata MEP/CABLE sin full-scan.
+# create_all los crea en DBs nuevas; _migrate_table_add_columns los agrega
+# a DBs existentes mediante CREATE INDEX IF NOT EXISTS en init_db.
+Index("ix_instr_mep", InstrumentORM.ticker_mep)
+Index("ix_instr_ccl", InstrumentORM.ticker_ccl)
+Index("ix_instr_isin", InstrumentORM.isin)
+
+
 class CashflowORM(Base):
     __tablename__ = "cashflows"
 

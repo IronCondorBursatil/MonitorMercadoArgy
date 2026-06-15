@@ -28,6 +28,7 @@ from apps.web.deps import get_fx, get_indices, get_provider, get_rofex, get_stat
 from config.settings import settings
 from core.holiday_engine import settlement_byma_date
 from core.domain.instrument_groups import PANEL_LIDER
+from core.domain.on_classification import sector_for, sector_meta
 from core.domain.portfolio import position_currency
 from core.domain.services import FinancialEngine
 from core.infrastructure.futures_provider import (
@@ -62,8 +63,15 @@ def _read_default_layout() -> str:
 # Se importan solo los nombres que usan los builders/rutas de este modulo.
 from apps.web.routers.panels_schema import (  # noqa: E402
     PANELS, PANEL_ORDER, CCY_FILTER_PANELS, SETTLE_FILTER_PANELS,
+    PRICE_REQUIRED_PANELS, LEY_FILTER_PANELS,
     _HL_COL_KEY, _BEI_TABLE_KEY, _VR_COLS, _PANEL_LIDER_COLS, _FUTUROS_COLS,
 )
+
+
+def _ley_of(inst) -> str:
+    """Ley aplicable de un instrumento para el filtro del panel ON: AR (Argentina)
+    / EXT (extranjera; sin dato → EXT, misma convención que el pricing MEP/CCL)."""
+    return "AR" if inst.is_ley_argentina else "EXT"
 
 
 def _ticker_ccy(ticker: str) -> str:
@@ -153,10 +161,11 @@ def _rv_map(state) -> dict:
 
 
 def _next_coupon_date(inst, today: date) -> Optional[date]:
-    for cf in sorted(inst.cashflows or [], key=lambda c: c.date):
-        if cf.date > today and cf.interest > 0:
-            return cf.date
-    return None
+    # El próximo cupón = la MÍNIMA fecha futura con interés; un solo pase O(n) sin
+    # ordenar (esto corre por fila, por panel, cada ciclo SSE — el sort era O(n·log n)
+    # descartado, los cashflows de un bono largo son 50+).
+    return min((cf.date for cf in (inst.cashflows or [])
+                if cf.date > today and cf.interest > 0), default=None)
 
 
 def _pct(v: Optional[float]) -> Optional[float]:
@@ -479,6 +488,8 @@ def _build_rows(panel_id: str, state, provider=None, cols_override=None,
         cols = cols_override
     today = date.today()
     ccy_filterable = panel_id in CCY_FILTER_PANELS
+    ley_filterable = panel_id in LEY_FILTER_PANELS
+    price_required = panel_id in PRICE_REQUIRED_PANELS
     # metrics_override: métricas ya calculadas (p.ej. plazo CI on-demand) — ya son de
     # los tipos del panel. Si no, se filtran las de AppState (plazo 24hs, default).
     if metrics_override is not None:
@@ -490,7 +501,14 @@ def _build_rows(panel_id: str, state, provider=None, cols_override=None,
     metrics.sort(key=lambda m: (m.duration is None, m.duration or 0.0))
     rows = []
     for m in metrics:
+        # Gate ANTES de _row_values: sin precio no hay fila, y armar el dict (con
+        # _next_coupon_date, que ordena los cashflows) sería trabajo descartado —
+        # en pre-market con board vacío son casi todas las patas ON, cada 5s.
+        if price_required and not m.snapshot.price:
+            continue
         vals = _row_values(m, today)
+        if panel_id == "obligaciones_negociables":
+            vals["sector"] = sector_meta(sector_for(m.snapshot.instrument)).short
         ccy = _ticker_ccy(vals["ticker"]) if ccy_filterable else None
         cells = []
         hl_key = _HL_COL_KEY.get(panel_id)
@@ -510,6 +528,8 @@ def _build_rows(panel_id: str, state, provider=None, cols_override=None,
         row = {"ticker": vals["ticker"], "cells": cells}
         if ccy is not None:
             row["ccy"] = ccy
+        if ley_filterable:
+            row["ley"] = _ley_of(m.snapshot.instrument)
         rows.append(row)
     return rows
 
@@ -518,6 +538,7 @@ def _build_rows(panel_id: str, state, provider=None, cols_override=None,
 def index(request: Request, state=Depends(get_state)):
     panels = [{"id": pid, "title": PANELS[pid][0], "columns": PANELS[pid][2],
                "ccy_filter": pid in CCY_FILTER_PANELS,
+               "ley_filter": pid in LEY_FILTER_PANELS,  # filtro Ley AR / EXT (ONs)
                "settle_filter": pid in SETTLE_FILTER_PANELS,  # selector CI / 24hs
                "hl_key": _HL_COL_KEY.get(pid),  # columna a resaltar (TIR; TNA en tasa fija)
                "chartable": bool(PANELS[pid][1]),  # tiene MD/TIR → muestra botón Gráfico
@@ -580,16 +601,21 @@ def panel_rows(panel_id: str, request: Request, settle: str = "24", state=Depend
 
 
 # --- Gráfico (popup): dispersión TIR×MD + curva log por grupo --------------- #
-def _chart_payload(panel_id: str, state, ccy_set: Optional[set]) -> List[dict]:
+def _chart_payload(panel_id: str, state, ccy_set: Optional[set],
+                   ley_set: Optional[set] = None) -> List[dict]:
     """[{label, color, points:[{x:MD,y:TIR%,t:ticker}], curve:[{x,y}]}] por grupo.
 
     BONARES separa Bonares (BONAR) vs Globales (GLOBAL) en dos colores; el resto
-    de los paneles de bonos van en una sola curva. Paneles sin MD/TIR → []."""
+    de los paneles de bonos van en una sola curva. Paneles sin MD/TIR → [].
+    `ley_set` ({AR,EXT}) espeja el filtro de ley del panel ON: el gráfico muestra
+    el mismo subconjunto que la tabla en pantalla."""
     if panel_id not in PANELS:
         return []
     title, types, _cols = PANELS[panel_id]
     if not types:  # valor_relativo / panel_lider / futuros / BEI: sin scatter MD/TIR
         return []
+    if panel_id not in LEY_FILTER_PANELS:
+        ley_set = None
     buckets: dict = {}
     for m in state.metrics():
         inst = m.snapshot.instrument if m.snapshot else None
@@ -598,6 +624,8 @@ def _chart_payload(panel_id: str, state, ccy_set: Optional[set]) -> List[dict]:
         if not m.duration or m.duration <= 0 or m.tir is None:
             continue
         if ccy_set is not None and _ticker_ccy(inst.ticker) not in ccy_set:
+            continue
+        if ley_set is not None and _ley_of(inst) not in ley_set:
             continue
         if panel_id == "bonares":
             label, color = ("Bonares", "#3a5fcf") if inst.instrument_type == "BONAR" \
@@ -640,9 +668,11 @@ def _chart_payload(panel_id: str, state, ccy_set: Optional[set]) -> List[dict]:
 
 
 @router.get("/panels/{panel_id}/chart", response_class=HTMLResponse)
-def panel_chart(panel_id: str, request: Request, ccy: str = "", state=Depends(get_state)):
+def panel_chart(panel_id: str, request: Request, ccy: str = "", ley: str = "",
+                state=Depends(get_state)):
     ccy_set = {c.strip().upper() for c in ccy.split(",") if c.strip()} or None
-    datasets = _chart_payload(panel_id, state, ccy_set)
+    ley_set = {s.strip().upper() for s in ley.split(",") if s.strip()} or None
+    datasets = _chart_payload(panel_id, state, ccy_set, ley_set)
     title = PANELS.get(panel_id, (panel_id,))[0]
     y_label = "TNA" if panel_id == "tasa_fija" else "TIR"
     return _TEMPLATES.TemplateResponse(
@@ -748,7 +778,8 @@ _SHARE_CHART_MULT_DEFAULT = 0.5
 
 
 @router.get("/panels/{panel_id}/share", response_class=HTMLResponse)
-def panel_share(panel_id: str, request: Request, ccy: str = "", state=Depends(get_state),
+def panel_share(panel_id: str, request: Request, ccy: str = "", ley: str = "",
+                state=Depends(get_state),
                 provider=Depends(get_provider), rofex=Depends(get_rofex),
                 fx=Depends(get_fx), indices=Depends(get_indices)):
     """Popup 'compartir' para WhatsApp: tabla + curva TIR×MD arriba (solo paneles
@@ -801,10 +832,18 @@ def panel_share(panel_id: str, request: Request, ccy: str = "", state=Depends(ge
     # Filtra la tabla a la(s) moneda(s) elegida(s) (las filas sin 'ccy' quedan siempre).
     if ccy_set is not None:
         rows = [r for r in rows if r.get("ccy") is None or r["ccy"] in ccy_set]
+    # Ley (panel ON): la foto espeja el filtro Ley AR/EXT activo en pantalla.
+    ley_set = {s.strip().upper() for s in ley.split(",") if s.strip()} or None
+    if panel_id not in LEY_FILTER_PANELS:
+        ley_set = None
+    if ley_set is not None:
+        rows = [r for r in rows if r.get("ley") is None or r["ley"] in ley_set]
+        ccy_label = (ccy_label + " · " if ccy_label else "") + \
+            "Ley " + "+".join(sorted(ley_set))
     # Descarta columnas 100% vacías para estas especies (ej. Categoría en Tasa Fija,
     # ventanas de rendimiento sin histórico) — nunca la 1ª (ticker).
     cols, rows = _drop_empty_share_cols(cols, rows)
-    datasets = _chart_payload(panel_id, state, ccy_set)
+    datasets = _chart_payload(panel_id, state, ccy_set, ley_set)
     y_label = "TNA" if panel_id == "tasa_fija" else "TIR"
     # Subtítulo de la foto: bajada del panel + fecha y liquidación (T+1 BYMA, ya arriba).
     resp = _TEMPLATES.TemplateResponse(

@@ -8,7 +8,10 @@
   <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
   <meta name="theme-color" content="#0f172a">
   <meta name="mobile-web-app-capable" content="yes">
-  <script src="https://unpkg.com/htmx.org@2.0.3" crossorigin="anonymous"></script>
+  {# htmx LOCAL (static/vendor, era unpkg 2.0.3): un CDN caído/lento bloqueaba el
+     parser en el <head> y el monitor quedaba EN BLANCO. Cero dependencia de
+     internet para servir la UI (los datos siguen viniendo de las fuentes). #}
+  <script src="/static/vendor/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/css/app.css">
   <script>
     // Aplicar tema guardado antes del primer paint (evita flash).
@@ -63,7 +66,7 @@
         <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
       </span>
       <nav>
-        <a href="/">Bonos</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
+        <a href="/">Bonos</a><a href="/on">O.N's</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
         <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/options">Opciones</a><a href="/catalogo">Catálogo</a><a href="/abm">ABM</a>
         {# CONFIG de paneles: elegir qué cuadros ver / restaurar los cerrados con X.
            El menú lo arma el JS del dashboard (index.html); en otras páginas el

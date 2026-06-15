@@ -89,8 +89,14 @@ enriquecido + AUM ArgentinaDatos + lente A3500/CER + flujos reales de `fci_histo
   `ingest_master.py` / `ingest_from_excel`, que preserva `sheet`+`raw_fields`). Las **ONs** siembran
   de `data/obligaciones_negociables.csv` vía `on_catalog.ingest()` (bootstrap **solo si la hoja está
   vacía** — no re-ingesta destructiva). La **ABM escribe SQLite directo** (SQLAlchemy transaccional,
-  §5.5 — ya NO toca el Excel) y es el editor de runtime; sus altas viven SOLO en la DB. `reload(reseed_from_excel=False)`
-  refresca el cache en memoria desde SQLite. Para cambiar datos ya en la DB: ABM o migración explícita, no re-seed.
+  §5.5 — ya NO toca el Excel) y es el editor de runtime; sus altas viven SOLO en la DB y se ven
+  EN CALIENTE (save → `reload()` del repo singleton → el ciclo siguiente del motor las precia;
+  sin reiniciar — test `test_abm_save_alta_visible_sin_reiniciar`). `reload()` refresca el cache
+  en memoria desde SQLite (NUNCA re-siembra; el camino destructivo vive solo en
+  `ingest_from_excel`/`ingest_master.py`). Para cambiar datos ya en la DB: ABM o migración
+  explícita, no re-seed. El re-seed (`ingest_master.py`) tiene guards anti-pérdida: aborta con el
+  server vivo, si borraría altas DB-only, o si el backup de seguridad pre-reseed falló
+  (`--force` para override consciente; el snapshot pre-op es incondicional, `backup_db(tag=...)`).
 - **Intérprete Python**: usar `py -3.12` / `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`. Ver memoria `env_python_interpreter`. (El viejo "Store Python" ya no existe; sus deps se reinstalaron acá.)
 - **OneDrive**: nada de venv ni `.db` dentro del proyecto.
 - **Schema del catálogo = FORWARD-ONLY**: `init_db` reconcilia con el ORM agregando
