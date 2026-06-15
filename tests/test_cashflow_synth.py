@@ -133,104 +133,48 @@ class TestZeroCoupon:
 # --------------------------------------------------------------------------- #
 
 class TestBulletCoupon:
-    def test_tx25_bullet_7_coupons_plus_amort_at_vto(self):
-        """TX25: BONCER bullet con cupón 1.80% semestral.
-        Emisión 2022-05-23, vto 2025-11-09, amort cantidad=1 anchor 2025-11-09."""
+    def test_bullet_regular_coupons_plus_amort_at_vto(self):
+        """El synth ahora hace SOLO bullet con cupón regular desde la emisión (los
+        amortizing / 1er cupón irregular van EXPLÍCITOS). BONCER 1.80% semestral,
+        emis 2022-05-23, vto 2025-11-09 → cupones regulares + amort 100 al vto."""
         row = {
             "tipo": "BONCER",
             "fecha_emision": date(2022, 5, 23),
             "fecha_vencimiento": date(2025, 11, 9),
             "cupon anual %": 1.80,
             "frecuencia pagos": 2,
-            "tipo amortizacion": "amortizing",
-            "amort inicio": date(2025, 11, 9),
-            "amort cantidad": 1,
-        }
-        cfs = synth_cashflows(row)
-        assert len(cfs) == 7, f"esperaba 7 cashflows, got {len(cfs)}"
-        # Última fila: amort=100, interest=0.9
-        last = cfs[-1]
-        assert last.date == date(2025, 11, 9)
-        assert last.amortization == 100.0
-        assert abs(last.interest - 0.9) < 0.001  # = 1.80% / 2 × 100
-
-
-# --------------------------------------------------------------------------- #
-# Amortizing con cupón (AL30D real)
-# --------------------------------------------------------------------------- #
-
-class TestAmortizingCoupon:
-    def test_al30d_structure(self):
-        """AL30D: BONAR amortizing en 13 cuotas semestrales desde 2024-07-09,
-        cupón step-up. Como el step-up actual es bajo, basta verificar la
-        estructura: 13 amorts totales + cupones intercalados."""
-        row = {
-            "tipo": "BONAR",
-            "fecha_emision": date(2020, 9, 4),
-            "fecha_vencimiento": date(2030, 7, 9),
-            "cupon anual %": 0.75,
-            "frecuencia pagos": 2,
-            "tipo amortizacion": "amortizing",
-            "amort inicio": date(2024, 7, 9),
-            "amort cantidad": 13,
-        }
-        cfs = synth_cashflows(row)
-        # Total amort debe ser 100 (capital factor = 1)
-        total_amort = sum(cf.amortization for cf in cfs)
-        assert abs(total_amort - 100.0) < 0.001
-        # Cantidad de cuotas con amort > 0 = 13
-        amort_count = sum(1 for cf in cfs if cf.amortization > 0)
-        assert amort_count == 13
-
-    def test_long_first_coupon_via_prox_cupon_anchor(self):
-        """Grilla de cupones desfasada de la emisión + 1er cupón LARGO. CS50 (Cresud L):
-        emis 10/12/2025, grilla 10/03 y 10/09, 1er cupón 10/09/2026 cubre 9 meses (274
-        días) → 7.25%×274/365 = 5.44. El campo `prox_cupon` ancla la grilla; sin él, el
-        synth anclaba a emisión (10/06, 10/12) → fechas/cupones equivocados."""
-        row = {
-            "tipo": "HARD DOLLAR",
-            "fecha_emision": date(2025, 12, 10),
-            "fecha_vencimiento": date(2029, 3, 10),
-            "cupon anual %": "7.25",
-            "frecuencia pagos": 2,
-            "base calculo": "ACT/365",
             "tipo amortizacion": "bullet",
-            "prox_cupon": date(2026, 9, 10),
         }
         cfs = synth_cashflows(row)
-        dates = [cf.date for cf in cfs]
-        assert dates == [date(2026, 9, 10), date(2027, 3, 10), date(2027, 9, 10),
-                         date(2028, 3, 10), date(2028, 9, 10), date(2029, 3, 10)]
-        # 1er cupón largo (emisión → 10/09/2026 = 274 días)
-        assert cfs[0].interest == pytest.approx(7.25 / 100 * 274 / 365 * 100, abs=0.01)  # 5.44
-        # cupones regulares (181/184 días) ≈ 3.60/3.65
-        assert cfs[1].interest == pytest.approx(3.60, abs=0.01)
-        assert cfs[-1].amortization == 100.0
-        assert cfs[-1].date == date(2029, 3, 10)  # vto
+        # bullet: solo el vto amortiza, Σ = 100
+        assert sum(cf.amortization for cf in cfs) == pytest.approx(100.0)
+        assert all(cf.amortization == 0.0 for cf in cfs[:-1])
+        last = cfs[-1]
+        assert last.date == date(2025, 11, 9) and last.amortization == 100.0
+        assert abs(last.interest - 0.9) < 0.01  # cupón regular 1.80%/2 × 100
 
-    def test_installments_round_to_cents_last_absorbs_remainder(self):
-        """Cuotas iguales se redondean a CENTAVOS; el remanente cae en la ÚLTIMA
-        cuota (convención del broker / Balanz). 100/3 → 33.33 / 33.33 / 33.34
-        (suma exacta 100), NO 33.3333 cada una. Esto hace que la TIR matchee
-        Balanz para amortizers con factor no-redondo (ej. CGC Clase 28, CP28)."""
+
+# --------------------------------------------------------------------------- #
+# Amortizing / 1er cupón irregular: el synth YA NO los hace — van EXPLÍCITOS
+# (cashflow cargado desde la imagen o la hoja Cashflows del Excel). Antes vivían
+# acá los tests de amort/prox_cupon; se retiraron al simplificar el synth a bullet.
+# --------------------------------------------------------------------------- #
+
+class TestAmortizingIsExplicitNow:
+    def test_amort_fields_are_ignored_synth_is_bullet(self):
+        """Aunque el row traiga campos de amort (legacy), el synth los IGNORA y produce
+        bullet — los amortizing reales se cargan explícitos, no por params."""
         row = {
-            "tipo": "DOLLAR LINKED",
-            "fecha_emision": date(2022, 9, 7),
-            "fecha_vencimiento": date(2026, 9, 7),
-            "cupon anual %": "0",            # cupón cero → solo amortiza
-            "frecuencia pagos": 4,
-            "base calculo": "ACT/365",
-            "tipo amortizacion": "amortizing",
-            "amort inicio": date(2026, 3, 7),
-            "amort cantidad": 3,
+            "tipo": "BONAR", "fecha_emision": date(2024, 1, 9),
+            "fecha_vencimiento": date(2030, 7, 9), "cupon anual %": 0.75,
+            "frecuencia pagos": 2, "tipo amortizacion": "amortizing",
+            "amort inicio": date(2024, 7, 9), "amort cantidad": 13,
         }
         cfs = synth_cashflows(row)
-        amorts = sorted(cf.amortization for cf in cfs if cf.amortization > 0)
-        assert amorts == pytest.approx([33.33, 33.33, 33.34], abs=1e-9)
-        assert sum(cf.amortization for cf in cfs) == pytest.approx(100.0, abs=1e-9)
-        # Cada cuota está redondeada a 2 decimales (sin colas de float)
-        for a in amorts:
-            assert round(a, 2) == a
+        assert sum(cf.amortization for cf in cfs) == pytest.approx(100.0)
+        # bullet: 1 sola fila amortiza (al vto), no 13
+        assert sum(1 for cf in cfs if cf.amortization > 0) == 1
+        assert cfs[-1].date == date(2030, 7, 9) and cfs[-1].amortization == 100.0
 
 
 # --------------------------------------------------------------------------- #

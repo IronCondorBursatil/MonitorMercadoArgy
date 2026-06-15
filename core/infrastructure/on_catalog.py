@@ -109,11 +109,8 @@ def build_instruments(csv_path: Path = CSV_PATH) -> List[Instrument]:
 def abm_raw_fields(r: Dict[str, str]) -> Dict[str, object]:
     """raw_fields con las keys del schema ABM de ONs, para que el form de edición
     prefilee los términos (el `Instrument` materializado solo no los reconstruye)."""
-    cuotas = int(r["cuotas_cap"])
     vto = parse_report_date(r["vto"])
-    prox = parse_report_date(r["prox_cap"]) if r.get("prox_cap") else vto
-    kfreq = _FREQ.get((r.get("frec_cap") or "").strip().upper(), 1)
-    amort = cuotas > 1
+    amort = int(r["cuotas_cap"]) > 1
     return {
         "short_name": r["emisor"].strip(),
         "tipo": ITYPE,
@@ -123,8 +120,6 @@ def abm_raw_fields(r: Dict[str, str]) -> Dict[str, object]:
         "frecuencia pagos": _FREQ[r["frec_cupon"].strip().upper()],
         "base calculo": (r.get("base") or "").strip() or DAY_COUNT,
         "tipo amortizacion": "amortizing" if amort else "bullet",
-        "amort inicio": prox.isoformat() if amort else "",
-        "amort cantidad": len(amort_schedule(prox, vto, kfreq, cuotas)) if amort else "",
         "serie_clase": (r.get("serie_clase") or "").strip(),
         "ley_aplicable": (r.get("ley") or "").strip(),
     }

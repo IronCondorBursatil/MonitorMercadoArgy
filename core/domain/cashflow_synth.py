@@ -159,11 +159,11 @@ def _synth_zero_coupon(_row: Mapping[str, Any], vto: date) -> List[Cashflow]:
 
 
 def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
-    """Bullet o amortizing con cupón. Soporta step-up via `cupon anual %`.
-
-    Convención AR: para amortizing, los cupones se anclan a `amort_inicio`
-    (no a `emision`) — AL29D paga cupones y amorts el mismo día (Jul-9 / Jan-9).
-    Day-count según `base calculo`: ACT/365, ACT/365.25, 30/360 o igual-período.
+    """Bullet con cupón REGULAR desde la emisión — la ÚNICA estructura que sintetiza el
+    ABM/loader. Amortizing / 1er cupón irregular / pagos irregulares → cashflow EXPLÍCITO
+    (no se sintetizan acá; se cargan desde la imagen o la hoja Cashflows del Excel).
+    Day-count según `base calculo`: ACT/365, ACT/365.25, 30/360 o igual-período. Step-up
+    via `cupon anual %` (tasa a asof).
     """
     coupon_rate = _parse_coupon_rate(
         # clock inyectable (F1): el asof del step-up congelable vía MONITOR_AS_OF —
@@ -188,36 +188,12 @@ def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
     # (ONs vía on_cashflows.build_on_cashflows con `vr`; CER en la hoja Cashflows del Excel).
     nominal_initial = 100.0
 
-    amort_inicio = _get_date(row, ("amort_inicio", "amort inicio"))
-    amort_count = _safe_int(row.get("amort cantidad"), default=0)
-    is_amortizing = (
-        "amortizing" in str(row.get("tipo amortizacion", "")).lower()
-        and amort_inicio is not None
-        and amort_count > 0
-    )
-
-    # `prox_cupon` (próximo/1er cupón): ancla la grilla cuando está DESFASADA de la
-    # emisión y/o hay 1er cupón largo/corto (ej. CS50: emis 10/12 pero cupones 10/03 y
-    # 10/09, 1er pago 10/09/2026 cubre 9m). El 1er cupón acumula desde la emisión.
-    prox_cupon = _get_date(row, ("prox_cupon", "proximo cupon", "próximo cupón",
-                                 "primer_cupon", "primer cupon"))
-
+    # Grilla de cupones REGULAR desde la emisión (1er cupón irregular → explícito).
     coupon_dates: List[date] = []
-    if prox_cupon and prox_cupon > emision:
-        cd = prox_cupon
-        while cd <= vto:
-            coupon_dates.append(cd)
-            cd = cd + relativedelta(months=months_between)
-    else:
-        anchor = amort_inicio if is_amortizing else emision
-        cd = anchor
-        while cd > emision:
-            cd = cd - relativedelta(months=months_between)
+    cd = emision + relativedelta(months=months_between)
+    while cd <= vto:
+        coupon_dates.append(cd)
         cd = cd + relativedelta(months=months_between)
-        while cd <= vto:
-            if cd > emision:
-                coupon_dates.append(cd)
-            cd = cd + relativedelta(months=months_between)
 
     # "Long last coupon": vto cae DESPUÉS del último cupón regular (ej. vto=31/08
     # pero el schedule va 14/02 → 14/08). El último cupón se calcula hasta 14/08
@@ -228,27 +204,7 @@ def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
     if not long_last_coupon and (not coupon_dates or coupon_dates[-1] != vto):
         coupon_dates.append(vto)
 
-    amort_map: Dict[date, float] = {}
-    if is_amortizing:
-        # Convención del broker: cuotas redondeadas a CENTAVOS, con el remanente
-        # de redondeo en la ÚLTIMA cuota (así Σ = nominal exacto). Para factores
-        # no-redondos (100/3 → 33.33/33.33/33.34, 100/13 → 7.69×12 + 7.72) esto
-        # matchea el cashflow de Balanz; para factores redondos (100/4=25) es no-op.
-        per_installment = round(nominal_initial / amort_count, 2)
-        ad = amort_inicio
-        remaining = nominal_initial
-        placed = 0
-        while placed < amort_count and ad <= vto and remaining > 1e-9:
-            is_last = placed == amort_count - 1
-            amount = round(remaining, 2) if is_last else min(per_installment, remaining)
-            amort_map[ad] = amort_map.get(ad, 0.0) + amount
-            remaining = round(remaining - amount, 6)
-            placed += 1
-            ad = ad + relativedelta(months=months_between)
-        if remaining > 1e-9:
-            amort_map[vto] = round(amort_map.get(vto, 0.0) + remaining, 2)
-    else:
-        amort_map[vto] = nominal_initial
+    amort_map: Dict[date, float] = {vto: nominal_initial}   # bullet: amortiza todo al vto
 
     def _interest(outstanding: float, prev_d: date, curr_d: date) -> float:
         if "ACT/365.25" in base:

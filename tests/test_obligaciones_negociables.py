@@ -119,8 +119,8 @@ def test_abm_raw_fields_prefill_keys():
     r = next(x for x in load_rows() if x["ticker_o"] == "PNDCO")  # amortizer, VR 40
     f = abm_raw_fields(r)
     assert f["short_name"] and f["tipo"] == "HARD DOLLAR" and f["base calculo"] == "ACT/365"
-    assert f["tipo amortizacion"] == "amortizing"
-    assert f["amort inicio"]
-    # 'capital factor' se retiró del schema/prefill: el VR se hornea en el cashflow explícito
-    # (build_on_cashflows usa `vr` directo); el form ya no expone ese campo.
-    assert "capital factor" not in f
+    assert f["tipo amortizacion"] == "amortizing"   # label (display/filtro), no driver del synth
+    # Los campos que sintetizaban estructura irregular/amortizing se retiraron del schema:
+    # el cashflow va EXPLÍCITO (build_on_cashflows usa vr/prox/cuotas del CSV directo).
+    for k in ("capital factor", "amort inicio", "amort cantidad", "prox_cupon"):
+        assert k not in f
