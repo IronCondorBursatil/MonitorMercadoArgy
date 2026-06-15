@@ -125,7 +125,6 @@ def abm_raw_fields(r: Dict[str, str]) -> Dict[str, object]:
         "tipo amortizacion": "amortizing" if amort else "bullet",
         "amort inicio": prox.isoformat() if amort else "",
         "amort cantidad": len(amort_schedule(prox, vto, kfreq, cuotas)) if amort else "",
-        "capital factor": float(r["vr"]) / 100.0,
         "serie_clase": (r.get("serie_clase") or "").strip(),
         "ley_aplicable": (r.get("ley") or "").strip(),
     }

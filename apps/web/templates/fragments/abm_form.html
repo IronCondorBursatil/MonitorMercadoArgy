@@ -9,7 +9,7 @@
       {% if f.type == "select" %}
         <select name="{{ f.key }}">
           {% for o in f.options %}
-          <option value="{{ o }}" {{ 'selected' if values.get(f.key)|string == o|string else '' }}>{{ o or '—' }}</option>
+          <option value="{{ o }}" {{ 'selected' if values.get(f.key)|string == o|string else '' }}>{% if f.opt_labels %}{{ f.opt_labels.get(o, o) }}{% else %}{{ o or '—' }}{% endif %}</option>
           {% endfor %}
         </select>
       {% else %}

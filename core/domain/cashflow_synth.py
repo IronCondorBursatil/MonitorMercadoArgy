@@ -183,10 +183,10 @@ def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
 
     base = str(row.get("base calculo", row.get("base_calculo", "")) or "").strip().upper()
 
-    capital_factor = _safe_float(row.get("capital factor"), default=1.0)
-    if capital_factor <= 0:
-        capital_factor = 1.0
-    nominal_initial = 100.0 * capital_factor
+    # Nominal base 100. Los bonos con face residual != 100 (ONs amortizadas) o capitalizado
+    # (CER reestructurados CUAP/DICP/DIP0) ya NO se sintetizan: tienen cashflow EXPLÍCITO
+    # (ONs vía on_cashflows.build_on_cashflows con `vr`; CER en la hoja Cashflows del Excel).
+    nominal_initial = 100.0
 
     amort_inicio = _get_date(row, ("amort_inicio", "amort inicio"))
     amort_count = _safe_int(row.get("amort cantidad"), default=0)

@@ -119,5 +119,8 @@ def test_abm_raw_fields_prefill_keys():
     r = next(x for x in load_rows() if x["ticker_o"] == "PNDCO")  # amortizer, VR 40
     f = abm_raw_fields(r)
     assert f["short_name"] and f["tipo"] == "HARD DOLLAR" and f["base calculo"] == "ACT/365"
-    assert f["tipo amortizacion"] == "amortizing" and round(f["capital factor"], 4) == 0.40
+    assert f["tipo amortizacion"] == "amortizing"
     assert f["amort inicio"]
+    # 'capital factor' se retiró del schema/prefill: el VR se hornea en el cashflow explícito
+    # (build_on_cashflows usa `vr` directo); el form ya no expone ese campo.
+    assert "capital factor" not in f

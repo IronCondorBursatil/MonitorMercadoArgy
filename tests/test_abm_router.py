@@ -14,6 +14,18 @@ def test_abm_page_renders():
         assert "ABM" in r.text and "INSTRUMENTOS" in r.text
 
 
+def test_abm_category_chips_show_loaded_counts():
+    """Cada chip de categoría lleva entre () el nº de títulos cargados de esa hoja;
+    'Todas' muestra el total."""
+    import re
+    with TestClient(app) as c:
+        html = c.get("/abm").text
+    assert re.search(r">Todas \(\d+\)<", html), "falta el conteo en el chip Todas"
+    chips = re.findall(r'class="abm-chip[^"]*"[^>]*>([^<]+)</span>', html)
+    assert chips, "no se renderizaron chips de categoría"
+    assert all(re.search(r"\(\d+\)\s*$", c.strip()) for c in chips), chips
+
+
 def test_abm_form_for_sheet():
     with TestClient(app) as c:
         r = c.get("/abm/form?sheet=CER")

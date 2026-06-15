@@ -28,7 +28,11 @@
         {% for c in cols %}
           {% set v = it.vals.get(c.key) %}
           {% if v not in (none, '') %}
-            <td><span title="{{ v }}">{{ v|string|truncate(18, true) }}</span></td>
+            {% if c.key == 'sector_override' and it.sector_auto %}
+              <td><span class="abm-auto" title="auto · clasificado por el emisor (editá para fijarlo a mano)">{{ v|string|truncate(18, true) }}</span></td>
+            {% else %}
+              <td><span title="{{ v }}">{{ v|string|truncate(18, true) }}</span></td>
+            {% endif %}
           {% else %}
             <td><span class="abm-miss{{ '' if c.required else '-opt' }}">{{ 'falta' if c.required else '—' }}</span></td>
           {% endif %}

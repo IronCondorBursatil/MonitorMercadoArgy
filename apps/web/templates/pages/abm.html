@@ -19,8 +19,8 @@
         {% for s in sheets %}<option value="{{ s }}">{{ s.replace('_',' ') }}</option>{% endfor %}
       </select>
       <div class="abm-chips" id="abm-chips">
-        <span class="abm-chip" data-sheet="" hx-get="/abm/list?sheet=" hx-target="#abm-list" hx-swap="innerHTML" onclick="abmChip(this)">Todas</span>
-        {% for s in sheets %}<span class="abm-chip{{ ' on' if s == sheet else '' }}" data-sheet="{{ s }}" hx-get="/abm/list?sheet={{ s }}" hx-target="#abm-list" hx-swap="innerHTML" onclick="abmChip(this)">{{ s.replace('_',' ') }}</span>{% endfor %}
+        <span class="abm-chip" data-sheet="" hx-get="/abm/list?sheet=" hx-target="#abm-list" hx-swap="innerHTML" onclick="abmChip(this)">Todas ({{ loaded_total }})</span>
+        {% for s in sheets %}<span class="abm-chip{{ ' on' if s == sheet else '' }}" data-sheet="{{ s }}" hx-get="/abm/list?sheet={{ s }}" hx-target="#abm-list" hx-swap="innerHTML" onclick="abmChip(this)">{{ s.replace('_',' ') }} ({{ sheet_counts.get(s, 0) }})</span>{% endfor %}
       </div>
     </div>
     <div class="abm-listwrap"><div id="abm-list">{% include "fragments/abm_list.html" %}</div></div>
@@ -98,6 +98,8 @@
   .abm-miss { background:rgba(168,36,43,.13); color:var(--neg); border-radius:4px; font-weight:700; padding:0 5px; font-size:11px; }
   .abm-miss-opt { background:rgba(192,122,26,.15); color:#b07d1f; border-radius:4px; padding:0 5px; font-size:11px; }
   [data-theme="dark"] .abm-miss-opt { color:#e6a94f; }
+  /* sector auto-clasificado por emisor (no fijado a mano): se muestra atenuado/itálico */
+  .abm-auto { color:var(--text-dim); font-style:italic; cursor:help; }
   .abm-ok { color:var(--pos); font-weight:700; }
   .abm-cbar { display:inline-flex; align-items:center; gap:6px; }
   .abm-bar { width:58px; height:6px; border-radius:4px; background:var(--panel-border); overflow:hidden; }

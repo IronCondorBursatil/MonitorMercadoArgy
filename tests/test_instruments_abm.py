@@ -387,3 +387,47 @@ class TestLookupPerformance:
         # anti-regresión del %: el dato de cashflows sigue presente
         assert all("pct" in r and "cf" in r for r in rows)
         assert any(r["cf"] > 0 for r in rows)
+
+
+class TestSectorCategory:
+    """La columna Categoría (sector) del ABM muestra el sector EFECTIVO de cada ON con
+    la MISMA etiqueta corta que el monitor de ON (Energía / Serv. Financieros / …):
+    override manual si está, si no derivado del emisor (no '—')."""
+
+    _BASE = {
+        "tipo": "HARD DOLLAR", "ley_aplicable": "Argentina",
+        "fecha_emision": "2025-01-15", "fecha_vencimiento": "2027-01-15",
+        "cupon anual %": "8", "frecuencia pagos": "2",
+        "base calculo": "ACT/365", "tipo amortizacion": "bullet",
+    }
+
+    def test_derived_sector_shows_monitor_short_label(self, abm_db):
+        save_instrument("Obligaciones_Negociables",
+                        {**self._BASE, "ticker_ars": "ZZSEC0", "short_name": "YPF SA"})
+        r = {x["key"]: x for x in
+             list_instruments_coverage(sheet="Obligaciones_Negociables")}["ZZSEC0"]
+        assert r["sector_auto"] is True
+        # derivado del emisor (key "Energía / Petróleo & Gas") → etiqueta del monitor
+        assert r["vals"]["sector_override"] == "Energía"
+
+    def test_manual_override_shown_with_short_label(self, abm_db):
+        save_instrument("Obligaciones_Negociables",
+                        {**self._BASE, "ticker_ars": "ZZSEC1", "short_name": "Frobnicate SA",
+                         "sector_override": "Servicios Financieros"})
+        r = {x["key"]: x for x in
+             list_instruments_coverage(sheet="Obligaciones_Negociables")}["ZZSEC1"]
+        assert r["sector_auto"] is False
+        # value guardado = key canónica; se muestra con la etiqueta corta del monitor
+        assert r["vals"]["sector_override"] == "Serv. Financieros"
+
+    def test_form_select_uses_monitor_labels_with_key_values(self, abm_db):
+        """El <select> de Categoría ofrece las etiquetas del monitor como texto, pero el
+        value es la key canónica (lo que matchea sector_for)."""
+        from fastapi.testclient import TestClient
+        from apps.web.app import app
+        with TestClient(app) as c:
+            html = c.get("/abm/form?sheet=Obligaciones_Negociables").text
+        assert 'value="Servicios Financieros"' in html      # value = key canónica
+        assert '>Serv. Financieros<' in html                # texto = etiqueta del monitor
+        # el & de la key se escapa en el atributo (autoescape); el texto es la etiqueta corta
+        assert '>Energía<' in html and 'value="Energía / Petróleo &amp; Gas"' in html

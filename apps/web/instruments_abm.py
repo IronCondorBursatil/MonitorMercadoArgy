@@ -22,7 +22,7 @@ from sqlalchemy import or_, select
 
 from core.domain.currency import ccy_from_suffix
 from core.domain.models import Cashflow
-from core.domain.on_classification import SECTORS as _ON_SECTORS
+from core.domain.on_classification import SECTORS as _ON_SECTORS, SECTOR_MAP, classify_sector
 from core.infrastructure.db.catalog_repository import init_db, instrument_to_orm
 from core.infrastructure.db.engine import SessionLocal
 from core.infrastructure.db.models import CashflowORM, InstrumentORM
@@ -144,7 +144,10 @@ def _normalize_fields(fields: Dict[str, Any]) -> Dict[str, Any]:
 _BASE_CALCULO_OPTIONS = ["", "ACT/365.25", "ACT/365", "30/360", "ACT/ACT"]
 _TIPO_AMORT_OPTIONS  = ["", "bullet", "amortizing"]
 # Categoría/sector para ordenar una ON a mano (override del match por emisor). "" = auto.
+# El value es la key canónica (lo que matchea sector_for); la etiqueta visible es la
+# MISMA etiqueta corta que usa el monitor de ON (Real Estate / Energía / Serv. Financieros…).
 _CATEGORIA_OPTIONS = [""] + [s.key for s in _ON_SECTORS]
+_CATEGORIA_LABELS = {"": "—", **{s.key: s.short for s in _ON_SECTORS}}
 
 SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
     "Soberanos": {
@@ -177,8 +180,6 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
              "help": "Primera fecha de amortización (solo amortizing)"},
             {"key": "amort cantidad",  "label": "Cant. cuotas amort.",  "type": "number", "step": "1",
              "help": "Ej. 13 cuotas semestrales → 1 cashflow por cuota"},
-            {"key": "capital factor",  "label": "Capital factor",       "type": "number", "step": "0.0001",
-             "help": "Solo bonos reestructurados (DICP/CUAP). Dejar vacío para el resto"},
         ],
     },
     "Tasa_Fija": {
@@ -235,8 +236,6 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
             {"key": "amort inicio",    "label": "Amort inicio",         "type": "date",
              "help": "Solo amortizing"},
             {"key": "amort cantidad",  "label": "Cant. cuotas amort.",  "type": "number", "step": "1"},
-            {"key": "capital factor",  "label": "Capital factor",       "type": "number", "step": "0.0001",
-             "help": "Capitalización inicial, ej. 1.27 para DICP"},
             {"key": "cer emision",     "label": "CER base (10h pre-emisión)", "type": "number",
              "step": "0.000001", "help": "Crítico: CER 10 días hábiles antes de emisión"},
             {"key": "categoria",       "label": "Categoría",            "type": "text",
@@ -299,7 +298,7 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
             {"key": "serie_clase",      "label": "Serie / Clase",         "type": "text",
              "help": "Etiqueta del informe IAMC/BYMA, ej. 'Clase XXXI' / 'Serie 13 Clase A'"},
             {"key": "sector_override",  "label": "Categoría (sector)",    "type": "select",
-             "options": _CATEGORIA_OPTIONS,
+             "options": _CATEGORIA_OPTIONS, "opt_labels": _CATEGORIA_LABELS,
              "help": "Sector donde se ordena la ON. Vacío = se deduce del emisor"},
             {"key": "ley_aplicable",    "label": "Ley Aplicable",         "type": "select",
              "options": ["", "Argentina", "Extranjera"],
@@ -323,8 +322,6 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
              "help": "Solo amortizing"},
             {"key": "amort cantidad",   "label": "Cuotas capital remanentes", "type": "number", "step": "1",
              "help": "Solo amortizing"},
-            {"key": "capital factor",   "label": "Capital factor (VR/100)", "type": "number", "step": "0.0001",
-             "help": "VR < 100 → ej. 0.40 si el valor residual es 40"},
             # Denominación (referencia BYMA; display-only, no entra al pricing)
             {"key": "denom_base",       "label": "Denominación base",     "type": "number", "step": "0.01",
              "help": "Denominación mínima (BYMA), ej. 1.00"},
@@ -461,9 +458,21 @@ def list_instruments_coverage(price_of=None, sheet: Optional[str] = None) -> Lis
         filled = 0
         miss_req: List[str] = []
         miss_opt: List[str] = []
+        sector_auto = False
         for c in cols:
             k = c["key"]
             v = (o.isin or raw.get("isin")) if k == "isin" else raw.get(k)
+            # La Categoría (sector) de una ON se autocompleta del emisor cuando no hay
+            # override manual → la columna muestra el sector efectivo de CADA ON (no "—").
+            # Se muestra con la MISMA etiqueta corta que el monitor de ON (key→short);
+            # un override legacy fuera del catálogo se deja tal cual. Auto = derivado.
+            if k == "sector_override":
+                key = v if (v and str(v).strip()) else None
+                if not key:
+                    key = classify_sector(o.short_name or "")
+                    sector_auto = True
+                meta = SECTOR_MAP.get(key)
+                v = meta.short if meta else key
             vals[k] = v
             if v not in (None, "") and str(v).strip() != "":
                 filled += 1
@@ -484,6 +493,7 @@ def list_instruments_coverage(price_of=None, sheet: Optional[str] = None) -> Lis
             "display": " / ".join(tickers), "emisor": o.short_name or "",
             "vals": vals, "cf": cfn, "price": price, "has_price": bool(price),
             "pct": pct, "health": health, "missing": miss_req + miss_opt,
+            "sector_auto": sector_auto,
         })
     out.sort(key=lambda e: (e["pct"], e["key"]))
     return out

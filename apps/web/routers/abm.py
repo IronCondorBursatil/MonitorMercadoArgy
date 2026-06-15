@@ -56,12 +56,18 @@ def abm_page(request: Request, state=Depends(get_state)):
         unloaded = count_unloaded()
     except Exception:  # noqa: BLE001 — best-effort; el contador no debe romper la página
         unloaded = None
+    # Títulos cargados por hoja → badge (N) en cada chip de categoría.
+    loaded = abm_store.list_instruments()
+    sheet_counts: dict = {}
+    for it in loaded:
+        sheet_counts[it["sheet"]] = sheet_counts.get(it["sheet"], 0) + 1
     return _TEMPLATES.TemplateResponse(request, "pages/abm.html", {
         "instruments": cov,
         "cols": abm_store.coverage_columns(_DEFAULT_SHEET),
         "sheet": _DEFAULT_SHEET,
         "sheets": list(abm_store.SHEET_SCHEMAS.keys()),
-        "loaded_total": len(abm_store.list_instruments()),
+        "loaded_total": len(loaded),
+        "sheet_counts": sheet_counts,
         "unloaded": unloaded,
         "byma_cats": categories(),
         "byma_count": count(),
