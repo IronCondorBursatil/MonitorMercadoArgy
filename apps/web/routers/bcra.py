@@ -7,16 +7,13 @@ Reusa BCRAIndicesProvider (app.state.indices), hidratado de disco + top-up BCRA.
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_indices
+from apps.web.templates import TEMPLATES as _TEMPLATES
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 @router.get("/bcra", response_class=HTMLResponse)

@@ -14,23 +14,23 @@ from __future__ import annotations
 
 import logging
 
-from pathlib import Path
-
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web import instruments_abm as abm_store
 from apps.web.bond_detail import calculate
 from apps.web.deps import (
     get_fx, get_hub, get_indices, get_provider, get_repo, get_state,
 )
+from apps.web.templates import TEMPLATES as _TEMPLATES
+from core.infrastructure.byma.universe import (
+    categories, count, count_unloaded, prefill_for, search_byma_grouped,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 _DEFAULT_SHEET = "Obligaciones_Negociables"
@@ -51,7 +51,6 @@ def _render_list(request: Request, sheet: str, state, error: str = "") -> HTMLRe
 
 @router.get("/abm", response_class=HTMLResponse)
 def abm_page(request: Request, state=Depends(get_state)):
-    from core.infrastructure.byma.universe import categories, count, count_unloaded
     cov = abm_store.list_instruments_coverage(_price_of(state), _DEFAULT_SHEET)
     try:
         unloaded = count_unloaded()
@@ -133,8 +132,6 @@ def abm_universe(request: Request, q: str = "", cat: str = "", page: int = 0,
     `page==0` (carga inicial / cambio de filtro) → shell completo (meta + thead +
     1er lote). `page>0` (centinela revelado al scrollear) → solo el lote de filas +
     su próximo centinela, que reemplaza al anterior vía outerHTML."""
-    from core.infrastructure.byma.universe import search_byma_grouped
-
     page = max(0, page)
     # Con una categoría elegida (caso de uso real) traemos TODO el set de una (cientos
     # de títulos) → el filtro por columna del cliente opera sobre el universo completo,
@@ -194,7 +191,6 @@ def abm_form(request: Request, sheet: str = "", key: str = "", prefill: str = ""
     categoría BYMA y precarga tickers/ISIN/emisor/ley."""
     values, cashflows, metrics = {}, [], None
     if prefill:
-        from core.infrastructure.byma.universe import prefill_for
         pf = prefill_for(prefill)
         if pf:
             sheet, values = pf["sheet"], pf["fields"]

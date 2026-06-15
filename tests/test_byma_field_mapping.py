@@ -3,6 +3,20 @@
 from core.infrastructure.byma.field_map import byma_row_to_quote, settle_of
 
 
+def test_non_finite_prices_dropped_or_nulled():
+    """A5: BYMA puede enviar NaN/Inf. `trade` no finito cae al fallback de cierre;
+    bid/ask/volume no finitos se normalizan a None (no fluyen al motor/store)."""
+    # trade=NaN, closingPrice=Inf → ambos no finitos → cae a previousClosingPrice 97.0
+    q = byma_row_to_quote({"symbol": "AL30", "trade": float("nan"),
+                           "closingPrice": float("inf"), "previousClosingPrice": 97.0})
+    assert q is not None and q.c == 97.0
+    # bid/volume no finitos → None (el precio es válido, la fila sobrevive)
+    q2 = byma_row_to_quote({"symbol": "AL30", "trade": 100.0,
+                            "bidPrice": float("nan"), "volumeAmount": float("inf")})
+    assert q2 is not None and q2.c == 100.0
+    assert q2.px_bid is None and q2.v is None
+
+
 def test_maps_core_fields():
     q = byma_row_to_quote({
         "symbol": "al30", "trade": 123.45, "bidPrice": 123.0, "offerPrice": 124.0,

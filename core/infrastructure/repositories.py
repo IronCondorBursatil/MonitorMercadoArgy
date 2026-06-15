@@ -4,6 +4,7 @@ import warnings
 import pandas as pd
 from typing import List, Dict, Optional
 from datetime import date, datetime
+from core.domain.currency import ccy_from_suffix
 from core.domain.models import Instrument, Cashflow
 from core.domain.interfaces import IInstrumentsRepository
 # Re-export por compatibilidad: el provider de market-data se movió a su propio
@@ -154,9 +155,10 @@ def split_currency_tickers(tickers: List[str]):
         tu = str(t).upper().strip()
         if not tu:
             continue
-        if tu.endswith("D") and not mep:
+        ccy = ccy_from_suffix(tu)
+        if ccy == "MEP" and not mep:
             mep = tu
-        elif tu.endswith("C") and not ccl:
+        elif ccy == "CABLE" and not ccl:
             ccl = tu
         elif not mep:
             mep = tu

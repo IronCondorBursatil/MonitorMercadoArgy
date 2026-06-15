@@ -13,16 +13,14 @@ GET /catalogo/ficha?ticker=  → fragmento: ficha técnica rica (ley/amort/monto
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
+from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.infrastructure.byma import catalog_products as cp
+from core.infrastructure.byma.universe import categories, count
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 def _spark(points, w: float = 120.0, h: float = 28.0) -> str:
@@ -39,7 +37,6 @@ def _spark(points, w: float = 120.0, h: float = 28.0) -> str:
 
 @router.get("/catalogo", response_class=HTMLResponse)
 def catalogo_page(request: Request):
-    from core.infrastructure.byma.universe import categories, count
     return _TEMPLATES.TemplateResponse(request, "pages/catalogo.html", {
         "byma_cats": categories(),
         "byma_count": count(),

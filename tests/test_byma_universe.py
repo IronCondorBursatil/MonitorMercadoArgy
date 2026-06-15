@@ -275,6 +275,47 @@ def test_search_grouped(tmp_db):
     assert p0[0]["base"] != p1[0]["base"]
 
 
+def test_count_unloaded_matches_grouped_loaded(tmp_db):
+    """C1: el badge 'N sin cargar' cuenta TÍTULOS VALOR (grupos) sin cargar, igual que
+    los g['loaded'] de la vista agrupada — NO símbolos (que sobrecontaba las patas)."""
+    from core.infrastructure.db.catalog_repository import init_db
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import InstrumentORM
+    _write(tmp_db / "t.csv", [
+        # AEC2: ON 3 patas, mismo ISIN → 1 grupo, CARGADO por ISIN
+        ["AEC2O", "AEC2O", "ARS",   "CORP", "O", "primary", "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES"],
+        ["AEC2D", "AEC2O", "MEP",   "CORP", "D", "primary", "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES"],
+        ["AEC2C", "AEC2O", "cable", "CORP", "C", "primary", "", "True",
+         "Oblig. Negociables", "USP1000CAE41", "Obligaciones Negociables", "BOND", "AES"],
+        # GGAL: acción 2 patas → 1 grupo, SIN cargar
+        ["GGAL",  "GGAL", "ARS", "CS", "",  "primary", "", "True",
+         "Acciones", "ARP495251018", "Acciones", "EQUITY", "GALICIA"],
+        ["GGALD", "GGAL", "MEP", "CS", "D", "primary", "", "True",
+         "Acciones", "ARP495251018", "Acciones", "EQUITY", "GALICIA"],
+        # XYZ0: ON 1 pata → 1 grupo, SIN cargar
+        ["XYZ0", "XYZ0", "ARS", "CORP", "O", "primary", "", "True",
+         "Oblig. Negociables", "AR9999999999", "Obligaciones Negociables", "BOND", "OTRO"],
+        # NOIS: ON 2 patas SIN ISIN → 1 grupo, CARGADO solo por la pata MEP (NOISD)
+        ["NOIS",  "NOIS", "ARS", "CORP", "O", "primary", "", "True",
+         "Oblig. Negociables", "", "Obligaciones Negociables", "BOND", "BANCO"],
+        ["NOISD", "NOIS", "MEP", "CORP", "D", "primary", "", "True",
+         "Oblig. Negociables", "", "Obligaciones Negociables", "BOND", "BANCO"],
+    ])
+    universe.ingest_byma_catalog(tmp_db / "t.csv")
+    init_db()
+    with SessionLocal.begin() as s:
+        s.merge(InstrumentORM(ticker="AEC2O", isin="USP1000CAE41"))     # AEC2 cargado por ISIN
+        s.merge(InstrumentORM(ticker="NOISBOND", ticker_mep="NOISD"))   # NOIS cargado por pata MEP
+
+    grouped, _ = universe.search_byma_grouped()
+    expected = sum(1 for g in grouped if not g["loaded"])
+    assert expected == 2                        # GGAL + XYZ0 (AEC2 y NOIS están cargados)
+    assert universe.count_unloaded() == 2       # por GRUPO, no por símbolo (sería 4)
+    assert universe.count_unloaded() == expected
+
+
 # ---- refresh manual del monto operado (botón, no automático) -------------- #
 
 def test_abm_page_has_manual_refresh_button():

@@ -10,20 +10,17 @@ sobre las tenencias de cartera_store.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web import cartera_store
 from apps.web.deps import get_fx, get_state
 from apps.web.routers.cartera import _GRUPO, _metrics_by_ticker
+from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.domain import portfolio, scenarios
 from core.domain.portfolio import position_currency
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 def _market_rows(state, d_tir_bps: float, d_fx_pct: float) -> list:

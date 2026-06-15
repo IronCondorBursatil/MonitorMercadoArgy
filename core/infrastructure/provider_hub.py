@@ -78,6 +78,14 @@ class ProviderHub:
         self._floor_snaps: Dict[str, Dict[str, Data912Row]] = {}
         self._floor_source: Dict[str, str] = {}
         self._floor_at: float = 0.0
+        # Frescura por símbolo: monotonic() de la última vez que la fuente activa lo listó.
+        # Solo la escribe el event-loop (refresh_all); se lee bajo lock en freshness().
+        # Permite al panel distinguir precios live de rancios y habilita la purga diaria.
+        self._seen_at: Dict[str, float] = {}
+        # Día del último ciclo de purga (para ejecutarla 1×/día al rollover).
+        self._purge_day: Optional[date] = None
+        # Símbolos no vistos en más de _PURGE_MAX_DAYS días se eliminan del snapshot.
+        self._PURGE_MAX_DAYS: int = 5
 
     # ---------------- fuente activa (hot-swap) ----------------
     @property
@@ -140,6 +148,28 @@ class ProviderHub:
                 # cnt <= 0 → sale del tracking (floor puede cubrirlo)
         self._active_sym_counts = new_counts
         self._active_syms = {s for s, c in new_counts.items() if c > 0}
+        # Frescura: marcar timestamp de la fuente activa bajo lock + purga diaria stale.
+        if seen_this_cycle:
+            _now = time.monotonic()
+            today = date.today()
+            with self._lock:
+                for sym in seen_this_cycle:
+                    self._seen_at[sym] = _now
+                # Purga 1×/día al rollover: borra del snapshot lo claramente muerto.
+                # Invariante stale-safe: solo purga si hay datos de frescura (_seen_at
+                # no vacío) y nunca ante un ciclo vacío (visto al menos 1 símbolo).
+                if today != self._purge_day:
+                    self._purge_day = today
+                    max_age = self._PURGE_MAX_DAYS * 86400.0
+                    stale = [s for s, ts in self._seen_at.items()
+                             if (_now - ts) > max_age]
+                    for s in stale:
+                        del self._seen_at[s]
+                        for settle in (SETTLE_24, SETTLE_CI):
+                            self._snap.get(settle, {}).pop(s, None)
+                    if stale:
+                        logger.info("hub: purged %d stale symbols (>%dd)",
+                                    len(stale), self._PURGE_MAX_DAYS)
         # Floor Data912 por símbolo: si la activa NO es Data912, Data912 rellena los
         # símbolos que la activa no lista (BYMA open en feriado/pre-market lista parcial)
         # → se muestra el universo completo con LAST/cierre. La activa manda donde lista;
@@ -309,6 +339,14 @@ class ProviderHub:
         with self._lock:
             snap = self._snap.get(settle)
             return dict(snap if snap else self._snap[SETTLE_24])
+
+    def freshness(self) -> Dict[str, float]:
+        """Antigüedad en segundos desde que la fuente activa listó cada símbolo.
+        Vacío si el hub todavía no recibió datos. Permite al panel distinguir
+        precios live de rancios sin romper la firma de `snapshot()`."""
+        _now = time.monotonic()
+        with self._lock:
+            return {sym: _now - ts for sym, ts in self._seen_at.items()}
 
 
 class HubMarketDataProvider(IMarketDataProvider):

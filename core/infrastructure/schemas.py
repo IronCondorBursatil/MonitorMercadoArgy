@@ -47,6 +47,20 @@ class Data912Row(BaseModel):
             raise ValueError(f"precio no finito: {v!r}")
         return fv
 
+    @field_validator("px_bid", "px_ask", "v", mode="before")
+    @classmethod
+    def _none_if_non_finite(cls, v):
+        # NaN/Inf en bid/ask/volumen no deben fluir al MarketSnapshot/UI; los
+        # normalizamos a None (campo opcional). A diferencia de `c`, NO descartan
+        # la fila: el precio puede ser válido aunque el bid venga corrupto.
+        if v is None or v == "":
+            return None
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            return None
+        return fv if math.isfinite(fv) else None
+
 
 def parse_snapshot_rows(payload: list) -> "dict[str, Data912Row]":
     """Valida un payload crudo de Data912 → {symbol: Data912Row}. Filas inválidas

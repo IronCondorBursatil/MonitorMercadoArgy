@@ -10,18 +10,16 @@ homogéneas: Soberanos USD (sufijo D), CER, Tasa Fija, TAMAR.
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_state
-from apps.web.routers.panels import _fit_log_curve
+from apps.web.panels_rows import _fit_log_curve
+from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.domain.portfolio import position_currency
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 # clave -> (label, {types}, currency-filter|None)
 _CURVA_GROUPS = {

@@ -11,22 +11,20 @@ Instruments del CatalogRepository.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web import cartera_store
 from apps.web.deps import get_fx, get_repo, get_state
+from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.domain import portfolio
 from core.domain.instrument_groups import (
     BOPREALES, CER, DOLAR_LINKED, DUAL_TAMAR, SOBERANOS, TAMAR, TASA_FIJA,
 )
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 _GRUPO = {}
 for _label, _types in (("Soberano", SOBERANOS), ("Bopreal", BOPREALES), ("Tasa Fija", TASA_FIJA),

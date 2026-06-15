@@ -12,12 +12,11 @@ fuente nueva; el `_notify()` empuja el SSE para que los paneles se refresquen.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 
+from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.infrastructure.byma.credentials import clear_credentials, save_credentials
 from core.infrastructure.byma.sources import (
     MODES, BymaRealtimeError, BymaRealtimeSource, make_source, source_label,
@@ -26,7 +25,6 @@ from core.infrastructure.byma.sources import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 def _mode_list() -> list[dict]:

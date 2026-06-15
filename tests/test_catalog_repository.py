@@ -23,10 +23,8 @@ def _cfs(inst):
                   for cf in inst.cashflows)
 
 
-@pytest.fixture(scope="module")
-def repos():
-    # re-seed SQLite desde el Excel (intencional: pisa lo que otros tests dejaron
-    # en la DB temp de la sesión → override consciente del guard anti-pérdida)
+@pytest.fixture
+def repos(tmp_db):  # tmp_db aísla el engine a una DB temp → no contamina la sesión
     ingest_from_excel(str(settings.master_xlsx), allow_drop=True)
     excel = ExcelInstrumentsRepository(str(settings.master_xlsx))
     catalog = CatalogRepository(auto_seed=False)

@@ -446,3 +446,54 @@ table.scen tr.mine td { color: var(--accent); font-weight: 600; }
 .src-creds-save:hover { filter: brightness(1.08); background: var(--accent); }
 .src-creds-ok { font-size: 11px; color: #16a34a; padding: 3px 9px; font-weight: 600; }
 
+/* ── .uni-* — universo de instrumentos (ABM + Catálogo) ──────────────────── */
+/* Estilos compartidos para las tablas de búsqueda/universo BYMA.
+   Overrides página-específicos siguen en abm.html / catalogo.html. */
+.uni-results { overflow: auto; }
+.uni-meta { padding: 7px 12px; font-size: 11px; color: var(--text-dim); position: sticky; top: 0;
+            background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); z-index: 5; }
+.uni-table { width: 100%; border-collapse: collapse; }
+.uni-table th { font-size: 10px; color: var(--text-faint); text-transform: uppercase; text-align: left;
+                padding: 6px 12px; border-bottom: 1px solid var(--panel-border); position: sticky;
+                top: 28px; background: var(--head-bg); z-index: 1; white-space: nowrap; }
+.uni-table td { padding: 5px 12px; border-bottom: 1px solid var(--panel-border); font-size: 12px; }
+.uni-table tr:hover { background: var(--row-hover); }
+.uni-tk { font: 700 12px var(--font-mono); color: var(--accent); cursor: pointer; }
+.uni-tk--ficha { color: #e8852b; }
+.uni-tk:hover { text-decoration: underline; }
+.uni-isin { font: 12px var(--font-mono); color: var(--text); }
+.uni-faint { color: var(--text-faint); }
+.uni-emisor { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uni-table--grouped thead .uni-grp-head th { top: 28px; }
+.uni-table--grouped thead .uni-ccy-head th { top: 51px; }
+.uni-table--grouped th.uni-grp { text-align: center; font-weight: 700; border-left: 1px solid var(--panel-border); }
+.uni-table--grouped th.uni-grp--esp { color: var(--text-faint); }
+.uni-table--grouped th.uni-ccol { text-align: left; }
+.uni-table--grouped th.uni-ccol--esp { color: var(--text-faint); }
+.uni-table--grouped .uni-ccy-head th:nth-child(1),
+.uni-table--grouped .uni-ccy-head th:nth-child(4),
+.uni-table--grouped tbody td.uni-sep { border-left: 1px solid var(--panel-border); }
+.uni-cell { font: 600 12px var(--font-mono); color: var(--text); cursor: pointer; }
+.uni-cell:hover { color: var(--accent); text-decoration: underline; }
+.uni-cell.uni-esp { color: var(--text-faint); font-weight: 400; }
+.uni-leg { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.uni-alta { text-align: center; font: 700 13px var(--font-mono); }
+.uni-alta--yes { color: #1ea672; }
+.uni-alta--no  { color: var(--text-faint); }
+.uni-vol { font: 600 11.5px var(--font-mono); color: var(--text-dim); white-space: nowrap; text-align: right; }
+.uni-table--grouped th.uni-grp--mh { color: var(--text-dim); }
+.uni-table--grouped .uni-ccy-head th.uni-ccol--mh { text-align: right; }
+.uni-table--grouped .uni-ccy-head th:nth-child(7) { border-left: 1px solid var(--panel-border); }
+.uni-table--grouped thead .uni-flt th { top: 74px; padding: 3px 6px; background: var(--head-bg); }
+.uni-fin, .uni-fsel { width: 100%; min-width: 50px; box-sizing: border-box; background: var(--page-bg);
+                      border: 1px solid var(--panel-border); color: var(--text); border-radius: 4px;
+                      padding: 2px 5px; font: 11px var(--font-body); }
+.uni-fnum { min-width: 38px; text-align: right; }
+.uni-fin::placeholder { color: var(--text-faint); }
+.uni-fin:focus, .uni-fsel:focus { border-color: var(--accent); outline: none; }
+.uni-sortable { cursor: pointer; user-select: none; }
+.uni-sortable:hover { color: var(--accent); }
+.uni-sortarr { font-size: 9px; color: var(--accent); }
+.uni-loading { text-align: center; color: var(--text-faint); font-size: 11px; font-style: italic; padding: 10px; }
+.uni-empty { color: var(--text-faint); font-style: italic; padding: 40px; text-align: center; }
+

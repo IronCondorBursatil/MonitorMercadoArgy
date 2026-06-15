@@ -975,10 +975,15 @@
     bd.classList.add("open"); bd.setAttribute("aria-hidden", "false");
     uniEnsureChart();
     if (uniChart) requestAnimationFrame(function () { uniChart.resize(); uniChart.update("none"); });
+    // a11y: focus-trap + restaurar foco al botón "Ver gráfico" (helper de base.html;
+    // el guard mantiene el mock standalone — sin base.html — funcionando).
+    if (window.A11yModal) A11yModal.open(bd.querySelector(".uni-modal") || bd,
+      { focus: document.getElementById("uni-chart-close"), onEsc: closeUniModal });
   }
   function closeUniModal() {
     var bd = document.getElementById("uni-chart-backdrop");
     bd.classList.remove("open"); bd.setAttribute("aria-hidden", "true");
+    if (window.A11yModal) A11yModal.close(bd.querySelector(".uni-modal") || bd);
   }
 
   // ----- Tarjetas por sector (colapsables) — overview arriba de la herramienta -----
@@ -1017,8 +1022,8 @@
       var valClass = sortKey === "vol" ? "" : ON.sign(b.tir);
       var em = (b.emisor || "").replace(/\s*-\s*Clase.*$/i, "").replace(/\s*S\.A\..*$/i, "").trim();
       var ley = b.ley === "AR" ? '<span class="top3-ley ley-ar">AR</span>' : '<span class="top3-ley ley-ext">EXT</span>';
-      return '<div class="top3-row"><span class="top3-num">' + (i + 1) + '</span><span class="top3-tk">' + b.ticker + '</span>' + ley +
-        '<span class="top3-em">' + em + '</span><span class="top3-val ' + valClass + '">' + valStr + '</span></div>';
+      return '<div class="top3-row"><span class="top3-num">' + (i + 1) + '</span><span class="top3-tk">' + ON.esc(b.ticker) + '</span>' + ley +
+        '<span class="top3-em">' + ON.esc(em) + '</span><span class="top3-val ' + valClass + '">' + valStr + '</span></div>';
     }).join("");
   }
 

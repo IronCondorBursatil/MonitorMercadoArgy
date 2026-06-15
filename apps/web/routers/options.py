@@ -14,22 +14,20 @@ y calcula payoff/griegos en el browser (mismo modelo que en los mocks).
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from apps.web.json_script import json_for_script
 from apps.web.deps import get_state
+from apps.web.json_script import json_for_script
+from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.domain.options.analytics import run_analytics
 from core.domain.options.chain import months_for, underlyings_summary
 from core.domain.options.strategies import PRESET_NAMES
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

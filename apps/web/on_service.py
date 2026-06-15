@@ -11,9 +11,11 @@ from __future__ import annotations
 import threading
 from datetime import date, datetime
 
-from apps.web.routers.panels import _ley_of, _ticker_ccy
+from apps.web.panels_rows import _ley_of
+from core.domain.currency import ccy_from_suffix as _ticker_ccy
 from core.domain.instrument_groups import OBLIGACIONES_NEGOCIABLES
 from core.domain.on_classification import SECTORS, sector_for
+from core.domain.pricing.fx_legs import peso_leg_to_usd
 from core.domain.services import FinancialEngine
 
 _ON_TYPES = set(OBLIGACIONES_NEGOCIABLES)
@@ -27,24 +29,6 @@ def _pct100(v):
     return v * 100 if v is not None else None
 
 
-def _peso_fx_rate(inst, fx):
-    """FX para pasar la pata pesos (…O) a USD, igual que el motor (strategies.py):
-    hard-dollar → MEP (ley AR) / CCL (ley EXT); dollar-linked → mayorista (oficial).
-    None si no hay provider/método (degradación segura)."""
-    if fx is None:
-        return None
-    if inst.is_hard_dollar:
-        meth = "get_mep_venta" if inst.is_ley_argentina else "get_ccl_venta"
-    elif inst.is_dolar_linked:
-        meth = "get_mayorista_venta"
-    else:
-        return None
-    fn = getattr(fx, meth, None)
-    try:
-        rate = fn() if fn else None
-    except Exception:  # noqa: BLE001 — provider caído → sin conversión
-        return None
-    return rate if (rate and rate > 0) else None
 
 
 def _avg(xs):
@@ -53,9 +37,16 @@ def _avg(xs):
 
 
 def _current_coupon(inst, today):
-    """Cupón VIGENTE (TNA %) = interés del próximo flujo / fracción de año de su período.
-    Para bonos regulares = la tasa fija; para STEP-UPS (ej. CLSIO) = la tasa del tramo
-    actual. Fallback a coupon_rate (raw_fields) si no hay flujo futuro con interés."""
+    """Cupón VIGENTE (TNA %) = interés del próximo flujo / fracción de año de su período,
+    NORMALIZADO al nominal vigente (face 100). Para bonos regulares = la tasa fija; para
+    STEP-UPS (ej. CLSIO) = la tasa del tramo actual. Fallback a coupon_rate (raw_fields)
+    si no hay flujo futuro con interés.
+
+    El cupón devenga sobre el nominal vigente (outstanding = suma de amortizaciones aún
+    no pagadas a la fecha del próximo cupón), no sobre 100. Para ONs con capital factor
+    < 1 (face residual < 100, ej. IRCFO vr=65) o ya amortizando, `nxt.interest/dcf` =
+    coupon_rate × outstanding; dividir por `outstanding/100` recupera la TNA real. No-op
+    para los bullets con face 100."""
     future = [cf for cf in inst.cashflows if cf.date and cf.date > today and cf.interest > 0]
     if not future:
         return inst.coupon_rate
@@ -68,7 +59,14 @@ def _current_coupon(inst, today):
         dcf = inst.year_fraction_to(nxt.date, start)
     except Exception:  # noqa: BLE001
         return inst.coupon_rate
-    return round(nxt.interest / dcf, 2) if (dcf and dcf > 0) else inst.coupon_rate
+    if not (dcf and dcf > 0):
+        return inst.coupon_rate
+    rate = nxt.interest / dcf
+    outstanding = sum(cf.amortization for cf in inst.cashflows
+                      if cf.date and cf.date >= nxt.date)
+    if outstanding > 0:
+        rate = rate / (outstanding / 100.0)
+    return round(rate, 2)
 
 
 def _build_on_dataset(state, fx=None) -> dict:
@@ -92,8 +90,7 @@ def _build_on_dataset(state, fx=None) -> dict:
         ccy = _ticker_ccy(inst.ticker)
         price_usd = snap.price
         if ccy == "ARS" and snap.price:
-            rate = _peso_fx_rate(inst, fx)
-            price_usd = (snap.price / rate) if rate else None
+            price_usd = peso_leg_to_usd(inst, snap.price, fx)
         cy = FinancialEngine.current_yield(inst, price_usd, today) if price_usd else None
         convex = FinancialEngine.convexity(inst, m.tir, today) if m.tir is not None else None
         bonds.append({

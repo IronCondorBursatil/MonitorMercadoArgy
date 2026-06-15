@@ -7,17 +7,15 @@ catálogo (próximos `days` días), ordenado por fecha. Reusa CatalogRepository.
 from __future__ import annotations
 
 from datetime import date, timedelta
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_repo
+from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.domain.portfolio import position_currency
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 @router.get("/cashflows", response_class=HTMLResponse)

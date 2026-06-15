@@ -28,13 +28,15 @@ def settle_of(raw: dict) -> str:
 
 
 def _f(v) -> Optional[float]:
-    """Float o None (celdas vacías/no numéricas → None)."""
+    """Float o None (celdas vacías/no numéricas/no finitas → None). El guard de
+    finitud evita que un NaN/Inf de BYMA fluya a px_bid/px_ask/v del Data912Row."""
     if v is None or v == "":
         return None
     try:
-        return float(v)
+        fv = float(v)
     except (TypeError, ValueError):
         return None
+    return fv if math.isfinite(fv) else None
 
 
 def byma_row_to_quote(raw: dict) -> Optional[Data912Row]:

@@ -22,6 +22,7 @@ import math
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from core.domain.currency import ccy_from_suffix
 from core.domain.models import Instrument, MarketSnapshot
 from core.domain.clock import today as _domain_today
 from core.domain.services import FinancialEngine, _is_cer_type, _cer_reference_date
@@ -50,10 +51,9 @@ def _safe(v) -> Any:
 def _is_usd_quoted(instrument: Instrument) -> bool:
     """Bonos cuyo precio se cotiza en USD (no en pesos) — Soberanos y BOPREALES
     con sufijo D. Dolar Linked cotiza en pesos pese a ser USD-linked."""
-    ticker = (instrument.ticker or "").upper()
     return (
         instrument.instrument_type in ("BONAR", "GLOBAL", "BOPREAL", "HARD DOLLAR", "DOLLAR LINKED")
-        and ticker.endswith("D")
+        and ccy_from_suffix(instrument.ticker) == "MEP"
     )
 
 

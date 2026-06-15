@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import case, delete, func, or_, select
 
 from core.infrastructure.db.catalog_repository import init_db
 from core.infrastructure.db.engine import SessionLocal
@@ -301,34 +301,44 @@ def prefill_for(key: str) -> Optional[dict]:
 
 
 def count_unloaded() -> int:
-    """# de símbolos del Universo BYMA que NO están dados de alta en pricing.
+    """# de TÍTULOS VALOR del Universo BYMA (grupos, NO símbolos) que NO están dados de
+    alta en pricing. Coincide con los `g['loaded']` de la vista agrupada
+    (`search_byma_grouped`) — que es lo que el usuario ve y lo que muestra el badge
+    "N sin cargar": una fila por título valor, marcada cargada si CUALQUIER pata/ISIN
+    está en `instruments`. Contar por símbolo (como antes) sobrecontaba las patas.
 
-    Implementación eficiente vía SQL: compara los ISINs/tickers del universo BYMA contra
-    los de `instruments` (NOT EXISTS subquery) — sin materializar todos los grupos Python.
+    Eficiente vía SQL: agrupa por la MISMA clave que la vista (ISIN→ticker_pesos→symbol)
+    y cuenta los grupos sin ninguna pata cargada — sin materializar grupos en Python.
     """
     from core.infrastructure.db.models import InstrumentORM
     init_db()
     with SessionLocal() as sess:
-        # Sub-selects de ISINs y tickers ya cargados en pricing.
+        # Sub-selects de ISINs y tickers (primario/MEP/CABLE) ya cargados en pricing.
         loaded_isins = select(InstrumentORM.isin).where(InstrumentORM.isin.isnot(None))
         loaded_tickers = select(InstrumentORM.ticker).where(InstrumentORM.ticker.isnot(None))
         loaded_mep = select(InstrumentORM.ticker_mep).where(InstrumentORM.ticker_mep.isnot(None))
         loaded_ccl = select(InstrumentORM.ticker_ccl).where(InstrumentORM.ticker_ccl.isnot(None))
-        # Una especie BYMA está "sin cargar" si su ISIN (o símbolo) no matchea ninguna
-        # fila del catálogo de pricing. Se cuenta por símbolo (no por grupo) para simplificar.
-        not_loaded = (
-            select(func.count())
-            .select_from(BymaCatalogORM)
-            .where(
-                ~or_(
-                    BymaCatalogORM.isin.in_(loaded_isins),
-                    BymaCatalogORM.symbol.in_(loaded_tickers),
-                    BymaCatalogORM.symbol.in_(loaded_mep),
-                    BymaCatalogORM.symbol.in_(loaded_ccl),
-                )
-            )
+        member_loaded = or_(
+            BymaCatalogORM.isin.in_(loaded_isins),
+            BymaCatalogORM.symbol.in_(loaded_tickers),
+            BymaCatalogORM.symbol.in_(loaded_mep),
+            BymaCatalogORM.symbol.in_(loaded_ccl),
         )
-        return int(sess.execute(not_loaded).scalar_one())
+        # Clave de grupo = misma que search_byma_grouped: (isin or ticker_pesos or symbol),
+        # tratando '' como ausente (nullif) para replicar el `or` de Python.
+        group_key = func.upper(func.coalesce(
+            func.nullif(BymaCatalogORM.isin, ""),
+            func.nullif(BymaCatalogORM.ticker_pesos, ""),
+            BymaCatalogORM.symbol, ""))
+        grouped = (
+            select(group_key.label("k"),
+                   func.max(case((member_loaded, 1), else_=0)).label("ld"))
+            .group_by(group_key)
+            .subquery()
+        )
+        return int(sess.execute(
+            select(func.count()).select_from(grouped).where(grouped.c.ld == 0)
+        ).scalar_one())
 
 
 def categories() -> List[Tuple[str, int]]:

@@ -130,28 +130,18 @@
     window.dispatchEvent(new Event("on:themechange"));
   }
 
-  // ---- header compartido (replica la nav del monitor, con O.N's activo) -----
-  var NAV = ["Bonos", "Curva", "Cartera", "BCRA", "Cashflows", "FCI", "Escenarios", "Opciones", "Catálogo", "ABM"];
-  function header(title, subtitle) {
-    var gen = D.generated ? ("snapshot " + D.generated.replace("T", " ")) : "";
-    var nav = NAV.map(function (n) { return '<a href="#">' + n + "</a>"; }).join("") +
-      '<a href="index.html" class="active">O.N\'s</a><a href="#">CONFIG</a>';
-    var el = document.createElement("header");
-    el.className = "on-header";
-    el.innerHTML =
-      '<div class="bar">' +
-        '<h1>O.N\'s · Obligaciones Negociables</h1>' +
-        (title ? '<span class="sub">— ' + title + "</span>" : "") +
-        "<nav>" + nav +
-          '<span class="badge">BYMA open (20m)</span>' +
-          '<button class="tbtn" title="Tema claro/oscuro" onclick="ON.toggleTheme()">◐</button>' +
-        "</nav>" +
-      "</div>" +
-      '<div class="bar" style="padding:4px 18px 8px;gap:10px">' +
-        '<span class="gen">' + gen + (subtitle ? "  ·  " + subtitle : "") +
-        "  ·  " + (D.meta ? (D.meta.n_bonds + " ONs · AR " + D.meta.n_ar + " / EXT " + D.meta.n_ext) : "") + "</span>" +
-      "</div>";
-    document.body.insertBefore(el, document.body.firstChild);
+  // Hidrata SECTORS/SMAP desde el payload del server (ON.DATA.sectors_meta), que es
+  // el espejo de la fuente Python on_classification.SECTORS — así cliente y SSR pintan
+  // el mismo sector/color sin re-sincronizar a mano la copia horneada (sectors.js).
+  // MUTA in-place (no reasigna): util captura SECTORS/SMAP por referencia en el init y
+  // los exporta como ON.SECTORS; reasignar dejaría stale el closure. Si meta viene vacío
+  // (offline / payload viejo) NO toca nada → conserva la copia horneada como fallback.
+  function syncSectors(meta) {
+    if (!meta || !meta.length) return;
+    SECTORS.splice(0, SECTORS.length);
+    Object.keys(SMAP).forEach(function (k) { delete SMAP[k]; });
+    meta.forEach(function (s) { SECTORS.push(s); SMAP[s.key] = s; });
+    window.ON_SECTORS = SECTORS; window.ON_SECTOR_MAP = SMAP;
   }
 
   window.ON = {
@@ -163,7 +153,7 @@
     avg: avg, median: median, sum: sum,
     logFit: logFit, cssVar: cssVar, chartTheme: chartTheme,
     baseScatterOpts: baseScatterOpts, scatterPoints: scatterPoints,
-    initTheme: initTheme, toggleTheme: toggleTheme, header: header,
+    initTheme: initTheme, toggleTheme: toggleTheme, syncSectors: syncSectors,
   };
   initTheme();
 })();

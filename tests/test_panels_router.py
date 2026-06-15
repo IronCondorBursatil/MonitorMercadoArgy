@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from apps.web.app import app
 from apps.web.routers import panels
 from apps.web.routers import panels_schema   # column schemas (movidos de panels)
+import apps.web.panels_rows as panels_rows
 from core.domain.models import Cashflow, Instrument, MarketSnapshot, InstrumentMetrics
 
 
@@ -62,9 +63,11 @@ def test_build_rows_for_cer_panel():
     assert rows[0]["ticker"] == "TX26"
     # primera celda = ticker; columnas CER incluyen category, vto, etc.
     assert rows[0]["cells"][0]["text"] == "TX26"
-    # TIR 0.10 -> 10.00%
-    tir_cell = next((c for c in rows[0]["cells"] if c["text"] == "10.00%"), None)
-    assert tir_cell is not None and tir_cell["text"] == "10.00%"
+    # La columna TIR (índice del key "tir" en _CER_COLS) precia 0.10 → "10.00%"
+    # (_pct ×100 + formato percent). Localizar por POSICIÓN, no por valor, para que
+    # el assert ate la celda TIR real (no "cualquier celda que diga 10.00%").
+    tir_idx = [c["key"] for c in panels_schema._CER_COLS].index("tir")
+    assert rows[0]["cells"][tir_idx]["text"] == "10.00%"
 
 
 def _on_metric(ticker, price, ley=None):
@@ -271,6 +274,71 @@ def test_implied_rates_matches_a3_report():
     assert panels._implied_rates(1457.5, 1438.5, 0) == (None, None, None)
 
 
+# ── C4: memo _ci_metrics por (revision, panel_id) ───────────────────────────
+
+def test_ci_metrics_cache_hit_skips_motor():
+    """C4: segunda llamada con la misma revision para el mismo panel devuelve el
+    resultado cacheado sin ejecutar GenerateMonitorReport de nuevo."""
+    from unittest.mock import MagicMock, patch
+
+    panels._CI_METRICS_CACHE.clear()
+
+    fake_result = [object()]
+    call_count = {"n": 0}
+
+    class _FakeGMR:
+        def __init__(self, *a, **kw):
+            pass
+
+        def execute(self, *a, **kw):
+            call_count["n"] += 1
+            return fake_result
+
+    fake_req = MagicMock()
+    fake_req.app.state.hub = MagicMock()
+    fake_req.app.state.indices = None
+    fake_req.app.state.fx = None
+
+    with patch("apps.web.routers.panels.HubMarketDataProvider"), \
+         patch("apps.web.routers.panels.GenerateMonitorReport", _FakeGMR), \
+         patch("apps.web.routers.panels.get_repo", return_value=MagicMock()):
+        r1 = panels._ci_metrics("cer", fake_req, MagicMock(), revision=42)
+        r2 = panels._ci_metrics("cer", fake_req, MagicMock(), revision=42)
+
+    assert r1 is r2 is fake_result
+    assert call_count["n"] == 1   # motor corrió 1 sola vez
+
+
+def test_ci_metrics_cache_miss_on_revision_change():
+    """C4: nueva revision invalida el cache y el motor vuelve a correr."""
+    from unittest.mock import MagicMock, patch
+
+    panels._CI_METRICS_CACHE.clear()
+    call_count = {"n": 0}
+
+    class _FakeGMR:
+        def __init__(self, *a, **kw):
+            pass
+
+        def execute(self, *a, **kw):
+            call_count["n"] += 1
+            return []
+
+    fake_req = MagicMock()
+    fake_req.app.state.hub = MagicMock()
+    fake_req.app.state.indices = None
+    fake_req.app.state.fx = None
+
+    with patch("apps.web.routers.panels.HubMarketDataProvider"), \
+         patch("apps.web.routers.panels.GenerateMonitorReport", _FakeGMR), \
+         patch("apps.web.routers.panels.get_repo", return_value=MagicMock()):
+        panels._ci_metrics("cer", fake_req, MagicMock(), revision=1)
+        panels._ci_metrics("cer", fake_req, MagicMock(), revision=2)  # revision nueva
+
+    assert call_count["n"] == 2   # motor corrió en ambas revisiones
+    assert all(k[0] == 2 for k in panels._CI_METRICS_CACHE)  # solo rev 2 en cache
+
+
 def test_futuros_label():
     assert panels._futuros_label("DLR/JUN26") == "jun-26"
     assert panels._futuros_label("DLR/ABR27") == "abr-27"
@@ -335,7 +403,7 @@ def test_build_futuros_share_resilient_and_shape(monkeypatch):
 
     assert panels._build_futuros_share(_Boom(), None, None, None) == {}
 
-    monkeypatch.setattr(panels, "date", _FixedDate)   # fija "hoy" → días al vto estables
+    monkeypatch.setattr(panels_rows, "date", _FixedDate)  # fija "hoy" → días al vto estables
     data = panels._build_futuros_share(_RofexStub(), _FxStub(), _IdxStub(), _StubState([]))
     assert data["spot"] == 1438.5
     assert data["has_peso_curve"] is False
@@ -351,7 +419,7 @@ def test_build_futuros_share_resilient_and_shape(monkeypatch):
 def test_futuros_share_route(monkeypatch):
     from apps.web.deps import get_rofex, get_fx, get_indices, get_state
 
-    monkeypatch.setattr(panels, "date", _FixedDate)
+    monkeypatch.setattr(panels_rows, "date", _FixedDate)
     app.dependency_overrides[get_rofex] = lambda: _RofexStub()
     app.dependency_overrides[get_fx] = lambda: _FxStub()
     app.dependency_overrides[get_indices] = lambda: _IdxStub()

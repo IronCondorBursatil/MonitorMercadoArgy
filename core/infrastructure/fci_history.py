@@ -165,8 +165,9 @@ def net_flow_series(series: Dict[date, dict]) -> Dict[date, float]:
         if ccp_prev and ccp_prev > 0:
             delta_ratio = abs(cur["ccp"] - ccp_prev) / ccp_prev
             if delta_ratio > _NET_FLOW_MAX_JUMP:
-                logger.debug(
-                    "net_flow_series: salto implausible Δccp/ccp=%.1f× el %s — descartado",
+                logger.warning(
+                    "net_flow_series: salto implausible Δccp/ccp=%.1f× el %s — "
+                    "descartado (¿renombre/colisión de fondo en ArgentinaDatos?)",
                     delta_ratio, days[i])
                 continue
         out[days[i]] = (cur["ccp"] - ccp_prev) * cur["vcp"]

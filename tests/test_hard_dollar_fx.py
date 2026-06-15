@@ -193,6 +193,27 @@ def test_dollar_linked_soberano_matches_balanz(tk, isin, vto, peso, usd, tir_ref
     assert tir_alt != pytest.approx(tir, abs=1e-3)
 
 
+def test_abm_hard_dollar_prefill_routes_to_hard_dollar_strategy():
+    """A7: el prefill HARD DOLLAR del form ABM (tipo="HARD DOLLAR") pasa por
+    build_instrument y resuelve HardDollarStrategy (NO DolarLinkedStrategy), con la
+    dolarización de la pata pesos por MEP/CCL (no invertida). Cierra el bucle del
+    prefill end-to-end: los demás tests construyen el Instrument directo."""
+    from core.infrastructure.repositories import build_instrument
+    from core.domain.pricing.registry import strategy_for
+    from core.domain.pricing.strategies import HardDollarStrategy, DolarLinkedStrategy
+
+    fields = {"ticker_ars": "YM34O", "short_name": "YPF", "tipo": "HARD DOLLAR",
+              "fecha_emision": "2025-01-17", "fecha_vencimiento": "2034-01-17",
+              "cupon anual %": "8.3", "frecuencia pagos": "2", "ley_aplicable": ""}
+    inst = build_instrument(fields, "Obligaciones_Negociables",
+                            [Cashflow(date(2034, 1, 17), 100.0, 4.15)])
+    assert inst.is_hard_dollar and not inst.is_dolar_linked
+    strat = strategy_for(inst)
+    # HardDollarStrategy hereda de DolarLinkedStrategy → chequear el tipo EXACTO.
+    assert isinstance(strat, HardDollarStrategy)
+    assert type(strat) is not DolarLinkedStrategy
+
+
 def test_fx_provider_exposes_mep_ccl_accessors():
     """DolarAPIProvider mapea MEP=bolsa, CCL=contadoconliqui (offer=venta)."""
     from core.infrastructure.fx_provider import DolarAPIProvider

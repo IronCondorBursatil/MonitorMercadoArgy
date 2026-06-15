@@ -12,18 +12,16 @@ loop, igual que el resto de read-paths sync (FX/indices/argentinadatos vía _htt
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_fx, get_indices, get_state
+from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.infrastructure.argentinadatos_provider import get_provider as get_argdatos
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 # casa de dolarapi -> label corto para la card. Las casas no mapeadas se muestran
 # igual (con su `nombre` crudo) al final, por si dolarapi agrega una nueva.

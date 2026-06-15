@@ -44,7 +44,7 @@ INIT_OLD = """  buildSectorFacet();
 INIT_NEW = """  function onBoot() { buildSectorFacet(); wireSidebar(); wireTabsAndControls(); refresh(); }
   function onFetch(then) {
     fetch("/on/data").then(function (r) { return r.json(); })
-      .then(function (d) { Object.assign(ON.DATA, d); then(); })
+      .then(function (d) { Object.assign(ON.DATA, d); ON.syncSectors(d.sectors_meta); then(); })
       .catch(function () {
         var fn = document.getElementById("footer-note");
         if (fn) fn.textContent = "No se pudo cargar /on/data.";

@@ -34,7 +34,7 @@ import logging
 import os
 import threading
 import time
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from config.settings import settings
@@ -45,6 +45,14 @@ from core.domain.fci.derive import to_float as _to_float
 from core.infrastructure._http import http_get_json
 
 logger = logging.getLogger(__name__)
+
+_AR_TZ = timezone(timedelta(hours=-3))
+
+
+def _ar_today() -> date:
+    """Fecha de hoy en hora Argentina (UTC-3). El gate diario usa esta fecha para
+    que el rollover ocurra a medianoche AR, evitando saltear la publicación CAFCI."""
+    return datetime.now(tz=_AR_TZ).date()
 
 
 _CAFCI_URL  = "https://estadisticas.cafci.org.ar/comparador-de-fondos.json"
@@ -247,7 +255,7 @@ class CAFCIProvider:
         with self._lock:
             if not self._disk_loaded:
                 self._hydrate_from_disk()
-            if self._last_attempt == date.today():
+            if self._last_attempt == _ar_today():
                 return
             now = time.monotonic()
             if self._last_fail_ts and (now - self._last_fail_ts) < _RETRY_COOLDOWN_S:
@@ -270,7 +278,7 @@ class CAFCIProvider:
                 return
             if parsed["funds"]:
                 type(self)._dataset = parsed
-                type(self)._last_attempt = date.today()
+                type(self)._last_attempt = _ar_today()
                 _save_json(_CAFCI_JSON, parsed)
                 logger.info(
                     "CAFCI: %d fund classes loaded (fecha_base=%s).",

@@ -20,6 +20,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Dict, List, Optional
 
+from core.domain.currency import ccy_from_suffix
+
 _USD_TYPES = ("BONAR", "GLOBAL", "BOPREAL")
 
 
@@ -29,8 +31,7 @@ def position_currency(instrument_type: Optional[str], ticker: str) -> str:
     Misma regla que `server._serve_all_cashflows` — single source of truth de
     qué cuenta como posición en dólares.
     """
-    t = (ticker or "").upper()
-    if instrument_type in _USD_TYPES and t.endswith("D"):
+    if instrument_type in _USD_TYPES and ccy_from_suffix(ticker) == "MEP":
         return "USD"
     return "ARS"
 

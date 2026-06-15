@@ -565,7 +565,7 @@ function drawPane() {
       + fila("Liquidación rescate", f.settle) + fila("Inversión mínima", f.min ? fmtMoney(f.min) : null)
       + fila("Costo gestión (anual)", fmtPct(f.fee_admin, 2)) + fila("Comisión salida", f.fee_out != null ? fmtPct(f.fee_out, 2) : null)
       + fila("Inicio", f.inicio) + fila("ISIN", f.isin) + fila("Bloomberg", f.bbg)
-      + “</dl>” + (f.obj ? “<p class='objetivo'>”” + esc(f.obj) + (f.obj.length >= 400 ? “…” : “”) + “”</p>” : “”);
+      + "</dl>" + (f.obj ? "<p class='objetivo'>" + esc(f.obj) + (f.obj.length >= 400 ? "…" : "") + "</p>" : "");
   }
   pane.style.opacity = "0"; requestAnimationFrame(function () { if (pane) pane.style.opacity = "1"; });
   animateSheet(sheet, h0);

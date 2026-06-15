@@ -20,13 +20,22 @@ import csv
 import logging
 import os
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Optional
 
 from config.settings import settings
 from core.infrastructure._http import http_get_json
 
 logger = logging.getLogger(__name__)
+
+_AR_TZ = timezone(timedelta(hours=-3))
+
+
+def _ar_today() -> date:
+    """Fecha de hoy en hora Argentina (UTC-3, sin horario de verano).
+    Reemplaza `date.today()` en los gates 1×/día para que el rollover ocurra
+    a medianoche AR, no a medianoche UTC — el BCRA publica a las 18-20hs AR."""
+    return datetime.now(tz=_AR_TZ).date()
 
 
 _BCRA_BASE = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias"
@@ -40,7 +49,7 @@ _RESERVAS_CSV = os.path.join(_HISTORY_DIR, "reservas_diario.csv")
 
 def _fetch_series(variable_id: int, days: int) -> Dict[date, float]:
     """Pull last `days` days of a BCRA monetary variable."""
-    end = date.today()
+    end = _ar_today()
     start = end - timedelta(days=days)
     url = f"{_BCRA_BASE}/{variable_id}?Desde={start}&Hasta={end}"
     out: Dict[date, float] = {}
@@ -145,7 +154,7 @@ class BCRAIndicesProvider:
         completa (vacía o con historia corta → backfill), luego `topup_days`."""
         if not cache:
             return bootstrap_days
-        if (date.today() - min(cache)).days < bootstrap_days - 40:
+        if (_ar_today() - min(cache)).days < bootstrap_days - 40:
             return bootstrap_days   # historia corta → backfillear la ventana
         return topup_days
 
@@ -153,9 +162,9 @@ class BCRAIndicesProvider:
         with self._lock:
             if not self._disk_loaded:
                 self._hydrate_from_disk()
-            if self._last_attempt == date.today():
+            if self._last_attempt == _ar_today():
                 return
-            type(self)._last_attempt = date.today()
+            type(self)._last_attempt = _ar_today()
 
             cer_days = self._fetch_window(self._cache_cer, self._CER_BOOTSTRAP_DAYS, self._CER_TOPUP_DAYS)
             cer_new = _fetch_series(30, days=cer_days)

@@ -18,8 +18,9 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
+from core.domain.currency import ccy_from_suffix
 from core.domain.models import Cashflow
 from core.domain.on_classification import SECTORS as _ON_SECTORS
 from core.infrastructure.db.catalog_repository import init_db, instrument_to_orm
@@ -61,10 +62,10 @@ def _sob_group(ticker: str) -> str:
 
 def _sob_slot(ticker: str) -> str:
     """Campo del form que le corresponde a un ticker por su sufijo de moneda."""
-    t = (ticker or "").upper().strip()
-    if t.endswith("D"):
+    ccy = ccy_from_suffix(ticker)
+    if ccy == "MEP":
         return "ticker_mep"
-    if t.endswith("C"):
+    if ccy == "CABLE":
         return "ticker_ccl"
     return "ticker_ars"
 
@@ -515,14 +516,19 @@ def register_stocks(tickers) -> List[str]:
 
 
 def _find_bond_row(s, ticker_u: str) -> Optional[InstrumentORM]:
-    """Fila-bono que contiene `ticker_u` en cualquier slot (primario/mep/ccl)."""
-    orm = s.get(InstrumentORM, ticker_u)
+    """Fila-bono que contiene `ticker_u` en cualquier slot (primario/mep/ccl).
+
+    Igualdad directa sobre ticker_mep/ticker_ccl (index-backed por ix_instr_mep/ccl):
+    los slots se guardan SIEMPRE en mayúsculas (_currency_tickers/split_currency_tickers
+    normalizan), y `ticker_u` ya viene .upper().strip() del caller → preserva la
+    semántica case-insensitive sin forzar un full scan (func.upper lo forzaría)."""
+    orm = s.get(InstrumentORM, ticker_u)               # fast-path PK (primario)
     if orm is not None:
         return orm
-    rows = s.execute(select(InstrumentORM)).scalars().all()
-    return next((o for o in rows
-                 if (o.ticker_mep and o.ticker_mep.upper() == ticker_u)
-                 or (o.ticker_ccl and o.ticker_ccl.upper() == ticker_u)), None)
+    return s.execute(
+        select(InstrumentORM).where(or_(InstrumentORM.ticker_mep == ticker_u,
+                                        InstrumentORM.ticker_ccl == ticker_u))
+    ).scalars().first()
 
 
 def _byma_isin_for(s, tickers) -> Optional[str]:
@@ -585,15 +591,18 @@ def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
 
 def _find_bond_rows(s, tickers) -> List[InstrumentORM]:
     """Filas cuyo ticker primario o pata (mep/ccl) esté en `tickers`. Incluye
-    filas-por-pata pre-migración (para consolidarlas al guardar)."""
+    filas-por-pata pre-migración (para consolidarlas al guardar).
+
+    `IN (...)` sobre cada columna indexada (PK + ix_instr_mep/ccl) → MULTI-INDEX OR,
+    sin full scan + filtro Python. `ts` ya viene en mayúsculas (invariante de storage)."""
     ts = {str(t).upper().strip() for t in tickers if t}
     if not ts:
         return []
-    rows = s.execute(select(InstrumentORM)).scalars().all()
-    return [o for o in rows
-            if o.ticker.upper() in ts
-            or (o.ticker_mep and o.ticker_mep.upper() in ts)
-            or (o.ticker_ccl and o.ticker_ccl.upper() in ts)]
+    return list(s.execute(
+        select(InstrumentORM).where(or_(InstrumentORM.ticker.in_(ts),
+                                        InstrumentORM.ticker_mep.in_(ts),
+                                        InstrumentORM.ticker_ccl.in_(ts)))
+    ).scalars().all())
 
 
 def save_instrument(sheet: str, fields: Dict[str, Any],

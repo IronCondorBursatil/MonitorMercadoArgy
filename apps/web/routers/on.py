@@ -7,17 +7,14 @@ GET /on/data  → dataset JSON (mismo shape que el mock `window.ON_DATA`) armado
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_fx, get_state
 from apps.web.on_service import get_on_dataset
+from apps.web.templates import TEMPLATES as _TEMPLATES
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 @router.get("/on", response_class=HTMLResponse)

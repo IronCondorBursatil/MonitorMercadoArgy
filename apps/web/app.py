@@ -63,7 +63,8 @@ async def _refresh_loop(app: FastAPI) -> None:
         await asyncio.sleep(settings.refresh_sec)
         try:
             await app.state.hub.refresh_all()  # fuente live activa (BYMA/Data912), async
-            use_case = GenerateMonitorReport(repo, provider)
+            use_case = GenerateMonitorReport(repo, provider,
+                                             indices=app.state.indices, fx=app.state.fx)
             metrics = await asyncio.to_thread(use_case.execute, _ALL_TYPES)
             await app.state.app_state.update(metrics)
             # Opciones (snapshot aparte): BYMA open /options por defecto — OI real +
@@ -274,7 +275,8 @@ async def _bei_loop(app: FastAPI) -> None:
         first = False
         try:
             await app.state.hub.refresh_all()  # snapshot fresco (la 1ª corrida es en startup)
-            use_case = GenerateMonitorReport(repo, provider)
+            use_case = GenerateMonitorReport(repo, provider,
+                                             indices=app.state.indices, fx=app.state.fx)
             tables = await asyncio.to_thread(
                 compute_bei_tables, use_case=use_case, indices_provider=bcra)
             app.state.app_state.set_bei(tables)

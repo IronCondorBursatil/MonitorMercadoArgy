@@ -453,6 +453,43 @@
       var item = e.target.closest && e.target.closest(".grid-stack-item");
       if (item) requestAnimationFrame(function () { fitPanel(item); });
     });
+
+    // a11y del #modal (detalle/chart/share): focus-trap + restaurar foco en CUALQUIER
+    // camino de cierre (Esc, botón ✕ inline, swap htmx) vía MutationObserver sobre su
+    // contenido. onEsc vacía el modal → el observer hace el teardown (pop + foco).
+    (function () {
+      var modal = document.getElementById("modal");
+      if (!modal || !window.A11yModal) return;
+      var opened = false;
+      new MutationObserver(function () {
+        var hasContent = modal.children.length > 0;
+        if (hasContent && !opened) {
+          opened = true;
+          A11yModal.open(modal, { onEsc: function () { modal.innerHTML = ""; } });
+        } else if (!hasContent && opened) {
+          opened = false;
+          A11yModal.close(modal);
+        }
+      }).observe(modal, { childList: true });
+    })();
+
+    // Cierre en error: si el fetch del detalle/chart/share (hx-target=#modal) falla,
+    // htmx por default NO swapea → el modal quedaría vacío/stale y el click "no hace
+    // nada". Pintamos un estado de error con botón cerrar en vez de dejarlo colgado.
+    function onModalError(e) {
+      var modal = document.getElementById("modal");
+      var tgt = e.detail && e.detail.target;
+      if (modal && tgt && (tgt === modal || tgt.id === "modal" || modal.contains(tgt))) {
+        modal.innerHTML = '<div class="modal-overlay" onclick="if(event.target===this)this.parentNode.innerHTML=\'\'">' +
+          '<div class="modal-card" role="alert" style="max-width:420px;text-align:center;padding:24px 28px">' +
+          '<p style="margin:0 0 14px">No se pudo cargar el contenido.</p>' +
+          '<button type="button" onclick="document.getElementById(\'modal\').innerHTML=\'\'">Cerrar</button>' +
+          '</div></div>';
+      }
+    }
+    document.body.addEventListener("htmx:responseError", onModalError);
+    document.body.addEventListener("htmx:sendError", onModalError);
+
     requestAnimationFrame(fitAll);
   })();
 </script>

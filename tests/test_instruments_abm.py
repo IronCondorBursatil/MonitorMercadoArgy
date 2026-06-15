@@ -15,6 +15,7 @@ from apps.web.instruments_abm import (
     delete_instrument,
     get_instrument,
     list_instruments,
+    list_instruments_coverage,
     save_cashflows,
     save_instrument,
 )
@@ -319,3 +320,70 @@ class TestSafeSynth:
                 _safe_synth({"tipo": "BONAR", "fecha_emision": "2025-01-01",
                               "fecha_vencimiento": "2030-01-01",
                               "frecuencia pagos": "2", "cupon anual %": "5.0"})
+
+
+# --------------------------------------------------------------------------- #
+# C2/C3 — performance de lookups (índices ticker_mep/ccl + noload de cashflows)
+# --------------------------------------------------------------------------- #
+
+def _capture_sql(fn):
+    """Corre `fn()` capturando todo el SQL emitido sobre el engine vivo."""
+    from sqlalchemy import event
+    from core.infrastructure.db import engine as db_engine
+    eng = db_engine.get_engine()
+    sql: list = []
+
+    def _cap(conn, cursor, statement, params, context, executemany):
+        sql.append(statement)
+
+    event.listen(eng, "before_cursor_execute", _cap)
+    try:
+        result = fn()
+    finally:
+        event.remove(eng, "before_cursor_execute", _cap)
+    return result, sql
+
+
+class TestLookupPerformance:
+    def test_find_bond_row_by_pata_is_index_backed(self, abm_db):
+        """C2: resolver un bono por su pata MEP/CABLE usa un WHERE sobre la columna
+        indexada (ix_instr_mep/ccl), no un select-all + filtro Python. Comportamiento
+        intacto (la pata resuelve a la fila primaria); el SQL ya NO es un scan."""
+        from core.infrastructure.db.engine import SessionLocal
+        from apps.web.instruments_abm import _find_bond_row, _find_bond_rows
+        save_instrument("Soberanos", {
+            "ticker_ars": "ZZ6", "ticker_mep": "ZZ6D", "ticker_ccl": "ZZ6C",
+            "short_name": "ZZ6", "tipo": "BONAR",
+            "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
+            "cupon anual %": "1.0", "frecuencia pagos": "2",
+        })
+
+        def _run():
+            with SessionLocal() as s:
+                row = _find_bond_row(s, "ZZ6D")           # PK miss → lookup por pata
+                rows = _find_bond_rows(s, ["ZZ6D"])
+                return row, rows
+
+        (row, rows), sql = _capture_sql(_run)
+        # comportamiento: la pata MEP resuelve a la fila primaria ZZ6
+        assert row is not None and row.ticker == "ZZ6"
+        assert any(o.ticker == "ZZ6" for o in rows)
+        # el SQL del lookup por pata trae un WHERE sobre ticker_mep (en el viejo código
+        # se filtraba en Python → ningún SELECT mencionaba ticker_mep en su WHERE)
+        pata_q = [q for q in sql if "FROM instruments" in q and "ticker_mep" in q]
+        assert pata_q, sql
+
+    def test_coverage_does_not_select_in_cashflows(self, abm_db):
+        """C3: list_instruments_coverage NO dispara el SELECT-IN de cashflows del
+        relationship selectin (usa noload); el % viene del conteo agregado aparte."""
+        rows, sql = _capture_sql(list_instruments_coverage)
+        assert rows
+        # 0 SELECT-IN de cashflows (el selectin pelado emitiría 'FROM cashflows' sin count)
+        cf_in = [s for s in sql if "FROM cashflows" in s and "count(" not in s.lower()]
+        assert cf_in == [], cf_in
+        # SÍ corre la query de conteo agregado de cashflows (de donde sale el %)
+        cf_cnt = [s for s in sql if "count(" in s.lower() and "cashflows" in s.lower()]
+        assert len(cf_cnt) == 1
+        # anti-regresión del %: el dato de cashflows sigue presente
+        assert all("pct" in r and "cf" in r for r in rows)
+        assert any(r["cf"] > 0 for r in rows)

@@ -7,17 +7,14 @@ GET /fci/data   → dataset JSON `{meta, funds}` (armado en `apps/web/fci_servic
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web.deps import get_cafci, get_fx, get_indices
 from apps.web.fci_service import get_fci_dataset
+from apps.web.templates import TEMPLATES as _TEMPLATES
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 @router.get("/fci", response_class=HTMLResponse)

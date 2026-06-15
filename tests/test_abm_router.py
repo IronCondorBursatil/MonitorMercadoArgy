@@ -67,6 +67,29 @@ def test_abm_save_invalid_shows_error_not_silent():
         assert "ticker" in r.text.lower()    # con el motivo real
 
 
+def test_abm_save_internal_attribute_error_propagates_not_swallowed():
+    """A6: un AttributeError DENTRO de synth_cashflows (bug interno) NO se traga: el
+    router lo deja propagar (500) en vez de guardar un alta con cero cashflows en
+    silencio. Distingue bug interno (propaga) de input inválido (banner visible,
+    cubierto por test_abm_save_invalid_shows_error_not_silent). El except acotado de
+    _safe_synth (ValueError/KeyError/TypeError) NO debe ampliarse a Exception."""
+    import unittest.mock as mock
+
+    # raise_server_exceptions=False → el 500 se observa como respuesta, no re-raise.
+    with TestClient(app, raise_server_exceptions=False) as c:
+        # Input VÁLIDO (sintetizaría flujos): el único motivo de fallo es el bug interno.
+        fields = {
+            "sheet": "Soberanos", "ticker_ars": "TESTBUG", "short_name": "BUG",
+            "tipo": "BONAR", "fecha_emision": "2025-01-01",
+            "fecha_vencimiento": "2030-01-01", "cupon anual %": "5.0",
+            "frecuencia pagos": "2",
+        }
+        with mock.patch("core.domain.cashflow_synth.synth_cashflows",
+                        side_effect=AttributeError("bug interno simulado")):
+            r = c.post("/abm/save", data=fields)
+        assert r.status_code == 500   # propaga: el router solo atrapa ValueError/KeyError
+
+
 def test_abm_on_list_adaptive_table_shows_fields():
     """La lista del ABM es la tabla de completitud ADAPTATIVA por hoja: para ONs
     muestra los campos (Emisor / Tipo / Ley / …) como columnas, el ticker en pesos y

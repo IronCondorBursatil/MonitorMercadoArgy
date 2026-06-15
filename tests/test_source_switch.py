@@ -175,6 +175,51 @@ def test_floor_fills_symbols_active_does_not_list():
     asyncio.run(run())
 
 
+def test_floor_recovers_symbol_after_k_cycles_active_drops_it():
+    """A3 — ventana deslizante K: un símbolo que la activa DEJA de listar lo retiene
+    la activa durante K ciclos (anti-flicker) y recién al expirar la ventana el floor
+    Data912 lo recupera. Distinto de un vacío transitorio (ese se cubre en otro test):
+    acá la ausencia es persistente y debe ceder al floor tras K ausencias consecutivas."""
+    def handler(request):
+        if "data912.com" in str(request.url):
+            return httpx.Response(200, json=[{"symbol": "AL30", "c": 70.5}])
+        return httpx.Response(200, json=[])
+
+    class _DropsAfterFirst:
+        mode = "byma_open"
+        label = "BYMA open"
+        delayed = True
+
+        def __init__(self):
+            self.n = 0
+
+        async def fetch(self, client):
+            self.n += 1
+            if self.n == 1:  # solo el 1er ciclo lista AL30
+                return ({"24": {"AL30": Data912Row(symbol="AL30", c=99.0)}, "CI": {}},
+                        {"AL30": "bonds"})
+            return ({"24": {}, "CI": {}}, {})  # ausencia PERSISTENTE
+
+    async def run():
+        c = ResilientClient(transport=httpx.MockTransport(handler))
+        hub = ProviderHub(c)
+        try:
+            hub.set_source(_DropsAfterFirst())
+            k = hub._K_ACTIVE_CYCLES                      # = 3
+            snap = await hub.refresh_all()                # ciclo 1: activa lista 99.0
+            assert snap["AL30"].c == 99.0
+            # ciclos 2..k: dentro de la ventana → la activa retiene 99.0 (el floor NO pisa)
+            for _ in range(k - 1):
+                snap = await hub.refresh_all()
+                assert snap["AL30"].c == 99.0
+            # ciclo k+1: contador llegó a 0 → sale de _active_syms → el floor recupera 70.5
+            snap = await hub.refresh_all()
+            assert snap["AL30"].c == 70.5
+        finally:
+            await c.aclose()
+    asyncio.run(run())
+
+
 def test_data912_active_never_self_backstops():
     """Si la fuente activa YA es Data912 y vuelve vacía, no hay segundo fetch."""
     calls = {"n": 0}
@@ -216,3 +261,65 @@ def test_realtime_available_with_credentials(monkeypatch):
     assert BymaRealtimeSource.has_credentials() is True
     src = make_source("byma_realtime")
     assert src.mode == "byma_realtime"
+
+
+# ── A4: freshness + purge ───────────────────────────────────────────────────
+
+def test_freshness_tracks_active_source_symbols():
+    """freshness() devuelve antigüedad en segundos solo para los símbolos que
+    la fuente ACTIVA listó; NO marca symbols que vinieron del floor Data912."""
+    async def run():
+        c = ResilientClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=[])))
+        hub = ProviderHub(c)
+        try:
+            hub.set_source(_FakeSource())         # entrega AL30
+            assert hub.freshness() == {}          # sin datos aún
+            await hub.refresh_all()
+            f = hub.freshness()
+            assert "AL30" in f
+            assert f["AL30"] >= 0.0               # recién visto
+        finally:
+            await c.aclose()
+    asyncio.run(run())
+
+
+def test_stale_purge_on_day_rollover_and_empty_cycle_safe(monkeypatch):
+    """Purga diaria: símbolo con timestamp > PURGE_MAX_DAYS se borra del snapshot
+    al rollover del día. Un ciclo activo vacío NO dispara la purga (stale-safe)."""
+    import time as _time
+
+    async def run():
+        c = ResilientClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=[])))
+        hub = ProviderHub(c)
+        try:
+            hub.set_source(_FakeSource())
+            await hub.refresh_all()               # AL30 vista hoy
+            assert "AL30" in hub.snapshot()
+
+            # Simular que AL30 fue vista hace PURGE_MAX_DAYS+1 días → debe purgarse.
+            hub._seen_at["AL30"] = _time.monotonic() - (hub._PURGE_MAX_DAYS + 1) * 86400.0
+            # Forzar rollover de día para que la purga corra.
+            from datetime import date, timedelta
+            hub._purge_day = date.today() - timedelta(days=1)
+
+            # Ciclo con datos (seen_this_cycle no vacío) → dispara purge.
+            await hub.refresh_all()
+            # AL30 listada nuevamente por _FakeSource → se ve este ciclo; su timestamp
+            # se actualiza ANTES de la purga en el lock, así que sobrevive.
+            # Usamos un símbolo que NO aparece en _FakeSource para verificar la purga.
+            hub._seen_at["DEADSTOCK"] = _time.monotonic() - (hub._PURGE_MAX_DAYS + 1) * 86400.0
+            hub._snap[hub._snap and "24" or "24"].setdefault("DEADSTOCK",
+                Data912Row(symbol="DEADSTOCK", c=10.0))
+            hub._purge_day = date.today() - timedelta(days=1)
+            await hub.refresh_all()
+            assert "DEADSTOCK" not in hub.snapshot()  # purgado
+
+            # Ciclo vacío NO purga (stale-safe).
+            hub.set_source(_EmptySource())
+            hub._seen_at["SAFE"] = _time.monotonic() - (hub._PURGE_MAX_DAYS + 1) * 86400.0
+            hub._purge_day = date.today() - timedelta(days=1)
+            await hub.refresh_all()               # vacío → seen_this_cycle empty → sin purge
+            assert "SAFE" in hub._seen_at         # sobrevivió
+        finally:
+            await c.aclose()
+    asyncio.run(run())

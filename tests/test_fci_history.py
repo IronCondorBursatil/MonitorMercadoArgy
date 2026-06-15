@@ -78,6 +78,36 @@ def test_net_flow_series_empty_or_single_point():
     assert net_flow_series({date(2026, 6, 2): {"vcp": 1.0, "ccp": 1.0, "patrimonio": 1.0}}) == {}
 
 
+def test_net_flow_series_discards_implausible_ccp_jump():
+    """A10: un renombre/colisión de fondo en ArgentinaDatos parte la serie de ccp y
+    produce un Δccp gigante. El guard de continuidad descarta ese punto (no se lee como
+    un flujo espurio de millones), pero NO borra el flujo orgánico siguiente."""
+    from core.infrastructure.fci_history import _NET_FLOW_MAX_JUMP
+    big = 1000.0 * (_NET_FLOW_MAX_JUMP + 2.0)        # ratio = umbral+1 > umbral → implausible
+    series = {
+        date(2026, 6, 2): {"vcp": 100.0, "ccp": 1000.0, "patrimonio": 100_000.0},
+        date(2026, 6, 3): {"vcp": 100.0, "ccp": big, "patrimonio": big * 100},          # discontinuidad
+        date(2026, 6, 4): {"vcp": 100.0, "ccp": big + 200.0, "patrimonio": (big + 200) * 100},  # +200 orgánico
+    }
+    flows = net_flow_series(series)
+    assert date(2026, 6, 3) not in flows                            # salto implausible → descartado
+    assert flows[date(2026, 6, 4)] == pytest.approx(200 * 100.0)    # el flujo siguiente SÍ se conserva
+
+
+def test_net_flow_series_keeps_large_but_plausible_jump():
+    """Un salto grande pero por debajo del umbral (un fondo chico que recibe una
+    suscripción fuerte) NO se borra silenciosamente."""
+    from core.infrastructure.fci_history import _NET_FLOW_MAX_JUMP
+    ratio = _NET_FLOW_MAX_JUMP - 0.5                  # plausible: < umbral
+    bumped = 1000.0 * (1.0 + ratio)
+    series = {
+        date(2026, 6, 2): {"vcp": 50.0, "ccp": 1000.0, "patrimonio": 50_000.0},
+        date(2026, 6, 3): {"vcp": 50.0, "ccp": bumped, "patrimonio": bumped * 50},
+    }
+    flows = net_flow_series(series)
+    assert flows[date(2026, 6, 3)] == pytest.approx((bumped - 1000.0) * 50.0)
+
+
 def test_record_from_ard_fetches_and_stores(store, monkeypatch):
     """record_from_ard pega a las 5 categorías de ArgentinaDatos (mockeadas) y
     persiste las filas con ccp del día."""

@@ -118,7 +118,7 @@
   // ---- formato de celdas ----
   function cell(k, b) {
     var v = b[k];
-    if (k === "clase") return b.clase ? '<span class="uni-cl">' + b.clase + '</span>' : '<span class="dim">—</span>';
+    if (k === "clase") return b.clase ? '<span class="uni-cl">' + ON.esc(b.clase) + '</span>' : '<span class="dim">—</span>';
     if (k === "ley") return '<span class="uni-ley ' + b.ley + '">' + b.ley + '</span>';
     if (k === "tipo") return b.tipo ? '<span class="uni-tipo ' + b.tipo + '">' + b.tipo + '</span>' : '—';
     if (k === "emision") return ON.date(b.emision);
@@ -190,12 +190,12 @@
         var ek = a.key + "||" + e.name, cE = state.colEmi.has(ek);
         h += '<tr class="uni-emisor" data-emi="' + encodeURIComponent(ek) + '" style="--sc:' + col + '">' +
           '<td class="uni-grp uni-grp2"><span class="uni-caret">' + (cE ? "▶" : "▼") + '</span>' +
-          '<span class="uni-em" title="' + e.name + '">' + e.name + '</span><span class="uni-n">' + e.a.count + '</span></td>' +
+          '<span class="uni-em" title="' + ON.esc(e.name) + '">' + ON.esc(e.name) + '</span><span class="uni-n">' + e.a.count + '</span></td>' +
           aggCells(e.a, max, col, { vol: true }) + '</tr>';
         if (cE) return;
         sortBonds(e.bonds).forEach(function (b) {
           h += '<tr class="uni-bond" data-tk="' + b.ticker + '" style="--sc:' + col + '">' +
-            '<td class="uni-grp uni-grp3"><span class="uni-tk">' + b.ticker + '</span></td>';
+            '<td class="uni-grp uni-grp3"><span class="uni-tk">' + ON.esc(b.ticker) + '</span></td>';
           COLS.forEach(function (c) {
             h += '<td class="' + (c.num ? "num" : "") + (c.k === "tir" ? " tir-cell" : "") +
               '" style="text-align:' + c.align + '">' + cell(c.k, b) + '</td>';

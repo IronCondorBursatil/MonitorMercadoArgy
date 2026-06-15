@@ -9,18 +9,17 @@ providers de app.state. Reemplaza los tabs DETALLES/CALCULADORA del SPA.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from apps.web.bond_detail import calculate, cer_projection, get_bond_detail
 from apps.web.deps import get_fx, get_indices, get_provider, get_repo, get_state
+from apps.web.templates import TEMPLATES as _TEMPLATES
+from core.infrastructure.rem_provider import REMProvider
 
 router = APIRouter()
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 
 @router.get("/bond/{ticker}/detail", response_class=HTMLResponse)
@@ -66,7 +65,6 @@ def _to_float(raw):
 
 
 def _rem_provider():
-    from core.infrastructure.rem_provider import REMProvider
     return REMProvider()
 
 

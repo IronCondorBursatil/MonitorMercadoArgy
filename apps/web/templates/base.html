@@ -25,6 +25,51 @@
       h.setAttribute("data-theme", t);
       localStorage.setItem("theme", t);
     }
+    // --- Helper a11y para modales/drawers: focus-trap + restaurar foco + Esc ---
+    // Agnóstico de markup (recibe el panel + callbacks); lo usan el drawer CER, el
+    // #modal del detalle y el modal del gráfico de /on (on.js). Pila de niveles: Esc
+    // cierra el TOPE (un drawer sobre el modal se cierra antes que el modal). A11yModal
+    // solo hace teardown (pop + restaurar foco); el cierre VISUAL lo hace onEsc/el caller.
+    window.A11yModal = (function () {
+      var stack = [];   // [{panel, onEsc, prevFocus}]
+      var SEL = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),' +
+                'textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+      function focusables(panel) {
+        return Array.prototype.slice.call(panel.querySelectorAll(SEL))
+          .filter(function (el) { return el.offsetParent !== null; });
+      }
+      function onKey(e) {
+        var t = stack[stack.length - 1];
+        if (!t) return;                                  // sin modal → Esc normal (dropdowns)
+        if (e.key === "Escape") {
+          e.preventDefault(); e.stopPropagation();
+          if (t.onEsc) t.onEsc(); else close(t.panel);   // cierre visual del tope
+          return;
+        }
+        if (e.key !== "Tab") return;
+        var f = focusables(t.panel);
+        if (!f.length) return;
+        var first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+      document.addEventListener("keydown", onKey, true);
+      function open(panel, opts) {
+        if (!panel) return;
+        opts = opts || {};
+        stack.push({ panel: panel, onEsc: opts.onEsc, prevFocus: document.activeElement });
+        var target = opts.focus || focusables(panel)[0];
+        if (target) { try { target.focus(); } catch (e) {} }
+      }
+      function close(panel) {   // teardown: pop el nivel + restaurar foco (sin cierre visual)
+        var i = stack.length - 1;
+        if (panel) { i = -1; for (var k = stack.length - 1; k >= 0; k--) { if (stack[k].panel === panel) { i = k; break; } } }
+        if (i < 0) return;
+        var entry = stack.splice(i, 1)[0];
+        if (entry.prevFocus && entry.prevFocus.focus) { try { entry.prevFocus.focus(); } catch (e) {} }
+      }
+      return { open: open, close: close };
+    })();
     // --- Cajón "Proyección CER" del popup de detalle (bonos CER) ---
     function cerOpen() {
       var m = document.getElementById("modal");
@@ -32,6 +77,8 @@
       var d = m.querySelector(".cer-drawer"), s = m.querySelector(".cer-scrim");
       if (d) d.classList.add("open");
       if (s) s.classList.add("on");
+      if (d && window.A11yModal) A11yModal.open(d, {
+        focus: d.querySelector("button,input,select,textarea,a[href]"), onEsc: cerClose });
     }
     function cerClose() {
       var m = document.getElementById("modal");
@@ -39,6 +86,7 @@
       var d = m.querySelector(".cer-drawer"), s = m.querySelector(".cer-scrim");
       if (d) d.classList.remove("open");
       if (s) s.classList.remove("on");
+      if (d && window.A11yModal) A11yModal.close(d);
     }
     function cerMode(btn, mode) {
       var box = btn.closest("form");
