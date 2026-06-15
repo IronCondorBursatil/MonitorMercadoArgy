@@ -1,5 +1,5 @@
 /* AUTO-GENERADO por scripts/build_on_static.py — NO editar a mano.
-   App cliente de /on (porteada del mock docs/mockups/on/21-mesa-3-vistas.html).
+   App cliente de /on (porteada de apps/web/on_src/on_app.html).
    Datos en vivo desde /on/data; tema y chrome los da base.html. */
 
 /* ---- sectores (window.ON_SECTORS / ON_SECTOR_MAP) ---- */
@@ -19,7 +19,7 @@ window.ON_SECTORS = [
 ];
 window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s]));
 
-/* ---- librería ON (de _shared/util.js, sin manejo de tema/header) ---- */
+/* ---- librería ON (de on_src/util.js, sin manejo de tema/header) ---- */
 /* ON mockups — librería compartida. Namespace global `ON`.
    Datos reales en window.ON_DATA (on_data.js); sectores en window.ON_SECTORS (sectors.js).
    Diseñada para que los 20 mockups consuman la MISMA API y se vean consistentes. */
@@ -179,7 +179,7 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
   };
 })();
 
-/* ---- herramienta unificada Sector›Emisor›Título (de _shared/unified.js) ---- */
+/* ---- herramienta unificada Sector›Emisor›Título (de on_src/unified.js) ---- */
 /* ============================================================
    Herramienta unificada ON — Sector › Emisor › Título en UNA tabla con
    agregados por grupo. Reemplaza "Liga de sectores" (agregado por sector) +

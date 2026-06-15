@@ -2,8 +2,10 @@
 
 **Monitor de instrumentos de renta fija argentinos + Panel Líder + BEI extendido. Documento maestro de arquitectura.**
 
-> ⚠️ **REINGENIERÍA (`mejora.md`) IMPLEMENTADA** — branch `refactor/mejora-reingenieria`.
-> La arquitectura **actual** está en **`CLAUDE.md`** (leer primero). Cambios clave:
+> ⚠️ **REINGENIERÍA (`mejora.md`) IMPLEMENTADA y mergeada a `main`** (+ campaña de mejora
+> integral del backlog `docs/superpowers/`). La arquitectura **actual** está en **`CLAUDE.md`**
+> (leer primero) — este doc conserva las **convenciones financieras** vigentes pero su
+> descripción de la **capa web** de abajo es **histórica**. Cambios clave:
 > - **Pricing core**: la escalera `if _is_*_type()` de `services.py` se reemplazó por
 >   Strategy + Protocol + registry (`core/domain/pricing/`); `FinancialEngine` es ahora
 >   una fachada. Modelos → Pydantic v2. Equivalencia numérica verificada vs el motor viejo.
@@ -11,7 +13,18 @@
 >   del Excel repo; Excel = semilla (`scripts/ingest_master.py`). DuckDB analytics.
 > - **Web**: el `http.server` + SPA (`server.py`, `app.js`, `style.css`, los HTML) fue
 >   **retirado** y reemplazado por **FastAPI + HTMX SSR** (`apps/web/app.py` + `routers/` +
->   `templates/`). `run.py` ahora arranca uvicorn. HTTP: `requests`→`httpx`.
+>   `templates/`). `run.py` ahora arranca uvicorn. HTTP: `requests`→`httpx`. Los builders
+>   de fila de los paneles viven en `apps/web/panels_rows.py` (separado del router);
+>   `apps/web/templates.py` expone el singleton Jinja. Los paneles **FCI** y **ONs** son
+>   apps cliente JS (`static/js/fci.js`, `static/js/on.js`) que hacen `fetch('/fci/data')`
+>   / `fetch('/on/data')`. **`on.js` es AUTO-GENERADO** por `scripts/build_on_static.py`
+>   desde `apps/web/on_src/` (`sectors.js` + `util.js` + `unified.js` + `on_app.html`) —
+>   NO editar `on.js` a mano; tocar la fuente en `on_src/` y regenerar. (La vieja galería
+>   de mockups `docs/mockups/` se retiró; sus fuentes vivas se movieron a `on_src/`.)
+> - **Dominio compartido nuevo**: `core/domain/currency.py::ccy_from_suffix` (moneda por
+>   sufijo D/C/—, única fuente) y `core/domain/pricing/fx_legs.py::peso_leg_to_usd`
+>   (dolarización de la pata pesos para display; el motor mantiene su propia copia para
+>   no entrar al perímetro de equivalencia).
 > - **Logging** (`config/settings.py::_ConsoleFilter`): la **consola** muestra SOLO lo
 >   accionable — `WARNING`+/errores, requests HTTP con status ≥ 400, y todo lo marcado
 >   `extra={"console": True}`. El **archivo** `monitores_global.log` recibe **WARNING+**

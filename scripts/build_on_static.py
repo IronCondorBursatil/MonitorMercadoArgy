@@ -1,17 +1,19 @@
-"""Genera apps/web/static/js/on.js (app cliente de la página /on) a partir del mock 21.
+"""Genera apps/web/static/js/on.js (app cliente de la página /on) desde las fuentes
+en `apps/web/on_src/` (sectors.js + util.js + unified.js + on_app.html).
 
-La página real reusa el diseño del mock `docs/mockups/on/21-mesa-3-vistas.html`, pero
-alimentado por `/on/data` (no por un snapshot congelado) y dentro del chrome de base.html
-(header/nav/tema reales). Este script arma on.js de forma determinística para que quede
-1:1 con el mock:
+La página real reusa el diseño de `apps/web/on_src/on_app.html` (el ex-mock de la
+galería de diseño), pero alimentado por `/on/data` (no por un snapshot congelado) y
+dentro del chrome de base.html (header/nav/tema reales). Este script arma on.js de
+forma determinística:
 
   on.js = sectors.js  (window.ON_SECTORS / ON_SECTOR_MAP)
         + util.js     (librería ON, sin el initTheme() del final — el tema lo maneja base.html)
-        + IIFE del mock 21 (la app de 3 subpestañas), con dos cambios:
+        + unified.js  (herramienta Sector›Emisor›Título)
+        + IIFE de on_app.html (la app de 3 subpestañas), con dos cambios:
             · `on:themechange` → MutationObserver sobre documentElement[data-theme]
             · init directo → fetch('/on/data') y luego boot()
 
-Read-only sobre las fuentes; solo escribe on.js.
+Read-only sobre las fuentes; solo escribe on.js. NO editar on.js a mano (invariante).
 """
 from __future__ import annotations
 
@@ -19,7 +21,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ON = ROOT / "docs" / "mockups" / "on"
+SRC = ROOT / "apps" / "web" / "on_src"
 OUT = ROOT / "apps" / "web" / "static" / "js" / "on.js"
 
 THEME_OLD = """  window.addEventListener("on:themechange", function () {
@@ -82,19 +84,19 @@ def _require(haystack: str, needle: str, what: str) -> None:
 
 
 def main() -> int:
-    sectors = (ON / "_shared" / "sectors.js").read_text(encoding="utf-8")
-    util = (ON / "_shared" / "util.js").read_text(encoding="utf-8")
-    unified = (ON / "_shared" / "unified.js").read_text(encoding="utf-8")
-    html = (ON / "21-mesa-3-vistas.html").read_text(encoding="utf-8")
+    sectors = (SRC / "sectors.js").read_text(encoding="utf-8")
+    util = (SRC / "util.js").read_text(encoding="utf-8")
+    unified = (SRC / "unified.js").read_text(encoding="utf-8")
+    html = (SRC / "on_app.html").read_text(encoding="utf-8")
 
     # util.js: sacar el initTheme() del final (el tema lo aplica base.html antes del paint).
     _require(util, "\n  initTheme();\n", "el initTheme() final de util.js")
     util = util.replace("\n  initTheme();\n", "\n", 1)
 
-    # IIFE de la app = el último <script>...</script> SIN atributos del mock 21.
+    # IIFE de la app = el último <script>...</script> SIN atributos de on_app.html.
     scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
     if not scripts:
-        raise SystemExit("build_on_static: no encontré el <script> de la app en el mock 21")
+        raise SystemExit("build_on_static: no encontré el <script> de la app en on_app.html")
     app = max(scripts, key=len).strip()
 
     _require(app, THEME_OLD, "el handler on:themechange")
@@ -104,13 +106,13 @@ def main() -> int:
 
     out = (
         "/* AUTO-GENERADO por scripts/build_on_static.py — NO editar a mano.\n"
-        "   App cliente de /on (porteada del mock docs/mockups/on/21-mesa-3-vistas.html).\n"
+        "   App cliente de /on (porteada de apps/web/on_src/on_app.html).\n"
         "   Datos en vivo desde /on/data; tema y chrome los da base.html. */\n\n"
         "/* ---- sectores (window.ON_SECTORS / ON_SECTOR_MAP) ---- */\n"
         + sectors.strip() + "\n\n"
-        "/* ---- librería ON (de _shared/util.js, sin manejo de tema/header) ---- */\n"
+        "/* ---- librería ON (de on_src/util.js, sin manejo de tema/header) ---- */\n"
         + util.strip() + "\n\n"
-        "/* ---- herramienta unificada Sector›Emisor›Título (de _shared/unified.js) ---- */\n"
+        "/* ---- herramienta unificada Sector›Emisor›Título (de on_src/unified.js) ---- */\n"
         + unified.strip() + "\n\n"
         "/* ---- app de la página (3 subpestañas), boot por fetch('/on/data') ---- */\n"
         + app + "\n"

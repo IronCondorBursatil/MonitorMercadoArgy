@@ -2,9 +2,9 @@
 
 Criterio: match por keywords sobre el NOMBRE del emisor (no existe un campo sector
 en el catálogo/CSV/ORM — solo el emisor). Es determinístico, sin I/O y testeable;
-se calcula al vuelo (no se persiste) tanto en el endpoint `/on` como en el panel SSR
-y en el generador de datos de los mockups (`scripts/build_on_mockup_data.py`), que
-antes tenía esta lógica duplicada. Módulo de dominio puro, estilo `conventions.py`.
+se calcula al vuelo (no se persiste) en el endpoint `/on` (y se sirve en
+`/on/data::sectors_meta` para que el cliente pinte igual que el server). Módulo de
+dominio puro, estilo `conventions.py`.
 
 Keywords ANCLADAS AL NOMBRE de la sociedad (no tokens genéricos como "ENERGIA" que
 contaminan). El ORDEN importa: primer match gana — Utilities (distribuidoras) antes
@@ -27,8 +27,9 @@ class SectorMeta:
     icon: str    # emoji
 
 
-# Orden canónico + paleta + íconos (espejo de docs/mockups/on/_shared/sectors.js).
-# El front (static/js/on.js) mantiene una copia JS de esto; esta es la fuente Python.
+# Orden canónico + paleta + íconos (espejo de apps/web/on_src/sectors.js).
+# El front (static/js/on.js) hidrata desde /on/data (sectors_meta); la copia JS de
+# on_src/sectors.js es solo fallback de arranque. Esta es la fuente Python de verdad.
 SECTORS: list[SectorMeta] = [
     SectorMeta("Energía / Petróleo & Gas", "Energía", "#ED8B36", "⚡"),
     SectorMeta("Utilities (Luz / Gas)", "Utilities", "#2FA4C9", "🔌"),
