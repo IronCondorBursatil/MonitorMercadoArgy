@@ -4,7 +4,7 @@ Monitor de renta fija argentina (Soberanos, CER, Tasa Fija, TAMAR/Dual, Dólar L
 Bopreales, Futuros DLR, BEI, Panel Líder) + Cartera + ABM. Precios de **Data912**,
 índices de **BCRA**, futuros de **Matba/Rofex WS**, FX de **dolarapi**.
 
-> Este archivo describe la arquitectura **actual** (tras implementar `mejora.md`).
+> Este archivo describe la arquitectura **actual** (post-reingeniería).
 > `agents.md` conserva las **convenciones financieras** (CER NT8/2024, TAMAR, BEI,
 > day-counts, MD BYMA) que siguen 100% vigentes — pero su descripción de la capa
 > **web** es vieja (era http.server + SPA `app.js`). La verdad actual es la de acá.
@@ -128,8 +128,9 @@ enriquecido + AUM ArgentinaDatos + lente A3500/CER + flujos reales de `fci_histo
 
 Este repo usa el plugin **Superpowers** (obra). El flujo para features nuevas es:
 `brainstorming → spec → writing-plans → plan → TDD/subagent-driven → code-review →
-finishing-branch`. Artefactos en `docs/superpowers/` (`specs/`, `plans/` — ver su
-README). **Las skills se auto-disparan al arrancar Claude Code** (no en caliente).
+finishing-branch`. Si se usa, los artefactos van a `docs/superpowers/` (`specs/`,
+`plans/`), que se crea on-demand. **Las skills se auto-disparan al arrancar Claude Code**
+(no en caliente).
 
 - **Prioridad**: las instrucciones de este CLAUDE.md **ganan** sobre las skills. Si una
   skill choca con una convención de acá (financieras de `agents.md`, equivalencia del
@@ -154,4 +155,3 @@ README). **Las skills se auto-disparan al arrancar Claude Code** (no en caliente
   riesgo — queda como cola opcional.
 - Charts/sparklines adicionales (Chart.js) — ya usado en el panel FCI (`static/js/fci.js`); extender a otros paneles. Más cobertura de tests de routers.
 - **FCI composición de cartera**: única pieza no disponible (CAFCI ficha gateada / worker de fonditos pago). El panel la omite hasta conseguir fuente. Flujos: reales vía `fci_history` a medida que acumula ruedas; lente 3m/6m/12m se completa cuando el bootstrap de ~400d de CER/A3500 backfillee.
-Ver `mejora.md`.

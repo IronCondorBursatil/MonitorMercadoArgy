@@ -2,10 +2,10 @@
 
 **Monitor de instrumentos de renta fija argentinos + Panel Líder + BEI extendido. Documento maestro de arquitectura.**
 
-> ⚠️ **REINGENIERÍA (`mejora.md`) IMPLEMENTADA y mergeada a `main`** (+ campaña de mejora
-> integral del backlog `docs/superpowers/`). La arquitectura **actual** está en **`CLAUDE.md`**
-> (leer primero) — este doc conserva las **convenciones financieras** vigentes pero su
-> descripción de la **capa web** de abajo es **histórica**. Cambios clave:
+> ⚠️ **REINGENIERÍA IMPLEMENTADA y mergeada a `main`** (+ campaña de mejora integral del
+> backlog, ya ejecutada). La arquitectura **actual** está en **`CLAUDE.md`** (leer primero)
+> — este doc conserva las **convenciones financieras** vigentes pero su descripción de la
+> **capa web** de abajo es **histórica**. Cambios clave:
 > - **Pricing core**: la escalera `if _is_*_type()` de `services.py` se reemplazó por
 >   Strategy + Protocol + registry (`core/domain/pricing/`); `FinancialEngine` es ahora
 >   una fachada. Modelos → Pydantic v2. Equivalencia numérica verificada vs el motor viejo.
