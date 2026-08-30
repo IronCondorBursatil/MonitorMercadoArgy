@@ -1,0 +1,20 @@
+.env
+.git/
+.gitignore
+.claude/
+.vscode/
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Bases de datos locales
+data/history/*.db
+data/history/*.sqlite
+monitor/
+backups/
+*.log
+monitores_global.log
