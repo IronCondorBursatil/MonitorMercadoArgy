@@ -12,3 +12,15 @@ services:
         value: 8000
       - key: MONITOR_HOST
         value: 0.0.0.0
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: MONITOR_ENGINE_WORKERS
+        value: "1"
+      - key: MONITOR_BYMA_HISTORY_WORKERS
+        value: "1"
+      - key: MONITOR_BYMA_HISTORY_MAX_DAYS
+        value: "30"
