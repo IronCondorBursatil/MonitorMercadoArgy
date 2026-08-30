@@ -1,10 +1,5 @@
 # Configuración de herramientas de desarrollo (no empaqueta el proyecto).
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-extend-exclude = ["data", "docs", "scripts/_*"]
-
-[tool.ruff.lint]
+[lint]
 # F = pyflakes (imports/vars sin usar, redefiniciones, nombres indefinidos) — lo más valioso.
 # E/W = pycodestyle. E501 (largo de línea) se ignora: el código financiero tiene líneas largas
 # deliberadas y no usamos `ruff format`. E741 (nombres ambiguos l/I/O) también se ignora.
@@ -13,3 +8,10 @@ select = ["F", "E", "W"]
 # línea (estilo del codebase, ej. `if not x: return`); E731 lambda asignada; E741 nombres l/I/O;
 # E402 import no-top (conftest hace sys.path antes de importar). Todos intencionales.
 ignore = ["E501", "E701", "E702", "E731", "E741", "E402"]
+
+[format]
+# No se utiliza
+
+[lint.per-file-ignores]
+# Ignorar imports en init
+"__init__.py" = ["F401"]
