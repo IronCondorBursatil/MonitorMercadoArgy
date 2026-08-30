@@ -118,7 +118,7 @@ def index(request: Request, state=Depends(get_state)):
                "settle_filter": pid in SETTLE_FILTER_PANELS,
                "hl_key": _HL_COL_KEY.get(pid),
                "chartable": bool(PANELS[pid][1]),
-               "rows": _build_rows(pid, state)} for pid in PANEL_ORDER]
+               "rows": []} for pid in PANEL_ORDER]
     return _TEMPLATES.TemplateResponse(
         request, "pages/index.html",
         {"panels": panels, "last_refresh": state.last_refresh,
