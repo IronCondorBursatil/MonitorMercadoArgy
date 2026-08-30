@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     byma_client_id: str = "excel-addin-bd-client-pkg"
     byma_client_secret: str = "20V4nt3k203xc31"
 
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 8000
     refresh_sec: int = 5
     # Workers del thread pool del motor de pricing (por ciclo). El trabajo es
