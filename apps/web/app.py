@@ -34,6 +34,7 @@ from apps.web.routers import (
     on, options, panels, source, stream,
 )
 from apps.web.routers.api_v1 import market as api_market
+from apps.web.routers.api_v1 import stream as api_stream
 from apps.web.state import AppState
 from config.settings import settings
 from core.domain.instrument_groups import (
@@ -374,9 +375,19 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 
 # Servir la app de React en producción bajo /react
+class CachedStaticFiles(StaticFiles):
+    def is_not_modified(self, response_headers, request_headers) -> bool:
+        return super().is_not_modified(response_headers, request_headers)
+    
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
 react_build_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if react_build_dir.exists():
-    app.mount("/react", StaticFiles(directory=str(react_build_dir), html=True), name="react")
+    app.mount("/react", CachedStaticFiles(directory=str(react_build_dir), html=True), name="react")
 
 app.include_router(panels.router)
 app.include_router(bonds.router)
@@ -394,6 +405,7 @@ app.include_router(header.router)
 app.include_router(source.router)
 app.include_router(stream.router)
 app.include_router(api_market.router, prefix="/api/v1/market")
+app.include_router(api_stream.router, prefix="/api/v1/stream")
 
 
 @app.get("/api/health")

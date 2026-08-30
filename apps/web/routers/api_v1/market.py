@@ -8,8 +8,7 @@ from apps.web.panels_rows import _row_values
 
 router = APIRouter()
 
-@router.get("/{panel_id}")
-def get_market_data(panel_id: str, state=Depends(get_state)):
+def build_market_json(panel_id: str, state) -> List[dict]:
     if panel_id not in PANELS:
         return []
 
@@ -52,3 +51,7 @@ def get_market_data(panel_id: str, state=Depends(get_state)):
         rows.append(vals)
 
     return rows
+
+@router.get("/{panel_id}")
+def get_market_data(panel_id: str, state=Depends(get_state)):
+    return build_market_json(panel_id, state)

@@ -1,4 +1,4 @@
-
+import React from 'react';
 
 interface Column {
   key: string;
@@ -10,6 +10,49 @@ interface DataGridProps {
   data: any[];
   columns: Column[];
 }
+
+const DataRow = React.memo(({ row, columns }: { row: any, columns: Column[] }) => {
+  return (
+    <tr>
+      {columns.map(col => {
+        const value = row[col.key];
+        const isNum = col.isNumeric;
+        // Format numeric values
+        let displayVal = value;
+        if (isNum && typeof value === 'number') {
+          displayVal = value.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        // Color pos/neg
+        let className = isNum ? 'num' : '';
+        if (col.key.includes('pct') || col.key.includes('change')) {
+          if (value > 0) className += ' pos';
+          if (value < 0) className += ' neg';
+        }
+
+        return (
+          <td key={col.key} className={className.trim()}>
+            {displayVal}
+          </td>
+        );
+      })}
+    </tr>
+  );
+}, (prevProps, nextProps) => {
+  // Custom equality check: only re-render if the relevant fields changed.
+  // In a real app we'd deep compare, but for extreme perf, we compare exactly
+  // what we know changes (price, yield, volume, change).
+  const p = prevProps.row;
+  const n = nextProps.row;
+  return (
+    p.c === n.c && 
+    p.px_bid === n.px_bid && 
+    p.px_ask === n.px_ask && 
+    p.tir === n.tir && 
+    p.volume === n.volume &&
+    p.change_pct === n.change_pct
+  );
+});
 
 export const DataGrid: React.FC<DataGridProps> = ({ data, columns }) => {
   return (
@@ -23,30 +66,7 @@ export const DataGrid: React.FC<DataGridProps> = ({ data, columns }) => {
       </thead>
       <tbody>
         {data.map((row, idx) => (
-          <tr key={row.id || idx}>
-            {columns.map(col => {
-              const value = row[col.key];
-              const isNum = col.isNumeric;
-              // Format numeric values
-              let displayVal = value;
-              if (isNum && typeof value === 'number') {
-                displayVal = value.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-              }
-
-              // Color pos/neg
-              let className = isNum ? 'num' : '';
-              if (col.key.includes('pct') || col.key.includes('change')) {
-                if (value > 0) className += ' pos';
-                if (value < 0) className += ' neg';
-              }
-
-              return (
-                <td key={col.key} className={className.trim()}>
-                  {displayVal}
-                </td>
-              );
-            })}
-          </tr>
+          <DataRow key={row.ticker || idx} row={row} columns={columns} />
         ))}
       </tbody>
     </table>

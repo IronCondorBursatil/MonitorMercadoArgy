@@ -5,23 +5,22 @@ import { DataGrid } from './components/DataGrid';
 function App() {
   const [bonds, setBonds] = useState<any[]>([]);
 
-  const fetchBonds = () => {
-    fetch('/api/v1/market/bonares')
-      .then(res => res.json())
-      .then(data => setBonds(data))
-      .catch(err => console.error(err));
-  };
-
   useEffect(() => {
-    // Initial fetch
-    fetchBonds();
-
-    // SSE Subscription
-    const evtSource = new EventSource('/stream');
-    evtSource.addEventListener('refresh', () => {
-      // Refresh the data when a refresh event is received from the server
-      fetchBonds();
+    // We no longer need fetchBonds(). The server sends the initial state and updates 
+    // directly through the SSE connection via the "market_data" event.
+    
+    // SSE Subscription to the new v1 stream
+    const evtSource = new EventSource('/api/v1/stream/');
+    
+    evtSource.addEventListener('market_data', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        setBonds(data);
+      } catch (err) {
+        console.error("Failed to parse market data", err);
+      }
     });
+
     evtSource.addEventListener('ping', () => {
       // Keep-alive
     });
