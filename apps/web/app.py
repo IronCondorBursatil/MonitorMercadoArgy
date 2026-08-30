@@ -33,6 +33,7 @@ from apps.web.routers import (
     abm, bcra, bonds, cartera, cashflows, catalog, curva, escenarios, fci, header,
     on, options, panels, source, stream,
 )
+from apps.web.routers.api_v1 import market as api_market
 from apps.web.state import AppState
 from config.settings import settings
 from core.domain.instrument_groups import (
@@ -371,6 +372,12 @@ app = FastAPI(title="Monitor Renta Fija AR", lifespan=lifespan)
 # GZip: el dataset de /fci/data es grande (~varios MB en JSON) → comprime ~6-7×.
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+
+# Servir la app de React en producción bajo /react
+react_build_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if react_build_dir.exists():
+    app.mount("/react", StaticFiles(directory=str(react_build_dir), html=True), name="react")
+
 app.include_router(panels.router)
 app.include_router(bonds.router)
 app.include_router(cartera.router)
@@ -386,6 +393,7 @@ app.include_router(options.router)
 app.include_router(header.router)
 app.include_router(source.router)
 app.include_router(stream.router)
+app.include_router(api_market.router, prefix="/api/v1/market")
 
 
 @app.get("/api/health")
