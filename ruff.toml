@@ -1,4 +1,8 @@
 # Configuración de herramientas de desarrollo (no empaqueta el proyecto).
+line-length = 100
+target-version = "py312"
+extend-exclude = ["data", "docs", "scripts/_*"]
+
 [lint]
 # F = pyflakes (imports/vars sin usar, redefiniciones, nombres indefinidos) — lo más valioso.
 # E/W = pycodestyle. E501 (largo de línea) se ignora: el código financiero tiene líneas largas
