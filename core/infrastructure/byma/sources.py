@@ -203,19 +203,22 @@ class BymaRealtimeSource:
     CLIENT_ID = settings.byma_client_id
     CLIENT_SECRET = settings.byma_client_secret
 
-    # (endpoint, body flag, plazos, bucket). `getLeadingEquity` es en realidad el
-    # endpoint general de market-data del addin: toma TODOS los flags de panel
-    # (btnLideres/General/TitPublicos/Letras/ObligNegociables), igual que
-    # `/get-market-data` en la open. El dedicado `getObligacionesNegociables` 400ea
-    # ("No se pudo determinar el panel") → las ONs van por getLeadingEquity. CEDEARs
-    # usan su feed propio (getIceEquity). Renta fija pide T0+T1 (CI + 24hs juntos).
+    # (endpoint, body flag, plazos, bucket). `getIceEquity` es el VERDADERO endpoint de
+    # market-data del addin: honra TODOS los flags de panel (btnLideres/General/Cedears/
+    # TitPublicos/Letras/ObligNegociables) y devuelve precios vivos. `getLeadingEquity`
+    # —usado antes para todo salvo CEDEARs— devuelve solo el CATÁLOGO: el esqueleto de la
+    # especie con TODOS los campos de precio en 0 (trade/closing/previousClosing/bid/ask/
+    # settlementPrice), así que el board quedaba en blanco (verificado en vivo 2026-06: 0
+    # de 4400 títulos públicos con precio vía getLeadingEquity vs 1036 vía getIceEquity).
+    # El dedicado `getObligacionesNegociables` 400ea ("No se pudo determinar el panel").
+    # Renta fija pide T0+T1 (CI + 24hs juntos).
     PANELS = [
-        ("/excel/byma/data/getLeadingEquity", {"btnLideres": True}, ("T1",), "stocks"),
-        ("/excel/byma/data/getLeadingEquity", {"btnGeneral": True}, ("T1",), "stocks"),
+        ("/excel/byma/data/getIceEquity", {"btnLideres": True}, ("T1",), "stocks"),
+        ("/excel/byma/data/getIceEquity", {"btnGeneral": True}, ("T1",), "stocks"),
         ("/excel/byma/data/getIceEquity", {"btnCedears": True}, ("T1",), "cedears"),
-        ("/excel/byma/data/getLeadingEquity", {"btnTitPublicos": True}, ("T0", "T1"), "bonds"),
-        ("/excel/byma/data/getLeadingEquity", {"btnLetras": True}, ("T0", "T1"), "notes"),
-        ("/excel/byma/data/getLeadingEquity", {"btnObligNegociables": True}, ("T0", "T1"), "corp"),
+        ("/excel/byma/data/getIceEquity", {"btnTitPublicos": True}, ("T0", "T1"), "bonds"),
+        ("/excel/byma/data/getIceEquity", {"btnLetras": True}, ("T0", "T1"), "notes"),
+        ("/excel/byma/data/getIceEquity", {"btnObligNegociables": True}, ("T0", "T1"), "corp"),
     ]
 
     def __init__(self, username: Optional[str] = None, password: Optional[str] = None,
@@ -267,29 +270,35 @@ class BymaRealtimeSource:
     async def _panel(self, client: ResilientClient, endpoint: str, body: dict,
                      plazos, token: str) -> list:
         payload = {"excludeZeroPxAndQty": False, **{p: True for p in plazos}, **body}
+        # Los 6 paneles comparten `getIceEquity` y se distinguen SÓLO por el flag del
+        # body, así que la etiqueta lleva el flag: con el endpoint solo, el throttle de
+        # 60s colapsaba en una clave única (el primer panel que falla silencia a los
+        # otros cinco) y el mensaje no decía cuál se cayó.
+        panel = "+".join(sorted(body)) or "?"
+        tag = f"{endpoint}[{panel}]"
         try:
             resp = await client.post_json(self.API_BASE + endpoint, json=payload,
-                                          headers=self._bearer(token), source=f"BYMArt{endpoint}")
+                                          headers=self._bearer(token), source=f"BYMArt{tag}")
             return _rows(resp)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:  # token vencido → relogin + 1 reintento
                 token = await self._ensure_token(stale_token=token)
                 try:
                     resp = await client.post_json(self.API_BASE + endpoint, json=payload,
-                                                  headers=self._bearer(token), source=f"BYMArt{endpoint}")
+                                                  headers=self._bearer(token), source=f"BYMArt{tag}")
                     return _rows(resp)
                 except Exception as e2:  # noqa: BLE001
-                    _warn_throttled(f"rt{endpoint}", "BYMArt%s retry failed: %s", endpoint, e2)
+                    _warn_throttled(f"rt{tag}", "BYMArt%s retry failed: %s", tag, e2)
                     return []
-            _warn_throttled(f"rt{endpoint}", "BYMArt%s fetch failed: %s", endpoint, e)
+            _warn_throttled(f"rt{tag}", "BYMArt%s fetch failed: %s", tag, e)
             return []
         except CircuitOpenError:
             return []
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
-            _warn_throttled(f"rt{endpoint}", "BYMArt%s fetch failed: %s: %s",
-                            endpoint, type(e).__name__, e)
+            _warn_throttled(f"rt{tag}", "BYMArt%s fetch failed: %s: %s",
+                            tag, type(e).__name__, e)
             return []
 
     async def fetch(self, client: ResilientClient) -> FetchResult:

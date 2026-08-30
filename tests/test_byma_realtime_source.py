@@ -1,8 +1,11 @@
-"""BymaRealtimeSource: ruteo de paneles (regresión del bug de ONs) — sin red.
+"""BymaRealtimeSource: ruteo de paneles — sin red.
 
-El endpoint dedicado `getObligacionesNegociables` 400ea ("No se pudo determinar el
-panel"); las ONs deben ir por `getLeadingEquity` + `btnObligNegociables`. Estos
-tests congelan esa config para que no regrese."""
+El addin tiene DOS endpoints relevantes: `getLeadingEquity` devuelve solo el catálogo
+(esqueleto con TODOS los precios en 0 — verificado en vivo 2026-06) y `getIceEquity`
+es el verdadero endpoint de market-data (honra todos los flags de panel y trae precios
+vivos). El dedicado `getObligacionesNegociables` 400ea ("No se pudo determinar el
+panel"). Por eso TODOS los paneles van por `getIceEquity`. Estos tests congelan esa
+config para que no regrese al esqueleto sin precios."""
 
 import asyncio
 import json
@@ -16,13 +19,14 @@ _FLAGS = ("btnLideres", "btnGeneral", "btnCedears",
           "btnTitPublicos", "btnLetras", "btnObligNegociables")
 
 
-def test_realtime_routes_ons_through_leading_equity(monkeypatch):
+def test_realtime_routes_all_panels_through_ice_equity(monkeypatch):
     calls = []
 
     def handler(req: httpx.Request) -> httpx.Response:
         url = str(req.url)
         calls.append(url)
-        # el endpoint roto NUNCA debe llamarse
+        # ni el esqueleto sin precios ni el endpoint roto deben llamarse NUNCA
+        assert "getLeadingEquity" not in url
         assert "getObligacionesNegociables" not in url
         body = json.loads(req.content)
         flag = next((k for k in _FLAGS if body.get(k)), None)
@@ -48,16 +52,19 @@ def test_realtime_routes_ons_through_leading_equity(monkeypatch):
             assert "ZZC1O" in rows and "GGAL" in rows
             assert smap.get("ZZC1O") == "corp"        # ONs cubiertas
             assert smap.get("GGAL") == "stocks"
-            assert any("getLeadingEquity" in u for u in calls)
+            assert all("getIceEquity" in u for u in calls)
         finally:
             await c.aclose()
 
     asyncio.run(run())
 
 
-def test_realtime_panels_avoid_broken_on_endpoint():
+def test_realtime_panels_use_ice_equity_only():
     eps = [ep for ep, *_ in BymaRealtimeSource.PANELS]
+    # el esqueleto sin precios (getLeadingEquity) y el endpoint roto deben quedar fuera
+    assert not any("getLeadingEquity" in e for e in eps)
     assert not any("getObligacionesNegociables" in e for e in eps)
+    assert all("getIceEquity" in e for e in eps)
     buckets = {b for *_, b in BymaRealtimeSource.PANELS}
     assert {"stocks", "cedears", "bonds", "notes", "corp"} <= buckets
 

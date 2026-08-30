@@ -175,6 +175,105 @@ def test_floor_fills_symbols_active_does_not_list():
     asyncio.run(run())
 
 
+def test_floor_rescues_zero_price_active_symbol():
+    """La activa LISTA el símbolo pero sin precio (c=0 — iliquidez/esqueleto, p.ej. el
+    universo BYMA realtime trae ~3/4 de los bonos en 0). Un 0 no es dato: el cierre
+    bueno de Data912 (floor) NO debe quedar pisado por ese 0 → se muestra el cierre.
+    Donde la activa SÍ trae precio (>0), manda la activa."""
+    def handler(request):
+        if "data912.com" in str(request.url):
+            return httpx.Response(200, json=[{"symbol": "AL30", "c": 70.5},
+                                             {"symbol": "GD30", "c": 55.0}])
+        return httpx.Response(200, json=[])
+
+    class _ZeroPriced:
+        mode = "byma_realtime"
+        label = "BYMA tiempo real"
+        delayed = False
+
+        async def fetch(self, client):
+            # AL30 ilíquido (c=0) — debe ceder al floor; GD30 con precio vivo — manda.
+            return ({"24": {"AL30": Data912Row(symbol="AL30", c=0.0),
+                            "GD30": Data912Row(symbol="GD30", c=88.0)}, "CI": {}},
+                    {"AL30": "bonds", "GD30": "bonds"})
+
+    async def run():
+        c = ResilientClient(transport=httpx.MockTransport(handler))
+        hub = ProviderHub(c)
+        try:
+            hub.set_source(_ZeroPriced())
+            snap = await hub.refresh_all()
+            assert snap["AL30"].c == 70.5    # 0 de la activa NO pisa el cierre del floor
+            assert snap["GD30"].c == 88.0    # la activa con precio manda sobre el floor
+        finally:
+            await c.aclose()
+    asyncio.run(run())
+
+
+def test_zero_price_falls_back_to_last_good_when_floor_has_no_row():
+    """El símbolo NO está en el floor Data912 (p.ej. una ON): si la activa lo devuelve
+    en 0 después de haberlo dado con precio, ese 0 NO puede pisar el último valor bueno
+    — `_merge` acumula sobre `_snap`, así que escribirlo dejaría la fila en '—'."""
+    class _GoodThenZero:
+        mode = "byma_realtime"
+        label = "BYMA tiempo real"
+        delayed = False
+
+        def __init__(self):
+            self.n = 0
+
+        async def fetch(self, client):
+            self.n += 1
+            c = 100.0 if self.n == 1 else 0.0   # 2do ciclo: esqueleto sin precio
+            return ({"24": {"PECNO": Data912Row(symbol="PECNO", c=c)}, "CI": {}},
+                    {"PECNO": "corp"})
+
+    async def run():
+        c = ResilientClient(transport=httpx.MockTransport(_data912_handler))  # solo AL30
+        hub = ProviderHub(c)
+        try:
+            hub.set_source(_GoodThenZero())
+            await hub.refresh_all()
+            snap = await hub.refresh_all()
+            assert snap["PECNO"].c == 100.0   # retiene el último bueno, no el 0
+        finally:
+            await c.aclose()
+    asyncio.run(run())
+
+
+def test_zero_price_fallback_keeps_live_market_depth():
+    """Pre-apertura: la activa trae c=0 pero con puntas y volumen REALES. El precio cae
+    al cierre del floor, pero bid/ask/volumen vivos de la activa se conservan."""
+    def handler(request):
+        if "data912.com" in str(request.url):
+            return httpx.Response(200, json=[{"symbol": "AL30", "c": 70.5, "px_bid": 60.0}])
+        return httpx.Response(200, json=[])
+
+    class _ZeroWithDepth:
+        mode = "byma_realtime"
+        label = "BYMA tiempo real"
+        delayed = False
+
+        async def fetch(self, client):
+            return ({"24": {"AL30": Data912Row(symbol="AL30", c=0.0, px_bid=98.0,
+                                               px_ask=99.2, v=1234.0, q_op=7)}, "CI": {}},
+                    {"AL30": "bonds"})
+
+    async def run():
+        c = ResilientClient(transport=httpx.MockTransport(handler))
+        hub = ProviderHub(c)
+        try:
+            hub.set_source(_ZeroWithDepth())
+            snap = await hub.refresh_all()
+            row = snap["AL30"]
+            assert row.c == 70.5                              # precio del floor
+            assert (row.px_bid, row.px_ask) == (98.0, 99.2)   # puntas VIVAS, no las del floor
+            assert row.v == 1234.0 and row.q_op == 7
+        finally:
+            await c.aclose()
+    asyncio.run(run())
+
+
 def test_floor_recovers_symbol_after_k_cycles_active_drops_it():
     """A3 — ventana deslizante K: un símbolo que la activa DEJA de listar lo retiene
     la activa durante K ciclos (anti-flicker) y recién al expirar la ventana el floor

@@ -17,6 +17,9 @@ from core.domain.instrument_groups import OBLIGACIONES_NEGOCIABLES
 from core.domain.on_classification import SECTORS, sector_for
 from core.domain.pricing.fx_legs import peso_leg_to_usd
 from core.domain.services import FinancialEngine
+from core.infrastructure.ratings import AS_OF as _CAL_AS_OF
+from core.infrastructure.ratings import SOURCE as _CAL_SRC
+from core.infrastructure.ratings import rating_for
 
 _ON_TYPES = set(OBLIGACIONES_NEGOCIABLES)
 _FX_NOTE = "Pata pesos (…O) valuada MEP (ley AR) / CCL (ley EXT). …D=MEP, …C=CABLE."
@@ -93,6 +96,7 @@ def _build_on_dataset(state, fx=None) -> dict:
             price_usd = peso_leg_to_usd(inst, snap.price, fx)
         cy = FinancialEngine.current_yield(inst, price_usd, today) if price_usd else None
         convex = FinancialEngine.convexity(inst, m.tir, today) if m.tir is not None else None
+        cal = rating_for(inst.short_name)   # calificación FIX SCR del emisor (o None)
         bonds.append({
             "ticker": inst.ticker,
             "ccy": ccy,
@@ -117,6 +121,9 @@ def _build_on_dataset(state, fx=None) -> dict:
             "convex": round(convex, 2) if convex is not None else None,  # convexidad (años²)
             "change_pct": snap.change_pct,   # ya en escala % (Data912 pct_change)
             "volume": snap.volume,
+            "rating": cal["rating"] if cal else None,            # calificación largo plazo (FIX SCR)
+            "rating_persp": cal["perspectiva"] if cal else None,  # perspectiva / rating watch
+            "rating_grade": cal["grade"] if cal else None,        # categoría para colorear el badge
         })
 
     # Resúmenes por sector sobre la pata MEP (instrumento canónico, 1 por ON).
@@ -150,6 +157,8 @@ def _build_on_dataset(state, fx=None) -> dict:
             "n_legs": len(bonds),
             "ccys": ["ARS", "MEP", "CABLE"],
             "fx_note": _FX_NOTE,
+            "ratings_as_of": _CAL_AS_OF,    # corte del listado de calificaciones (FIX SCR)
+            "ratings_source": _CAL_SRC,
         },
     }
 

@@ -13,7 +13,7 @@
   <span class="lbl">Reservas</span>
   <span class="val">{{ money(reservas) }}{% if reservas_delta is not none %}<small class="{{ 'pos' if reservas_delta > 0 else ('neg' if reservas_delta < 0 else '') }}">{{ '{:+,.0f}'.format(reservas_delta) }}</small>{% endif %}</span>
 </div>
-<div class="hcard hcard-bcra" title="Riesgo País — EMBI+ (bps){% if riesgo_pais and riesgo_pais.fecha %} · {{ riesgo_pais.fecha }}{% endif %}">
+<div class="hcard hcard-bcra" title="Riesgo País — EMBI+ (bps){% if riesgo_pais and riesgo_pais.fecha %} · {{ riesgo_pais.fecha }}{% endif %}{% if riesgo_pais and riesgo_pais.get('spread_bps') is not none %} · spread ponderado EMBI AR {{ '{:,.0f}'.format(riesgo_pais.spread_bps) }} bps (BondTerminal){% endif %}">
   <span class="lbl">Riesgo País</span>
   {# Riesgo país sube = malo (rojo); baja = bueno (verde). #}
   <span class="val">{% if riesgo_pais and riesgo_pais.valor is not none %}{{ '{:,.0f}'.format(riesgo_pais.valor) }}{% if riesgo_pais.delta_abs is not none %}<small class="{{ 'neg' if riesgo_pais.delta_abs > 0 else ('pos' if riesgo_pais.delta_abs < 0 else '') }}">{{ '{:+,.0f}'.format(riesgo_pais.delta_abs) }}</small>{% endif %}{% else %}—{% endif %}</span>

@@ -152,12 +152,11 @@ table.on th.sorted-asc::after { content: " \25B2"; } table.on th.sorted-desc::af
   background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--text);
   border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer;
 }
-#tab-sectores .sec-cards-section { display: flex; flex-direction: column; gap: 12px; }
-#tab-sectores .sec-cards-toggle { background: var(--row-alt); border: 1px solid var(--panel-border); color: var(--text-dim); border-radius: 6px; width: 26px; height: 24px; cursor: pointer; font-size: 10px; line-height: 1; flex-shrink: 0; transition: transform .15s ease, color .12s; }
-#tab-sectores .sec-cards-toggle:hover { color: var(--accent); border-color: var(--accent); }
-#tab-sectores .sec-cards-section.collapsed .sec-cards-toggle { transform: rotate(-90deg); }
-#tab-sectores .sec-cards-section.collapsed .sec-cards-grid { display: none; }
-#tab-sectores .sec-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+/* Sectores: listado principal + rail compacto de tarjetas por sector al costado */
+#tab-sectores .sec-split { display: grid; grid-template-columns: minmax(0, 1fr) 416px; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { #tab-sectores .sec-split { grid-template-columns: 1fr; } }
+#tab-sectores .sec-cards-section { display: flex; flex-direction: column; gap: 9px; }   /* alto natural: scrollea la página, sin scroll propio */
+#tab-sectores .sec-cards-grid { display: grid; grid-template-columns: 1fr; gap: 9px; }   /* rail: una tarjeta por fila */
 
 #tab-sectores .scard {
   background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--radius);
@@ -178,7 +177,7 @@ table.on th.sorted-asc::after { content: " \25B2"; } table.on th.sorted-desc::af
 #tab-sectores .sk-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); }
 #tab-sectores .sk-val { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; line-height: 1.2; }
 #tab-sectores .sk-sub { font-size: 10.5px; color: var(--text-dim); margin-top: 1px; }
-#tab-sectores .scard-chart { padding: 10px 12px 6px; border-bottom: 1px solid var(--panel-border); }
+#tab-sectores .scard-chart { padding: 8px 12px 6px; border-bottom: 1px solid var(--panel-border); }
 #tab-sectores .scard-chart canvas { width: 100% !important; height: 130px !important; display: block; }
 #tab-sectores .scard-top { padding: 8px 12px 10px; }
 #tab-sectores .top3-head { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .35px; color: var(--text-faint); margin-bottom: 6px; }
@@ -194,6 +193,13 @@ table.on th.sorted-asc::after { content: " \25B2"; } table.on th.sorted-desc::af
 #tab-sectores .top3-ley { font-size: 9.5px; padding: 1px 5px; border-radius: 4px; flex-shrink: 0; font-weight: 700; }
 #tab-sectores .top3-ley.ley-ar  { background: var(--accent-light); color: var(--accent); }
 #tab-sectores .top3-ley.ley-ext { background: var(--tir-hl); color: var(--text-dim); }
+#tab-sectores .top3-cl { font-size: 10.5px; color: var(--text-dim); flex-shrink: 0; min-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tab-sectores .top3-header { display: flex; align-items: center; gap: 8px; padding: 1px 6px 5px; border-bottom: 1px solid var(--panel-border); margin-bottom: 3px; }
+#tab-sectores .top3-header span { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint) !important; background: none !important; }
+#tab-sectores .top3-header .top3-val { color: #064a26 !important; }
+#tab-sectores .top3-val.pos { color: #064a26; }
+[data-theme="dark"] #tab-sectores .top3-header .top3-val { color: var(--pos) !important; }
+[data-theme="dark"] #tab-sectores .top3-val.pos { color: var(--pos); }
 #tab-sectores .expand-btn {
   display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%;
   border: none; background: transparent; color: var(--text-dim); font-size: 11.5px; font-weight: 600;
@@ -487,21 +493,24 @@ table.on th.sorted-asc::after { content: " \25B2"; } table.on th.sorted-desc::af
   border-radius: 7px; padding: 5px 10px; font: 600 11.5px var(--font-body); cursor: pointer; }
 .uni-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-/* ---- body (scroll) ---- */
-.uni-body { overflow: auto; flex: 1 1 auto; min-height: 0; }
+/* ---- body (alto natural; scrollea la página, sin scroll interno) ---- */
+.uni-body { flex: 1 1 auto; }
 
 /* ---- tabla ---- */
 table.uni { width: 100%; border-collapse: collapse; font-size: 13px; }
-table.uni thead th { position: sticky; top: 0; z-index: 3; background: var(--head-bg); color: #fff;
+/* El encabezado ahora se pega al SCROLL DE LA PÁGINA (el panel dejó de scrollear), así
+   que se ancla debajo del header del sitio —sticky en top:0, 80px de alto, misma
+   constante que usa `.sidebar`— en vez de quedar tapado por él. */
+table.uni thead th { position: sticky; top: 80px; z-index: 3; background: var(--head-bg); color: #fff;
   font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px;
-  padding: 7px 10px; text-align: right; white-space: nowrap; border-bottom: 2px solid var(--navy-band); }
-table.uni thead th.uni-grp-h { text-align: left; padding-left: 14px; min-width: 240px; }
+  padding: 7px 8px; text-align: right; white-space: nowrap; border-bottom: 2px solid var(--navy-band); }
+table.uni thead th.uni-grp-h { text-align: left; padding-left: 14px; min-width: 150px; }
 table.uni thead th.uni-sort { cursor: pointer; user-select: none; }
 table.uni thead th.uni-sort:hover { color: var(--accent-light); }
 table.uni thead th.sorted-asc::after  { content: " \25B2"; font-size: 9px; }
 table.uni thead th.sorted-desc::after { content: " \25BC"; font-size: 9px; }
 
-table.uni td { padding: 0 10px; height: 28px; white-space: nowrap; border-bottom: 1px solid var(--panel-border); }
+table.uni td { padding: 0 8px; height: 28px; white-space: nowrap; border-bottom: 1px solid var(--panel-border); }
 table.uni td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
 table.uni td.tir-cell { background: var(--tir-hl); font-weight: 700; }
 table.uni .faint { color: var(--text-faint); font-size: 10px; margin-left: 2px; }
@@ -533,7 +542,16 @@ tr.uni-emisor { cursor: pointer; }
 tr.uni-emisor > td { background: var(--row-alt); height: 32px; }
 tr.uni-emisor:hover > td { background: var(--row-hover); }
 td.uni-grp2 { padding-left: 24px; }
-.uni-em { font-weight: 600; font-size: 14px; color: var(--text); display: inline-block; vertical-align: middle; }
+.uni-em { font-weight: 600; font-size: 14px; color: var(--text); display: inline-block; vertical-align: middle; }   /* nombre entero: la fila emisor es un banner a todo el ancho */
+/* calificación crediticia (FIX SCR) en el banner del emisor */
+.uni-rating { display: inline-block; margin-left: 12px; padding: 1px 9px; border-radius: 11px;
+  font: 700 11.5px var(--font-mono); vertical-align: middle; border: 1px solid transparent; }
+.uni-rating .uni-rp { font: 600 9.5px var(--font-body); margin-left: 6px; opacity: .82; text-transform: uppercase; letter-spacing: .2px; }
+.uni-rg-strong   { background: rgba(20,138,74,.16);  color: #1aa35a; border-color: rgba(20,138,74,.42); }
+.uni-rg-good     { background: var(--accent-light);  color: var(--accent); border-color: rgba(100,134,230,.42); }
+.uni-rg-mid      { background: rgba(201,162,39,.18);  color: #c9a227; border-color: rgba(201,162,39,.45); }
+.uni-rg-weak     { background: rgba(237,139,54,.18);  color: #ED8B36; border-color: rgba(237,139,54,.45); }
+.uni-rg-distress { background: rgba(208,56,50,.16);   color: #e0564f; border-color: rgba(208,56,50,.45); }
 
 /* fila título (sangría 2) — la fuente base */
 tr.uni-bond:hover > td { background: var(--row-hover); }
@@ -562,10 +580,14 @@ td.uni-grp3 { padding-left: 10px; text-align: center; }
 .uni-btn.uni-action { background: var(--accent); color: #fff; border-color: var(--accent); }
 .uni-btn.uni-action:hover { filter: brightness(1.1); color: #fff; border-color: var(--accent); }
 
-/* ---- contenedor de la herramienta en /on (alto fijo, scroll interno) ---- */
-.uni-panel { display: flex; flex-direction: column; height: 74vh; min-height: 420px;
+/* ---- contenedor de la herramienta en /on (alto natural; scrollea la página entera) ----
+   `overflow: clip` (NO `hidden`): recorta igual para respetar el border-radius, pero no
+   crea un contenedor de scroll. Con `hidden` el panel seguía siendo el "scrollport" más
+   cercano del `thead` sticky, y como ya no scrollea, el encabezado quedaba anclado a un
+   contenedor inmóvil y se iba de pantalla junto con la página. */
+.uni-panel { display: flex; flex-direction: column;
   border: 1px solid var(--panel-border); border-radius: var(--radius);
-  overflow: hidden; background: var(--panel-bg); }
+  overflow: clip; background: var(--panel-bg); }
 
 /* ---- modal del gráfico TIR vs MD (variante 7) ---- */
 .uni-modal-backdrop { position: fixed; inset: 0; z-index: 200; background: rgba(4,9,24,.62);

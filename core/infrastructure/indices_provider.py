@@ -24,7 +24,6 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Optional
 
 from config.settings import settings
-from core.infrastructure._http import http_get_json
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +47,16 @@ _RESERVAS_CSV = os.path.join(_HISTORY_DIR, "reservas_diario.csv")
 
 
 def _fetch_series(variable_id: int, days: int) -> Dict[date, float]:
-    """Pull last `days` days of a BCRA monetary variable."""
+    """Pull last `days` days of a BCRA monetary variable (sync fallback)."""
+    import httpx
     end = _ar_today()
     start = end - timedelta(days=days)
     url = f"{_BCRA_BASE}/{variable_id}?Desde={start}&Hasta={end}"
     out: Dict[date, float] = {}
     try:
-        payload = http_get_json(url, timeout=10, user_agent="Mozilla/5.0",
-                                source=f"BCRA/var{variable_id}")
-        results = payload.get("results", [])
+        resp = httpx.get(url, timeout=10.0, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
         if results and "detalle" in results[0]:
             for item in results[0]["detalle"]:
                 try:
@@ -66,6 +66,27 @@ def _fetch_series(variable_id: int, days: int) -> Dict[date, float]:
                     continue
     except Exception as e:
         logger.warning(f"BCRA fetch failed for variable {variable_id}: {e}")
+    return out
+
+
+async def _async_fetch_series(client, variable_id: int, days: int) -> Dict[date, float]:
+    """Pull last `days` days of a BCRA monetary variable (async)."""
+    end = _ar_today()
+    start = end - timedelta(days=days)
+    url = f"{_BCRA_BASE}/{variable_id}?Desde={start}&Hasta={end}"
+    out: Dict[date, float] = {}
+    try:
+        payload = await client.get_json(url, timeout=10.0, source=f"BCRA/var{variable_id}")
+        results = payload.get("results", [])
+        if results and "detalle" in results[0]:
+            for item in results[0]["detalle"]:
+                try:
+                    d = datetime.strptime(item["fecha"], "%Y-%m-%d").date()
+                    out[d] = float(item["valor"])
+                except (KeyError, ValueError, TypeError):
+                    continue
+    except Exception as e:
+        logger.warning(f"BCRA async fetch failed for variable {variable_id}: {e}")
     return out
 
 
@@ -190,13 +211,58 @@ class BCRAIndicesProvider:
                 _save_csv(_A3500_CSV, self._cache_a3500)
                 logger.info(f"A3500: +{added} new points, {len(self._cache_a3500)} total.")
 
-            # Variable 1 = Reservas Internacionales del BCRA (USD millones)
             reservas_new = _fetch_series(1, days=self._RESERVAS_FETCH_DAYS)
             if reservas_new:
                 added = len(set(reservas_new) - set(self._cache_reservas))
                 self._cache_reservas.update(reservas_new)
                 _save_csv(_RESERVAS_CSV, self._cache_reservas)
                 logger.info(f"Reservas: +{added} new points, {len(self._cache_reservas)} total.")
+
+    async def prefetch(self, client):
+        """Precarga asincrónica para el refresh_loop (no bloquea hilos de CPU)."""
+        with self._lock:
+            if not self._disk_loaded:
+                self._hydrate_from_disk()
+            if self._last_attempt == _ar_today():
+                return
+            type(self)._last_attempt = _ar_today()
+
+        import asyncio
+        cer_days = self._fetch_window(self._cache_cer, self._CER_BOOTSTRAP_DAYS, self._CER_TOPUP_DAYS)
+        tamar_days = self._TAMAR_TOPUP_DAYS if self._cache_tamar else self._TAMAR_BOOTSTRAP_DAYS
+        a3500_days = self._fetch_window(self._cache_a3500, self._A3500_BOOTSTRAP_DAYS, self._A3500_TOPUP_DAYS)
+        reservas_days = self._RESERVAS_FETCH_DAYS
+
+        # Parallel fetch
+        cer_f, tamar_f, a3500_f, res_f = await asyncio.gather(
+            _async_fetch_series(client, 30, cer_days),
+            _async_fetch_series(client, 44, tamar_days),
+            _async_fetch_series(client, 5, a3500_days),
+            _async_fetch_series(client, 1, reservas_days),
+            return_exceptions=True
+        )
+
+        with self._lock:
+            if isinstance(cer_f, dict) and cer_f:
+                added = len(set(cer_f) - set(self._cache_cer))
+                self._cache_cer.update(cer_f)
+                _save_csv(_CER_CSV, self._cache_cer)
+                if added: logger.info(f"CER: +{added} new points, {len(self._cache_cer)} total.")
+            if isinstance(tamar_f, dict) and tamar_f:
+                added = len(set(tamar_f) - set(self._cache_tamar))
+                self._cache_tamar.update(tamar_f)
+                _save_csv(_TAMAR_CSV, self._cache_tamar)
+                if added: logger.info(f"TAMAR: +{added} new points, {len(self._cache_tamar)} total.")
+            if isinstance(a3500_f, dict) and a3500_f:
+                added = len(set(a3500_f) - set(self._cache_a3500))
+                self._cache_a3500.update(a3500_f)
+                _save_csv(_A3500_CSV, self._cache_a3500)
+                if added: logger.info(f"A3500: +{added} new points, {len(self._cache_a3500)} total.")
+            if isinstance(res_f, dict) and res_f:
+                added = len(set(res_f) - set(self._cache_reservas))
+                self._cache_reservas.update(res_f)
+                _save_csv(_RESERVAS_CSV, self._cache_reservas)
+                if added: logger.info(f"Reservas: +{added} new points, {len(self._cache_reservas)} total.")
 
     @staticmethod
     def _lookup(target: date, cache: Dict[date, float]) -> Optional[float]:

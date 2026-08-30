@@ -16,6 +16,9 @@ data/monitor_*.png
 data/feriados_ar_cache.json
 apps/cli/*.png
 apps/cli/*.json
+# PDF del panel ON: lo genera scripts/export_on_pdf.py en la raíz, es salida derivada
+# (y pesa; la raíz está sincronizada por OneDrive).
+Obligaciones_Negociables_*.pdf
 
 # OS / IDE
 .DS_Store

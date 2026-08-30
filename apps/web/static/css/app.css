@@ -187,6 +187,29 @@ tbody tr:nth-child(even) { background: var(--row-alt); }
 tbody tr:hover { background: var(--row-hover); }
 tbody td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 12px; }
 td.pos { color: var(--pos); } td.neg { color: var(--neg); }
+
+/* ---- blip de precio (estilo terminal de trading: Bloomberg) -------------- */
+/* La celda de precio destella verde (suba) / rojo (baja) cuando el valor cambia
+   entre refreshes y se apaga rápido. El JS (index.html) compara el precio nuevo
+   vs el previo por ticker y agrega .blip-up / .blip-down a la celda. Tinte por
+   tema: fuerte al pico, breve hold, fade a transparente revelando la fila. */
+:root { --blip-up: rgba(13,110,58,.55); --blip-down: rgba(168,36,43,.5);
+        --blip-up-ring: rgba(13,110,58,.95); --blip-down-ring: rgba(168,36,43,.9); }
+[data-theme="dark"] { --blip-up: rgba(79,207,133,.5); --blip-down: rgba(242,138,143,.5);
+        --blip-up-ring: rgba(79,207,133,.95); --blip-down-ring: rgba(242,138,143,.9); }
+@keyframes blip-up {
+  0%, 22% { background-color: var(--blip-up); box-shadow: inset 0 0 0 1.5px var(--blip-up-ring); }
+  100%    { background-color: transparent; box-shadow: inset 0 0 0 1.5px transparent; }
+}
+@keyframes blip-down {
+  0%, 22% { background-color: var(--blip-down); box-shadow: inset 0 0 0 1.5px var(--blip-down-ring); }
+  100%    { background-color: transparent; box-shadow: inset 0 0 0 1.5px transparent; }
+}
+.panel-body td.blip-up   { animation: blip-up .65s ease-out; }
+.panel-body td.blip-down { animation: blip-down .65s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .panel-body td.blip-up, .panel-body td.blip-down { animation: none; }
+}
 tbody td:first-child { font-weight: 600; }
 td.tk a { color: var(--accent); cursor: pointer; text-decoration: none; font-weight: 600; }
 td.tk a:hover { text-decoration: underline; }

@@ -177,6 +177,33 @@ def test_bonares_panel_has_return_columns_colored():
     assert "Sem" not in [c["label"] for c in panels_schema._BONARES_COLS]
 
 
+def test_price_blip_wiring():
+    """Blip de precio (estilo Bloomberg) en BONARES Y GLOBALES: el JS localiza la
+    celda de precio por data-key, así que (1) cada celda lleva su column key,
+    (2) el fragmento emite data-key, (3) la CSS tiene la animación y (4) el JS
+    está cableado al panel bonares. Ata las 4 piezas para que no se desincronicen."""
+    m = _metric("AL30D", "BONAR", 63.5, 0.12, 3.0, 70.0, 0.9)
+    rows = panels._build_rows("bonares", _StubState([m]))
+    cells = rows[0]["cells"]
+    # (1) toda celda lleva su key; la celda de precio existe con key "price".
+    assert all("key" in c for c in cells)
+    price_cells = [c for c in cells if c["key"] == "price"]
+    assert len(price_cells) == 1
+
+    web = Path(panels.__file__).resolve().parents[1]
+    # (2) el fragmento de filas emite el atributo data-key.
+    frag = (web / "templates" / "fragments" / "panel_rows.html").read_text(encoding="utf-8")
+    assert "data-key=" in frag
+    # (3) la CSS define la animación verde/roja.
+    css = (web / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    assert ".blip-up" in css and ".blip-down" in css
+    assert "@keyframes blip-up" in css and "@keyframes blip-down" in css
+    # (4) el JS del dashboard cablea el blip al panel bonares.
+    idx = (web / "templates" / "pages" / "index.html").read_text(encoding="utf-8")
+    assert "BLIP_PANELS" in idx and "bonares" in idx
+    assert 'td[data-key="price"]' in idx
+
+
 def test_share_popup_drops_inapplicable_cols_for_soberanos_only():
     """La foto de soberanos hard-dollar (bonares/bopreales) omite TNA/TEM/V.Téc/Días
     (se comparan por TIR); Tasa Fija conserva TNA/TEM (su métrica core)."""
@@ -272,6 +299,39 @@ def test_implied_rates_matches_a3_report():
     assert panels._implied_rates(None, 1438.5, 27) == (None, None, None)
     assert panels._implied_rates(1457.5, 0, 27) == (None, None, None)
     assert panels._implied_rates(1457.5, 1438.5, 0) == (None, None, None)
+
+
+def test_futuros_panel_tna_is_linear_and_matches_popup():
+    """La columna 'TNA' del PANEL del monitor debe mostrar la TNA LINEAL
+    ((F/S−1)·365/d), igual que el popup Curva Rofex y el informe A3 de Matba —
+    NO la TEA compuesta ((F/S)^(365/d)−1). Regresión del bug donde el panel usaba
+    la fórmula compuesta y divergía del popup (ej. jun-26: 34.56% vs 29.75%)."""
+    spot, last = 1472.5, 1478.5
+
+    class _Rofex:
+        def get_quotes(self, syms):
+            return {"DLR/JUN26": {"last": last, "bid": None, "ask": None, "settle": None,
+                                  "open_interest": None, "volume": None}}
+
+    class _Fx:
+        def get_mayorista_mid(self):  # rama "en rueda"
+            return spot
+
+    class _Bcra:
+        def get_a3500(self):          # rama "al cierre" — ambas dan el mismo spot
+            return spot
+
+    today = date(2026, 6, 25)         # DLR/JUN26 vto 2026-06-30 → 5 días
+    rows = panels._build_futuros_rows(_Rofex(), _Fx(), _Bcra(), today=today)
+    assert rows, "debe construir la fila jun-26"
+
+    tna_idx = next(i for i, c in enumerate(panels_schema._FUTUROS_COLS) if c["key"] == "tna")
+    tna_text = rows[0]["cells"][tna_idx]["text"]
+
+    days = (panels_rows.parse_contract_maturity("DLR/JUN26") - today).days
+    lineal, compuesta, _ = panels._implied_rates(last, spot, days)
+    assert tna_text == panels._fmt(lineal * 100, "percent", 2)        # 29.75% (lineal)
+    assert tna_text != panels._fmt(compuesta * 100, "percent", 2)     # ≠ 34.56% (TEA compuesta)
 
 
 # ── C4: memo _ci_metrics por (revision, panel_id) ───────────────────────────

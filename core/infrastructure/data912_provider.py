@@ -17,7 +17,7 @@ import pandas as pd
 
 from core.domain.models import MarketSnapshot
 from core.domain.interfaces import IMarketDataProvider
-from core.infrastructure._http import http_get_json
+import httpx
 from core.infrastructure.price_history import get_price_history_store
 
 logger = logging.getLogger(__name__)
@@ -150,10 +150,11 @@ class Data912MarketDataProvider(IMarketDataProvider):
         def _fetch_one(item):
             name, url = item
             try:
-                payload = http_get_json(
-                    url, timeout=self._FETCH_TIMEOUT_S, retries=self._FETCH_RETRIES,
-                    user_agent=self.UA, source=f"Data912/{name}",
+                resp = httpx.get(
+                    url, timeout=self._FETCH_TIMEOUT_S, headers={"User-Agent": self.UA}
                 )
+                resp.raise_for_status()
+                payload = resp.json()
                 self._on_endpoint_success(name)
                 return [(str(row.get("symbol", "")).upper(), row)
                         for row in payload if row.get("symbol")]
@@ -253,8 +254,9 @@ class Data912MarketDataProvider(IMarketDataProvider):
             return cached[1]
         url = self._STOCK_HISTORY_URL.format(ticker=t)
         try:
-            data = http_get_json(url, timeout=10, user_agent=self.UA,
-                                 source=f"Data912/hist/{t}")
+            resp = httpx.get(url, timeout=10.0, headers={"User-Agent": self.UA})
+            resp.raise_for_status()
+            data = resp.json()
             if not isinstance(data, list):
                 raise ValueError(f"expected list, got {type(data).__name__}")
             with self._stock_history_lock:
@@ -275,8 +277,9 @@ class Data912MarketDataProvider(IMarketDataProvider):
             return cached[1]
         url = self._BOND_HISTORY_URL.format(ticker=t)
         try:
-            data = http_get_json(url, timeout=10, user_agent=self.UA,
-                                 source=f"Data912/histbond/{t}")
+            resp = httpx.get(url, timeout=10.0, headers={"User-Agent": self.UA})
+            resp.raise_for_status()
+            data = resp.json()
             if not isinstance(data, list):  # {} (no cubierto) → tratar como vacío
                 data = []
             with self._stock_history_lock:

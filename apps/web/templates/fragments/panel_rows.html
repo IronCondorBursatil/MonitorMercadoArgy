@@ -6,7 +6,7 @@
     {% else %}
     <td class="tk"><a hx-get="/bond/{{ r.ticker }}/detail" hx-target="#modal" hx-swap="innerHTML">{{ r.cells[0].text }}</a></td>
     {% endif %}
-    {% for c in r.cells[1:] %}<td class="{{ c.cls }}">{{ c.text }}</td>{% endfor %}
+    {% for c in r.cells[1:] %}<td class="{{ c.cls }}"{% if c.key %} data-key="{{ c.key }}"{% endif %}>{{ c.text }}</td>{% endfor %}
   </tr>
   {% endfor %}
 {% else %}

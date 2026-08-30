@@ -1,7 +1,7 @@
 """Header strip (dólares + reservas + riesgo país): armado de cards y render del
 fragmento. Sin red — usa stubs para FX y contexto fijo para el template."""
 
-from apps.web.routers.header import _TEMPLATES, _dolar_cards
+from apps.web.routers.header import _TEMPLATES, _dolar_cards, _riesgo_pais
 
 
 class _FakeFx:
@@ -72,6 +72,63 @@ def test_fragment_renders_with_full_context():
     assert "Riesgo País" in html and "750" in html
     # riesgo país subiendo (+15) => clase neg (rojo)
     assert 'class="neg"' in html
+
+
+class _Argdatos:
+    """ArgentinaDatos: corte oficial 1-2×/día (el fallback)."""
+    def get_riesgo_pais(self):
+        return {"valor": 700, "fecha": "2026-08-06", "delta_abs": 5, "delta_pct": 0.7}
+
+
+class _BondTerminal:
+    def __init__(self, data):
+        self._d = data
+
+    def get_riesgo_pais(self):
+        return self._d
+
+
+def test_riesgo_pais_prefiere_bondterminal():
+    """BondTerminal refresca cada 5 min contra cotizaciones vivas → gana sobre el corte
+    diario de ArgentinaDatos. El número grande sigue siendo el OFICIAL (Ambito/JPM) para
+    que la serie sea comparable; el spread ponderado propio va aparte (tooltip)."""
+    bt = _BondTerminal({"valor_bps": 448.6, "ambito_bps": 428, "fecha": "2026-08-07",
+                        "ambito_delta_1d": -2})
+    rp = _riesgo_pais(_Argdatos(), bt)
+    assert rp["valor"] == 428 and rp["delta_abs"] == -2
+    assert rp["fecha"] == "2026-08-07"
+    assert rp["spread_bps"] == 448.6 and rp["fuente"] == "BondTerminal"
+
+
+def test_riesgo_pais_cae_a_argentinadatos():
+    """Sin BondTerminal (caído, sin valor oficial, o directamente ausente) la card
+    sigue mostrando el dato de ArgentinaDatos — nunca se queda en blanco."""
+    class _Boom:
+        def get_riesgo_pais(self):
+            raise RuntimeError("bondterminal down")
+
+    for bt in (None, _Boom(), _BondTerminal(None), _BondTerminal({"ambito_bps": None})):
+        rp = _riesgo_pais(_Argdatos(), bt)
+        assert rp["valor"] == 700, bt
+        assert "spread_bps" not in rp
+
+
+def test_riesgo_pais_none_si_fallan_las_dos_fuentes():
+    class _Boom:
+        def get_riesgo_pais(self):
+            raise RuntimeError("down")
+
+    assert _riesgo_pais(_Boom(), _Boom()) is None
+
+
+def test_fragment_muestra_el_spread_de_bondterminal_en_el_tooltip():
+    html = _TEMPLATES.get_template("fragments/header_cards.html").render(
+        dolares=[], reservas=None, reservas_delta=None,
+        riesgo_pais={"valor": 428, "fecha": "2026-08-07", "delta_abs": -2,
+                     "delta_pct": None, "spread_bps": 448.578, "fuente": "BondTerminal"},
+    )
+    assert "spread ponderado EMBI AR 449 bps (BondTerminal)" in html
+    assert "428" in html
 
 
 def test_fragment_renders_with_missing_data():

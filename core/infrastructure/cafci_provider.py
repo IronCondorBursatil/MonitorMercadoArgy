@@ -42,7 +42,7 @@ from config.settings import settings
 # números-string de CAFCI; _ARD_FCI_CATEGORIAS son los endpoints del fallback ArgentinaDatos.
 from core.domain.fci import ARD_FCI_ENDPOINTS as _ARD_FCI_CATEGORIAS
 from core.domain.fci.derive import to_float as _to_float
-from core.infrastructure._http import http_get_json
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -214,10 +214,9 @@ class CAFCIProvider:
         def _fetch_cat(item):
             tipo_renta, url = item
             try:
-                rows = http_get_json(
-                    url, timeout=10, user_agent="balanz-monitor/1.0",
-                    source=f"ARD/FCI/{tipo_renta}",
-                )
+                resp = httpx.get(url, timeout=10.0, headers={"User-Agent": "balanz-monitor/1.0"})
+                resp.raise_for_status()
+                rows = resp.json()
                 if not isinstance(rows, list):
                     return []
                 result = []
@@ -264,11 +263,9 @@ class CAFCIProvider:
                     self._apply_ard_fallback()
                 return
             try:
-                payload = http_get_json(
-                    _CAFCI_URL, timeout=30, user_agent="Mozilla/5.0",
-                    source="CAFCI/comparador",
-                )
-                parsed = _parse_payload(payload)
+                resp = httpx.get(_CAFCI_URL, timeout=30.0, headers={"User-Agent": "Mozilla/5.0"})
+                resp.raise_for_status()
+                parsed = _parse_payload(resp.json())
             except Exception as e:
                 type(self)._last_fail_ts = now
                 logger.warning(f"CAFCI fetch failed: {e}")

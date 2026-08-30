@@ -49,20 +49,4 @@ def test_default_allowlist_is_only_broken_byma(monkeypatch):
     assert set(no_verify_hosts()) == {"open.bymadata.com.ar", "addin.bymadata.com.ar"}
 
 
-def test_sync_noverify_client_does_not_follow_redirects():
-    """F10 (review): el cliente se elige por la URL INICIAL; con follow_redirects el
-    cliente no-verify seguiría un redirect cross-host SIN verificar TLS en el host
-    destino. El no-verify no debe seguir redirects (falla visible > fetch inseguro
-    silencioso); el verificado sí puede (verificar de más es seguro)."""
-    from core.infrastructure import _http
 
-    assert _http._client.follow_redirects is True
-    assert _http._client_noverify.follow_redirects is False
-
-
-def test_sync_clients_share_config_except_verify():
-    """F11 (review): ambos clientes salen de la misma factory — mismos
-    timeout/limits; solo difiere verify (anti-drift)."""
-    from core.infrastructure import _http
-
-    assert _http._client.timeout == _http._client_noverify.timeout

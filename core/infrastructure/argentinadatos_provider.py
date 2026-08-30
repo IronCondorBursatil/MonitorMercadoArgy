@@ -18,7 +18,7 @@ import time
 from datetime import date
 from typing import Dict, List, Optional
 
-from core.infrastructure._http import http_get_json
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +59,13 @@ class ArgentinaDatosProvider:
             ):
                 return self._cache
             try:
-                data = http_get_json(
+                resp = httpx.get(
                     _LETRAS_URL,
-                    timeout=10,
-                    user_agent="balanz-monitor/1.0",
-                    source="ArgentinaDatos/letras",
+                    timeout=10.0,
+                    headers={"User-Agent": "balanz-monitor/1.0"},
                 )
+                resp.raise_for_status()
+                data = resp.json()
                 if not isinstance(data, list):
                     raise ValueError(f"expected list, got {type(data).__name__}")
                 self._cache = data
@@ -82,12 +83,13 @@ class ArgentinaDatosProvider:
         ):
             return self._rp_prev_valor
         try:
-            data = http_get_json(
+            resp = httpx.get(
                 _RIESGO_PAIS_HIST_URL,
-                timeout=15,
-                user_agent="balanz-monitor/1.0",
-                source="ArgentinaDatos/riesgo-pais-hist",
+                timeout=15.0,
+                headers={"User-Agent": "balanz-monitor/1.0"},
             )
+            resp.raise_for_status()
+            data = resp.json()
             if isinstance(data, list) and len(data) >= 2:
                 self._rp_prev_valor = data[-2]["valor"]
                 self._rp_prev_ts = time.monotonic()
@@ -104,12 +106,13 @@ class ArgentinaDatosProvider:
             ):
                 return self._rp_cache
             try:
-                data = http_get_json(
+                resp = httpx.get(
                     _RIESGO_PAIS_URL,
-                    timeout=10,
-                    user_agent="balanz-monitor/1.0",
-                    source="ArgentinaDatos/riesgo-pais",
+                    timeout=10.0,
+                    headers={"User-Agent": "balanz-monitor/1.0"},
                 )
+                resp.raise_for_status()
+                data = resp.json()
                 if isinstance(data, dict) and "valor" in data:
                     valor = data["valor"]
                     fecha = data.get("fecha", "")
@@ -147,12 +150,13 @@ class ArgentinaDatosProvider:
             if self._dolares_prev_date == today and self._dolares_prev:
                 return dict(self._dolares_prev)
             try:
-                data = http_get_json(
+                resp = httpx.get(
                     _DOLARES_HIST_URL,
-                    timeout=20,
-                    user_agent="balanz-monitor/1.0",
-                    source="ArgentinaDatos/dolares-hist",
+                    timeout=20.0,
+                    headers={"User-Agent": "balanz-monitor/1.0"},
                 )
+                resp.raise_for_status()
+                data = resp.json()
                 if isinstance(data, list):
                     today_str = today.isoformat()
                     latest: Dict[str, tuple] = {}  # casa -> (fecha_str, venta)

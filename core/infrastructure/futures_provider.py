@@ -101,9 +101,11 @@ def parse_contract_maturity(symbol: str) -> Optional[date]:
     return date(year, month, last_day)
 
 
-def implied_tna(future_price: float, spot: float, mat: date,
+def implied_tea(future_price: float, spot: float, mat: date,
                 today: Optional[date] = None) -> Optional[float]:
-    """TNA implícita = (futuro/spot)^(365/days) - 1, decimal fraction."""
+    """TEA implícita (efectiva anual compuesta) = (futuro/spot)^(365/days) - 1,
+    decimal fraction. OJO: NO es la TNA (tasa nominal anual lineal) — para esa,
+    usar (futuro/spot − 1)·365/d (ver `panels_rows._implied_rates`)."""
     if not (future_price and spot and spot > 0 and mat):
         return None
     today = today or date.today()

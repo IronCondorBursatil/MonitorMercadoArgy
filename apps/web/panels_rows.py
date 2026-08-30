@@ -25,7 +25,6 @@ from core.domain.portfolio import position_currency
 from core.domain.services import FinancialEngine
 from core.infrastructure.futures_provider import (
     DEFAULT_SYMBOLS as ROFEX_SYMBOLS,
-    implied_tna,
     parse_contract_maturity,
     resolve_spot_for_tna,
 )
@@ -255,9 +254,11 @@ def _build_panel_lider_rows(provider) -> List[dict]:
     return rows
 
 
-def _build_futuros_rows(rofex, fx, bcra) -> List[dict]:
-    """Curva DLR Rofex/Matba: TNA implícita = (futuro_last/spot)^(365/d) − 1.
-    Reusa los helpers de futures_provider (spot híbrido fx/A3500, parse vto)."""
+def _build_futuros_rows(rofex, fx, bcra, today: Optional[date] = None) -> List[dict]:
+    """Curva DLR Rofex/Matba. La columna 'TNA' es la TNA LINEAL = (futuro_last/spot −
+    1)·365/d — la MISMA convención del popup Curva Rofex (`_implied_rates`) y del
+    informe A3 de Matba, NO la efectiva compuesta (que es la TEA). Reusa los helpers
+    de futures_provider (spot híbrido fx/A3500, parse vto)."""
     if rofex is None:
         return []
     try:
@@ -265,6 +266,7 @@ def _build_futuros_rows(rofex, fx, bcra) -> List[dict]:
         spot = resolve_spot_for_tna(fx, bcra)
     except Exception:
         return []
+    today = today or date.today()
     rows = []
     for sym in ROFEX_SYMBOLS:
         q = quotes.get(sym)
@@ -272,7 +274,8 @@ def _build_futuros_rows(rofex, fx, bcra) -> List[dict]:
             continue
         mat = parse_contract_maturity(sym)
         last = q.get("last")
-        tna = implied_tna(last, spot, mat) if (last and spot and mat) else None
+        days = (mat - today).days if mat else None
+        tna, _, _ = _implied_rates(last, spot, days)   # [0] = TNA lineal (= popup/A3)
         raw = {
             "ticker": sym, "vto": mat, "bid": q.get("bid"), "ask": q.get("ask"),
             "last": last, "settle": q.get("settle"),
@@ -461,6 +464,7 @@ def _build_rows(panel_id: str, state, provider=None, cols_override=None,
             cells.append({
                 "text": _fmt(raw, c["kind"], dec),
                 "cls": cls,
+                "key": c["key"],   # data-key en el td → el blip de precio lo localiza
             })
         row = {"ticker": vals["ticker"], "cells": cells}
         if ccy is not None:

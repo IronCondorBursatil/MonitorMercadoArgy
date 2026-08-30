@@ -237,8 +237,9 @@ def test_on_page_uses_unified_tool():
     assert 'id="uni-chart-backdrop"' in html and 'id="uni-chart"' in html  # modal + canvas
     assert 'id="sec-liga"' not in html and 'id="sec-hm"' not in html       # liga + heatmap fuera
     assert "window.Unified" in js and "Unified.render" in js               # unified.js embebido + usado
-    # las tarjetas por sector siguen arriba, ahora colapsables
-    assert 'id="sec-cards"' in html and 'id="sec-cards-toggle"' in html
+    # las tarjetas por sector ahora van en un rail al costado del listado (sin botón de colapsar)
+    assert 'id="sec-cards"' in html and 'class="sec-split"' in html
+    assert 'id="sec-cards-toggle"' not in html
     assert "function secRenderCards" in js
 
 
@@ -252,6 +253,107 @@ def test_on_js_wires_live_refresh():
     assert "onLiveRefresh" in js and "setInterval(" in js
     assert "visibilitychange" in js          # refresca al volver a la pestaña (ediciones ABM)
     assert js.count('fetch("/on/data")') >= 1
+    # El botón 🖨️ POSTea a /on/pdf los tickers visibles (filteredList) — con un GET
+    # pelado el PDF ignoraba las facetas del sidebar y bajaba el universo HD completo.
+    assert "downloadOnPdf" in js and 'fetch("/on/pdf", {' in js
+    assert 'method: "POST"' in js and "filteredList().map(" in js
+
+
+def test_on_css_no_rompe_el_thead_sticky():
+    """Invariante de layout: el `thead` de la tabla unificada es `position: sticky`, y
+    sticky se ancla al scrollport ANCESTRO más cercano. Como `.uni-panel` ya no scrollea
+    (el alto es natural y scrollea la página), dejarle `overflow: hidden` lo convertía
+    igual en scrollport → el encabezado se iba de pantalla en vez de quedarse fijo.
+    `overflow: clip` recorta para el border-radius sin crear scrollport."""
+    with TestClient(app) as c:
+        css = c.get("/static/css/on.css").text
+    panel = css.split(".uni-panel {", 1)[1].split("}", 1)[0]
+    assert "overflow: clip" in panel and "overflow: hidden" not in panel
+    thead = css.split("table.uni thead th {", 1)[1].split("}", 1)[0]
+    assert "position: sticky" in thead
+    # y se ancla DEBAJO del header sticky del sitio (80px, misma constante que .sidebar)
+    assert "top: 80px" in thead
+
+
+def test_on_pdf_endpoint_returns_pdf():
+    """GET /on/pdf (universo completo, lo usa el CLI) debe devolver un PDF descargable.
+    charts=false lo arma sin los scatter (rápido, sin depender de matplotlib).
+
+    Sin `importorskip`: fpdf2 está en requirements.txt/lock, así que su ausencia es un
+    entorno mal instalado y el test tiene que gritarlo — saltearlo dejaba on_pdf.py
+    entero sin cobertura y el endpoint tirando 500 en runtime."""
+    with TestClient(app) as c:
+        r = c.get("/on/pdf?charts=false")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:5] == b"%PDF-" and len(r.content) > 2000
+    assert "attachment" in r.headers.get("content-disposition", "")
+
+
+def test_on_pdf_post_honra_los_tickers_del_cliente():
+    """El botón 🖨️ POSTea los tickers que el sidebar de facetas dejó visibles: la ruta
+    tiene que pasarlos al generador (el GET, en cambio, no filtra por ticker).
+    El filtrado en sí lo cubre tests/test_on_pdf.py."""
+    import apps.web.on_pdf as on_pdf_mod
+
+    seen = []
+    orig = on_pdf_mod.build_on_pdf
+
+    def _spy(data, **kw):
+        seen.append(kw)
+        return orig(data, **kw)
+
+    on_pdf_mod.build_on_pdf = _spy
+    try:
+        with TestClient(app) as c:
+            r = c.post("/on/pdf", json={"tickers": ["ACMED", "OTRD"], "charts": False})
+    finally:
+        on_pdf_mod.build_on_pdf = orig
+    assert r.status_code == 200 and r.content[:5] == b"%PDF-"
+    assert seen and seen[-1]["tickers"] == ["ACMED", "OTRD"]
+
+
+def test_on_pdf_post_sin_tickers_equivale_al_get():
+    with TestClient(app) as c:
+        r = c.post("/on/pdf", json={"charts": False})
+    assert r.status_code == 200 and r.content[:5] == b"%PDF-"
+
+
+def test_on_pdf_sin_fuentes_devuelve_503_no_500():
+    """Host sin ninguna TTF (contenedor pelado): 503 con mensaje accionable en vez de
+    un 500 con traceback que en el UI se ve sólo como 'HTTP 500'."""
+    import apps.web.on_pdf as on_pdf_mod
+
+    def _boom():
+        raise FileNotFoundError("No se encontró una fuente TrueType para el PDF.")
+
+    orig = on_pdf_mod.pick_font
+    on_pdf_mod.pick_font = _boom
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            r = c.get("/on/pdf?charts=false")
+    finally:
+        on_pdf_mod.pick_font = orig
+    assert r.status_code == 503
+    assert "TrueType" in r.json()["detail"]
+
+
+def test_on_pdf_sin_fpdf2_devuelve_503_no_500():
+    """Sin la dep opcional el endpoint debe degradar a 503, no romper con
+    ModuleNotFoundError (que FastAPI convierte en un 500 opaco)."""
+    import sys
+
+    saved = sys.modules.pop("apps.web.on_pdf", None)
+    sys.modules["apps.web.on_pdf"] = None    # hace que el `from … import` tire ImportError
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            r = c.get("/on/pdf?charts=false")
+    finally:
+        del sys.modules["apps.web.on_pdf"]
+        if saved is not None:
+            sys.modules["apps.web.on_pdf"] = saved
+    assert r.status_code == 503
+    assert "fpdf2" in r.json()["detail"]
 
 
 def _amort_probe(ticker, face, rate, today):

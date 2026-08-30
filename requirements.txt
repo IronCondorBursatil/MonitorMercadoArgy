@@ -27,6 +27,10 @@ pydantic>=2
 pydantic-settings
 optionlab                # analytics avanzados de estrategias de opciones (P(profit), EV, ranges)
 
+# --- export PDF del panel ON (botón 🖨️ /on/pdf + scripts/export_on_pdf.py) ---
+fpdf2                    # armado del PDF (Unicode vía arial.ttf de Windows)
+matplotlib               # scatter TIR-vs-MD de las tarjetas (sin él → PDF sin charts)
+
 # --- dev ---
 pytest
 hypothesis              # property-based testing (invariantes de pricing/day-count)

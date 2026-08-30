@@ -188,10 +188,17 @@
       emis.sort(function (x, y) { return (y.a.tir_avg || 0) - (x.a.tir_avg || 0); });
       emis.forEach(function (e) {
         var ek = a.key + "||" + e.name, cE = state.colEmi.has(ek);
+        // Emisor = banner a TODO el ancho (nombre entero) + calificación FIX SCR del emisor.
+        var _rt = e.bonds[0] || {};
+        var _cal = _rt.rating
+          ? '<span class="uni-rating uni-rg-' + (_rt.rating_grade || "good") + '" title="Calificación largo plazo ' +
+              ON.esc(_rt.rating) + (_rt.rating_persp ? ' · ' + ON.esc(_rt.rating_persp) : '') + '">' + ON.esc(_rt.rating) +
+              (_rt.rating_persp && _rt.rating_persp !== "N/A" ? '<span class="uni-rp">' + ON.esc(_rt.rating_persp) + '</span>' : '') +
+            '</span>'
+          : '';
         h += '<tr class="uni-emisor" data-emi="' + encodeURIComponent(ek) + '" style="--sc:' + col + '">' +
-          '<td class="uni-grp uni-grp2"><span class="uni-caret">' + (cE ? "▶" : "▼") + '</span>' +
-          '<span class="uni-em" title="' + ON.esc(e.name) + '">' + ON.esc(e.name) + '</span><span class="uni-n">' + e.a.count + '</span></td>' +
-          aggCells(e.a, max, col, { vol: true }) + '</tr>';
+          '<td class="uni-grp uni-grp2" colspan="' + (COLS.length + 1) + '"><span class="uni-caret">' + (cE ? "▶" : "▼") + '</span>' +
+          '<span class="uni-em" title="' + ON.esc(e.name) + '">' + ON.esc(e.name) + '</span><span class="uni-n">' + e.a.count + '</span>' + _cal + '</td></tr>';
         if (cE) return;
         sortBonds(e.bonds).forEach(function (b) {
           h += '<tr class="uni-bond" data-tk="' + b.ticker + '" style="--sc:' + col + '">' +
@@ -275,7 +282,7 @@
     el.querySelector('[data-act="expand"]').onclick = function () { state.colSec.clear(); state.colEmi.clear(); render(); };
     el.querySelector('[data-act="collapse"]').onclick = function () { sectorAggs().forEach(function (a) { state.colSec.add(a.key); }); render(); };
     el.querySelectorAll(".uni-action").forEach(function (b) {
-      b.onclick = function () { var a = actions[+b.dataset.action]; if (a && a.onClick) a.onClick(); };
+      b.onclick = function () { var a = actions[+b.dataset.action]; if (a && a.onClick) a.onClick(b); };
     });
     return el;
   }

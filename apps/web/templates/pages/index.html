@@ -493,4 +493,47 @@
     requestAnimationFrame(fitAll);
   })();
 </script>
+<script>
+  // --- Blip de precio (estilo terminal de trading, tipo Bloomberg) -----------
+  // Cuando el precio de una especie cambia entre refreshes, su celda destella
+  // verde (subió) o roja (bajó) y se apaga rápido (.65s, CSS .blip-up/.blip-down).
+  // Self-contained (NO depende de GridStack): si el vendor del grid no carga, el
+  // IIFE de arriba corta — el blip igual anda. Por ahora SOLO en BONARES Y GLOBALES.
+  (function () {
+    var BLIP_PANELS = { bonares: 1 };            // panel ids con blip (extensible)
+    var last = Object.create(null);              // "panel|settle|ticker" -> precio (num)
+
+    function parsePx(txt) {                       // "93,770.00" -> 93770 ; "—" -> NaN
+      if (!txt) return NaN;
+      var v = parseFloat(txt.replace(/[\s,]/g, ""));
+      return isFinite(v) ? v : NaN;
+    }
+
+    document.body.addEventListener("htmx:afterSwap", function (e) {
+      var tb = e.target;
+      if (!tb || tb.tagName !== "TBODY" || !tb.closest) return;
+      var panel = tb.closest(".panel");
+      var pid = panel && panel.getAttribute("data-id");
+      if (!pid || !BLIP_PANELS[pid]) return;
+      // El plazo es parte de la clave: al alternar 24hs↔CI los precios cambian en
+      // bloque, pero comparamos contra el último valor DE ESE plazo → sin falso blip.
+      var settle = (panel.getAttribute("data-settle")) || "24";
+      tb.querySelectorAll('tr[data-ticker]').forEach(function (tr) {
+        var cell = tr.querySelector('td[data-key="price"]');
+        if (!cell) return;
+        var px = parsePx(cell.textContent);
+        if (!isFinite(px)) return;                // sin precio ("—") → ni blip ni store
+        var key = pid + "|" + settle + "|" + tr.getAttribute("data-ticker");
+        var prev = last[key];
+        if (prev !== undefined && px !== prev) {
+          var cls = px > prev ? "blip-up" : "blip-down";
+          cell.classList.remove("blip-up", "blip-down");
+          void cell.offsetWidth;                  // reinicia la animación (re-trigger)
+          cell.classList.add(cls);
+        }
+        last[key] = px;
+      });
+    });
+  })();
+</script>
 {% endblock %}

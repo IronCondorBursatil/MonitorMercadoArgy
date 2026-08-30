@@ -64,7 +64,7 @@ def test_cafci_gate_respects_ar_today(monkeypatch):
 
     yesterday_ar = date.today() - timedelta(days=1)
     monkeypatch.setattr(mod, "_ar_today", lambda: yesterday_ar)
-    monkeypatch.setattr(mod, "http_get_json", fake_http)
+    monkeypatch.setattr("httpx.get", fake_http)
 
     prov = mod.CAFCIProvider()
     prov._disk_loaded = True

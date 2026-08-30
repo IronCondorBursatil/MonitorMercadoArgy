@@ -1,6 +1,6 @@
 """Tests de core/infrastructure/futures_provider.py (M3a) — partes puras.
 
-Se testea SIN tocar el WebSocket: parsing de contratos, TNA implícita, resolución
+Se testea SIN tocar el WebSocket: parsing de contratos, TEA implícita, resolución
 de spot (híbrido horario, con providers stub) y el parser de mensajes M: del feed
 Primary. El cliente WS (thread daemon) queda fuera del alcance unitario."""
 
@@ -12,7 +12,7 @@ import pytest
 
 from core.infrastructure.futures_provider import (
     DEFAULT_SYMBOLS,
-    implied_tna,
+    implied_tea,
     parse_contract_maturity,
     resolve_spot_for_tna,
     _parse_m_message,
@@ -50,25 +50,25 @@ def test_ticker_to_security_id():
     assert _ticker_to_security_id("NOSLASH") is None
 
 
-# --- implied_tna ------------------------------------------------------------ #
+# --- implied_tea (efectiva anual compuesta) --------------------------------- #
 
-def test_implied_tna_golden():
+def test_implied_tea_golden():
     # futuro 1100, spot 1000, 365 días → (1.1)^(365/365)-1 = 0.10
-    tna = implied_tna(1100.0, 1000.0, date(2027, 1, 1), today=date(2026, 1, 1))
-    assert tna == pytest.approx(0.10, abs=1e-9)
+    tea = implied_tea(1100.0, 1000.0, date(2027, 1, 1), today=date(2026, 1, 1))
+    assert tea == pytest.approx(0.10, abs=1e-9)
 
 
-def test_implied_tna_half_year_annualizes():
-    # +5% en ~182.5 días → anualizado ≈ (1.05)^2-1 = 0.1025
-    tna = implied_tna(1050.0, 1000.0, date(2026, 7, 2), today=date(2026, 1, 1))
-    assert tna == pytest.approx((1.05) ** (365 / 182) - 1, abs=1e-6)
+def test_implied_tea_half_year_annualizes():
+    # +5% en ~182.5 días → anualizado (compuesto) ≈ (1.05)^2-1 = 0.1025
+    tea = implied_tea(1050.0, 1000.0, date(2026, 7, 2), today=date(2026, 1, 1))
+    assert tea == pytest.approx((1.05) ** (365 / 182) - 1, abs=1e-6)
 
 
-def test_implied_tna_guards():
-    assert implied_tna(0, 1000, date(2027, 1, 1), today=date(2026, 1, 1)) is None
-    assert implied_tna(1100, 0, date(2027, 1, 1), today=date(2026, 1, 1)) is None
+def test_implied_tea_guards():
+    assert implied_tea(0, 1000, date(2027, 1, 1), today=date(2026, 1, 1)) is None
+    assert implied_tea(1100, 0, date(2027, 1, 1), today=date(2026, 1, 1)) is None
     # vencimiento en el pasado → None
-    assert implied_tna(1100, 1000, date(2025, 1, 1), today=date(2026, 1, 1)) is None
+    assert implied_tea(1100, 1000, date(2025, 1, 1), today=date(2026, 1, 1)) is None
 
 
 # --- resolve_spot_for_tna (con providers stub) ------------------------------ #

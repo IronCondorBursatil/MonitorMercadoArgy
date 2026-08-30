@@ -28,7 +28,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from apps.web.deps import get_repo, get_state
+from apps.web.deps import get_bondterminal, get_repo, get_state
 from apps.web.routers import (
     abm, bcra, bonds, cartera, cashflows, catalog, curva, escenarios, fci, header,
     on, options, panels, source, stream,
@@ -63,6 +63,10 @@ async def _refresh_loop(app: FastAPI) -> None:
         await asyncio.sleep(settings.refresh_sec)
         try:
             await app.state.hub.refresh_all()  # fuente live activa (BYMA/Data912), async
+            if hasattr(app.state.indices, "prefetch"):
+                await app.state.indices.prefetch(app.state.client)
+            if hasattr(app.state.fx, "prefetch"):
+                await app.state.fx.prefetch(app.state.client)
             use_case = GenerateMonitorReport(repo, provider,
                                              indices=app.state.indices, fx=app.state.fx)
             metrics = await asyncio.to_thread(use_case.execute, _ALL_TYPES)
@@ -275,6 +279,10 @@ async def _bei_loop(app: FastAPI) -> None:
         first = False
         try:
             await app.state.hub.refresh_all()  # snapshot fresco (la 1ª corrida es en startup)
+            if hasattr(app.state.indices, "prefetch"):
+                await app.state.indices.prefetch(app.state.client)
+            if hasattr(app.state.fx, "prefetch"):
+                await app.state.fx.prefetch(app.state.client)
             use_case = GenerateMonitorReport(repo, provider,
                                              indices=app.state.indices, fx=app.state.fx)
             tables = await asyncio.to_thread(
@@ -288,6 +296,7 @@ async def _bei_loop(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from core.infrastructure.bondterminal_provider import BondTerminalProvider
     from core.infrastructure.cafci_provider import CAFCIProvider
     from core.infrastructure.fx_provider import DolarAPIProvider
     from core.infrastructure.futures_provider import RofexProvider
@@ -334,6 +343,7 @@ async def lifespan(app: FastAPI):
     app.state.fx = DolarAPIProvider()
     app.state.rofex = RofexProvider()  # WS Matba lazy (warmup en el 1er get_quotes)
     app.state.cafci = CAFCIProvider()  # FCI: hidrata de disco / fetch 1×/día
+    app.state.bondterminal = BondTerminalProvider()  # riesgo país EMBI AR (TTL 5min)
     # En tests (MONITOR_DISABLE_LOOPS=1) NO arrancamos los loops: corren pricing
     # con indices reales en background y contaminan los caches de módulo
     # (p.ej. el avg TAMAR), rompiendo la aislación del test de equivalencia.
@@ -388,6 +398,19 @@ def health(repo=Depends(get_repo), state=Depends(get_state)):
         "metrics_cached": len(state.metrics()),
         **st,
     }
+
+
+@app.get("/api/riesgo-pais")
+def api_riesgo_pais(bt=Depends(get_bondterminal)):
+    """Riesgo país de BondTerminal: spread ponderado EMBI AR + valor Ambito, deltas, bonos.
+
+    Endpoint de inspección (hermano de /api/health y /api/metrics): expone el payload
+    COMPLETO — por-bono, sparkline, calidad del dato — que la card del header no muestra.
+    La card se sirve del provider directo (`routers/header.py`), no de esta ruta."""
+    data = bt.get_riesgo_pais()
+    if data is None:
+        return JSONResponse({"error": "no data available"}, status_code=503)
+    return JSONResponse(data)
 
 
 @app.get("/api/metrics")

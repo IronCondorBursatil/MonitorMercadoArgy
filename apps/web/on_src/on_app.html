@@ -117,12 +117,11 @@
   background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--text);
   border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer;
 }
-#tab-sectores .sec-cards-section { display: flex; flex-direction: column; gap: 12px; }
-#tab-sectores .sec-cards-toggle { background: var(--row-alt); border: 1px solid var(--panel-border); color: var(--text-dim); border-radius: 6px; width: 26px; height: 24px; cursor: pointer; font-size: 10px; line-height: 1; flex-shrink: 0; transition: transform .15s ease, color .12s; }
-#tab-sectores .sec-cards-toggle:hover { color: var(--accent); border-color: var(--accent); }
-#tab-sectores .sec-cards-section.collapsed .sec-cards-toggle { transform: rotate(-90deg); }
-#tab-sectores .sec-cards-section.collapsed .sec-cards-grid { display: none; }
-#tab-sectores .sec-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+/* Sectores: listado principal + rail compacto de tarjetas por sector al costado */
+#tab-sectores .sec-split { display: grid; grid-template-columns: minmax(0, 1fr) 416px; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { #tab-sectores .sec-split { grid-template-columns: 1fr; } }
+#tab-sectores .sec-cards-section { display: flex; flex-direction: column; gap: 9px; }   /* alto natural: scrollea la página, sin scroll propio */
+#tab-sectores .sec-cards-grid { display: grid; grid-template-columns: 1fr; gap: 9px; }   /* rail: una tarjeta por fila */
 
 #tab-sectores .scard {
   background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--radius);
@@ -143,7 +142,7 @@
 #tab-sectores .sk-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); }
 #tab-sectores .sk-val { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; line-height: 1.2; }
 #tab-sectores .sk-sub { font-size: 10.5px; color: var(--text-dim); margin-top: 1px; }
-#tab-sectores .scard-chart { padding: 10px 12px 6px; border-bottom: 1px solid var(--panel-border); }
+#tab-sectores .scard-chart { padding: 8px 12px 6px; border-bottom: 1px solid var(--panel-border); }
 #tab-sectores .scard-chart canvas { width: 100% !important; height: 130px !important; display: block; }
 #tab-sectores .scard-top { padding: 8px 12px 10px; }
 #tab-sectores .top3-head { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .35px; color: var(--text-faint); margin-bottom: 6px; }
@@ -159,6 +158,13 @@
 #tab-sectores .top3-ley { font-size: 9.5px; padding: 1px 5px; border-radius: 4px; flex-shrink: 0; font-weight: 700; }
 #tab-sectores .top3-ley.ley-ar  { background: var(--accent-light); color: var(--accent); }
 #tab-sectores .top3-ley.ley-ext { background: var(--tir-hl); color: var(--text-dim); }
+#tab-sectores .top3-cl { font-size: 10.5px; color: var(--text-dim); flex-shrink: 0; min-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tab-sectores .top3-header { display: flex; align-items: center; gap: 8px; padding: 1px 6px 5px; border-bottom: 1px solid var(--panel-border); margin-bottom: 3px; }
+#tab-sectores .top3-header span { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint) !important; background: none !important; }
+#tab-sectores .top3-header .top3-val { color: #064a26 !important; }
+#tab-sectores .top3-val.pos { color: #064a26; }
+[data-theme="dark"] #tab-sectores .top3-header .top3-val { color: var(--pos) !important; }
+[data-theme="dark"] #tab-sectores .top3-val.pos { color: var(--pos); }
 #tab-sectores .expand-btn {
   display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%;
   border: none; background: transparent; color: var(--text-dim); font-size: 11.5px; font-weight: 600;
@@ -500,26 +506,27 @@
 
     <!-- ===== TAB 1: SECTORES ===== -->
     <section id="tab-sectores" class="tab-pane">
-      <!-- Tarjetas por sector (colapsables) ARRIBA + herramienta unificada Sector›Emisor›Título
-           (reemplaza liga + heatmap). El gráfico TIR-vs-MD vive en un modal ("Ver gráfico"). -->
-      <div class="sec-cards-section" id="sec-cards-section">
-        <div class="sec-cards-bar">
-          <button class="sec-cards-toggle" id="sec-cards-toggle" title="Mostrar / ocultar tarjetas por sector">▼</button>
-          <span class="lbl">¿Qué rinde cada sector?</span>
-          <span style="flex:1"></span>
-          <label class="lbl" for="sec-sort">Ordenar</label>
-          <select id="sec-sort">
-            <option value="tir_desc">TIR prom ↓</option>
-            <option value="tir_asc">TIR prom ↑</option>
-            <option value="md_desc">MD prom ↓</option>
-            <option value="vol_desc">Vol total ↓</option>
-            <option value="count_desc">Cantidad ↓</option>
-            <option value="canonical" selected>Orden canónico</option>
-          </select>
+      <!-- Listado Sector›Emisor›Título (principal) + rail compacto de tarjetas por sector
+           al costado. El gráfico TIR-vs-MD vive en un modal ("Ver gráfico"). -->
+      <div class="sec-split">
+        <div id="uni-tool" class="uni-panel"></div>
+        <div class="sec-cards-section" id="sec-cards-section">
+          <div class="sec-cards-bar">
+            <span class="lbl">¿Qué rinde cada sector?</span>
+            <span style="flex:1"></span>
+            <label class="lbl" for="sec-sort">Ordenar</label>
+            <select id="sec-sort">
+              <option value="tir_desc">TIR prom ↓</option>
+              <option value="tir_asc">TIR prom ↑</option>
+              <option value="md_desc">MD prom ↓</option>
+              <option value="vol_desc">Vol total ↓</option>
+              <option value="count_desc">Cantidad ↓</option>
+              <option value="canonical" selected>Orden canónico</option>
+            </select>
+          </div>
+          <div class="sec-cards-grid" id="sec-cards"></div>
         </div>
-        <div class="sec-cards-grid" id="sec-cards"></div>
       </div>
-      <div id="uni-tool" class="uni-panel"></div>
     </section>
 
     <!-- ===== TAB 2: CARDS + COMPARADOR ===== -->
@@ -1011,18 +1018,21 @@
     return entries.sort(fn);
   }
 
-  function secTop3Html(bonds, sortKey) {
+  function secTopHtml(bonds, sortKey) {
     var sorted = bonds.slice().sort(function (a, b) {
       if (sortKey === "vol") return (b.volume || 0) - (a.volume || 0);
       // Usar null-coalesce explícito: tir=0.0 es legítimo, no debe caer a -Infinity.
       return (b.tir != null ? b.tir : -Infinity) - (a.tir != null ? a.tir : -Infinity);
-    }).slice(0, 3);
-    return sorted.map(function (b, i) {
+    }).slice(0, 5);
+    var valLabel = sortKey === "vol" ? "Vol" : "TIR";
+    var hdr = '<div class="top3-header"><span class="top3-num">#</span><span class="top3-tk">Ticker</span><span class="top3-cl">Clase</span><span class="top3-ley">Ley</span><span class="top3-em">Emisor</span><span class="top3-val">' + valLabel + '</span></div>';
+    return hdr + sorted.map(function (b, i) {
       var valStr = sortKey === "vol" ? ON.vol(b.volume) : ON.pct(b.tir);
       var valClass = sortKey === "vol" ? "" : ON.sign(b.tir);
       var em = (b.emisor || "").replace(/\s*-\s*Clase.*$/i, "").replace(/\s*S\.A\..*$/i, "").trim();
       var ley = b.ley === "AR" ? '<span class="top3-ley ley-ar">AR</span>' : '<span class="top3-ley ley-ext">EXT</span>';
-      return '<div class="top3-row"><span class="top3-num">' + (i + 1) + '</span><span class="top3-tk">' + ON.esc(b.ticker) + '</span>' + ley +
+      var cl = b.clase ? '<span class="top3-cl">' + ON.esc(b.clase) + '</span>' : '<span class="top3-cl dim">—</span>';
+      return '<div class="top3-row"><span class="top3-num">' + (i + 1) + '</span><span class="top3-tk">' + ON.esc(b.ticker) + '</span>' + cl + ley +
         '<span class="top3-em">' + ON.esc(em) + '</span><span class="top3-val ' + valClass + '">' + valStr + '</span></div>';
     }).join("");
   }
@@ -1088,13 +1098,13 @@
           '<div class="scard-kpi"><div class="sk-label">Vol hoy</div><div class="sk-val">' + ON.vol(entry.vol_total) + '</div><div class="sk-sub">nominal</div></div>' +
         '</div>' +
         '<div class="scard-chart"><canvas id="' + canvasId + '"></canvas></div>' +
-        '<div class="scard-top"><div class="top3-head">Top 3<div class="top3-tabs"><button class="top3-tab on" data-s="tir">TIR</button><button class="top3-tab" data-s="vol">Vol</button></div></div><div id="' + top3Id + '">' + secTop3Html(bonds, "tir") + '</div></div>' +
+        '<div class="scard-top"><div class="top3-head">Top 5<div class="top3-tabs"><button class="top3-tab on" data-s="tir">TIR</button><button class="top3-tab" data-s="vol">Vol</button></div></div><div id="' + top3Id + '">' + secTopHtml(bonds, "tir") + '</div></div>' +
         '<button class="expand-btn" data-sec="' + entry.key + '"><span>Ver bonos ↓</span></button>';
       grid.appendChild(card);
       card.querySelectorAll(".top3-tab").forEach(function (tab) {
         tab.addEventListener("click", function () {
           card.querySelectorAll(".top3-tab").forEach(function (x) { x.classList.toggle("on", x === tab); });
-          document.getElementById(top3Id).innerHTML = secTop3Html(bonds, tab.dataset.s);
+          document.getElementById(top3Id).innerHTML = secTopHtml(bonds, tab.dataset.s);
         });
       });
       card.querySelector(".expand-btn").addEventListener("click", function () { secOpenLiga(entry.key); });
@@ -1105,13 +1115,36 @@
   // "Ver bonos ↓" → expandir ese sector en la herramienta unificada y hacer scroll
   function secOpenLiga(key) { if (window.Unified && Unified.openSector) Unified.openSector(key); }
 
+  // Botón 🖨️ de la toolbar: baja el PDF (resumen por sector + detalle) desde /on/pdf,
+  // el MISMO que arma scripts/export_on_pdf.py. Muestra estado de carga (tarda unos seg
+  // por los scatter de matplotlib del server).
+  // POSTea los tickers visibles (filteredList) para que el PDF respete las facetas.
+  function downloadOnPdf(btn) {
+    var orig = btn ? btn.textContent : null;
+    if (btn) { btn.textContent = "⏳ Generando…"; btn.disabled = true; }
+    fetch("/on/pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers: filteredList().map(function (b) { return b.ticker; }) })
+    })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = "Obligaciones_Negociables.pdf";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+      })
+      .catch(function (e) { alert("No se pudo generar el PDF: " + e.message); })
+      .finally(function () { if (btn) { btn.textContent = orig; btn.disabled = false; } });
+  }
+
   function renderSectores() {
-    if (!state.sec.cardsCollapsed) secRenderCards();
-    else { var g = document.getElementById("sec-cards"); if (g) g.innerHTML = ""; }
+    secRenderCards();
     if (!uniMounted) {
       Unified.render(document.getElementById("uni-tool"), {
         bondsFn: filteredList,                                  // sigue el sidebar de facetas global
-        actions: [{ label: "📊 Ver gráfico", onClick: openUniModal }],
+        actions: [{ label: "🖨️ PDF", onClick: downloadOnPdf }, { label: "📊 Ver gráfico", onClick: openUniModal }],
         onRender: function (bonds, aggs) {
           if (uniSel && !aggs.some(function (a) { return a.key === uniSel; })) { uniSel = null; uniUpdateSelNote(); }
           uniRedrawChart(aggs);
@@ -1613,17 +1646,7 @@
       var btn = e.target.closest(".subtab"); if (btn) switchTab(btn.dataset.tab);
     });
 
-    // tab 1: tarjetas por sector — orden + colapsar (persistido en localStorage)
-    try { state.sec.cardsCollapsed = localStorage.getItem("on_cards_collapsed") === "1"; } catch (e) {}
-    var cardsSection = document.getElementById("sec-cards-section");
-    function applyCardsCollapsed() { if (cardsSection) cardsSection.classList.toggle("collapsed", !!state.sec.cardsCollapsed); }
-    applyCardsCollapsed();
-    document.getElementById("sec-cards-toggle").addEventListener("click", function () {
-      state.sec.cardsCollapsed = !state.sec.cardsCollapsed;
-      try { localStorage.setItem("on_cards_collapsed", state.sec.cardsCollapsed ? "1" : "0"); } catch (e) {}
-      applyCardsCollapsed();
-      if (!state.sec.cardsCollapsed) secRenderCards();   // re-render al expandir
-    });
+    // tab 1: tarjetas por sector — orden
     document.getElementById("sec-sort").addEventListener("change", function () { state.sec.sortCards = this.value; secRenderCards(); });
 
     // tab 1: modal del gráfico TIR-vs-MD (se abre desde el botón "Ver gráfico" de la toolbar)

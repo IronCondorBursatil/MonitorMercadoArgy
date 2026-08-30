@@ -9,7 +9,15 @@ from datetime import date
 
 import pytest
 
-import core.infrastructure.rem_provider as rp
+class MockResponse:
+    def __init__(self, json_data):
+        self._json = json_data
+    def raise_for_status(self):
+        pass
+    def json(self):
+        return self._json
+
+
 from core.infrastructure.rem_provider import REMProvider
 
 
@@ -56,15 +64,15 @@ def _mock_http(monkeypatch, *, primary_ok=False, ard=None, primary_exc=None):
             calls["primary"] += 1
             if primary_exc is not None:
                 raise primary_exc
-            return {"datos": primary_ok or []}
+            return MockResponse({"datos": primary_ok or []})
         if "api.argentinadatos.com" in url:           # fallback (host correcto)
             calls["ard"] += 1
             if ard is None:
                 raise ConnectionError("getaddrinfo failed")
-            return ard
+            return MockResponse(ard)
         raise AssertionError(f"URL inesperada: {url}")  # ningún apex pelado
 
-    monkeypatch.setattr(rp, "http_get_json", fake)
+    monkeypatch.setattr("httpx.get", fake)
     return calls
 
 
@@ -94,7 +102,7 @@ def test_ard_fallback_hits_api_subdomain(monkeypatch):
         seen["url"] = url
         return _ARD_SAMPLE
 
-    monkeypatch.setattr(rp, "http_get_json", fake)
+    monkeypatch.setattr("httpx.get", fake)
     REMProvider().get_monthly_path()
     assert seen["url"].startswith("https://api.argentinadatos.com/")
 

@@ -40,6 +40,25 @@ def _has_rows(snaps: Dict[str, Dict[str, Data912Row]]) -> bool:
     return any(bool(rows) for rows in (snaps or {}).values())
 
 
+# Campos de profundidad de mercado: valen aunque `c` venga en 0 (pre-apertura hay
+# puntas y volumen sin última cotización), así que sobreviven al fallback de precio.
+_DEPTH_FIELDS = ("px_bid", "px_ask", "v", "q_op")
+
+
+def _good(row: Optional[Data912Row]) -> Optional[Data912Row]:
+    """La fila si trae precio real (>0); None si es 0/None (esqueleto o ilíquida)."""
+    return row if (row is not None and row.c and row.c > 0) else None
+
+
+def _with_depth_of(base: Data912Row, live: Optional[Data912Row]) -> Data912Row:
+    """Precio de `base` (cierre bueno) + profundidad viva de `live` (la fila en 0 de
+    la fuente activa). Sin `live` o sin puntas vivas devuelve `base` tal cual."""
+    if live is None:
+        return base
+    depth = {f: getattr(live, f) for f in _DEPTH_FIELDS if getattr(live, f, None) is not None}
+    return base.model_copy(update=depth) if depth else base
+
+
 class ProviderHub:
     # Opciones Data912 (fallback de BYMA /options). Incluye `stocks` para tener el
     # subyacente consistente con las opciones cuando se usa este camino.
@@ -129,11 +148,13 @@ class ProviderHub:
         for rows in (snaps or {}).values():
             seen_this_cycle.update(rows.keys())
         # Persistir los últimos valores BYMA para retención stale (anti-floor en ventana K).
+        # Solo precios reales (c>0): un 0 no es dato (especie ilíquida/esqueleto) y no debe
+        # quedar retenido como "último valor bueno" ni reinyectarse en un ciclo vacío.
         if seen_this_cycle:
             for settle, rows in (snaps or {}).items():
                 prev = self._last_active_rows.setdefault(settle, {})
                 for sym, row in rows.items():
-                    if row is not None:
+                    if row is not None and row.c and row.c > 0:
                         prev[sym] = row
         # Actualizar contadores: visto → reset a K; ausente → decrementar.
         all_tracked = set(self._active_sym_counts) | seen_this_cycle
@@ -198,22 +219,41 @@ class ProviderHub:
         return self._floor_snaps, self._floor_source
 
     def _apply_floor(self, active, active_src, floor, floor_src):
-        """Mergea el floor Data912 BAJO la fuente activa: la activa manda; el floor solo
-        aporta los símbolos que la activa NO cubre (`self._active_syms`). Para símbolos
-        en `_active_syms` que la activa no devolvió este ciclo (BYMA transitoriamente vacío),
-        se retiene el último valor bueno de la activa (anti-clobber del floor)."""
+        """Mergea el floor Data912 BAJO la fuente activa: la activa manda DONDE TRAE PRECIO;
+        el floor aporta los símbolos que la activa NO cubre (`self._active_syms`). Para
+        símbolos en `_active_syms` que la activa no devolvió este ciclo (BYMA transitoriamente
+        vacío), se retiene el último valor bueno de la activa (anti-clobber del floor).
+
+        Un precio 0 de la activa NO es dato (especie ilíquida o esqueleto del catálogo, p.ej.
+        ~3/4 del universo BYMA realtime viene en 0): si el floor tiene un cierre real para ese
+        símbolo, gana el floor — un 0 no debe pisar un cierre bueno y dejar la fila en blanco.
+        Sin floor, cae al último valor bueno de la activa: `_merge` ACUMULA sobre `_snap`, así
+        que escribir el 0 borraría el precio que la fila ya tenía. Y el precio del fallback se
+        combina con la profundidad VIVA de la activa (bid/ask/volumen/nº de operaciones), que
+        un c=0 no invalida: pre-apertura hay puntas reales sin última cotización."""
         out = {}
         for settle in (SETTLE_24, SETTLE_CI):
+            floor_rows = floor.get(settle) or {}
+            active_rows = active.get(settle) or {}
             base = {}
-            for sym, row in (floor.get(settle) or {}).items():
-                if sym not in self._active_syms and row is not None and row.c and row.c > 0:
+            for sym, row in floor_rows.items():
+                if sym not in self._active_syms and _good(row) is not None:
                     base[sym] = row
             # Stale retention: símbolos activos que BYMA no devolvió este ciclo → último valor
             last = self._last_active_rows.get(settle) or {}
             for sym in self._active_syms:
-                if sym not in (active.get(settle) or {}) and sym in last:
+                if sym not in active_rows and sym in last:
                     base[sym] = last[sym]
-            base.update(active.get(settle) or {})   # la activa (este ciclo) tiene prioridad
+            # La activa de este ciclo manda donde trae precio (>0). Si vino en 0 (iliquidez/
+            # esqueleto) cae al cierre del floor y, si tampoco lo hay, al último valor bueno
+            # de la propia activa; recién sin ninguna alternativa se muestra el 0 (mejor un 0
+            # explícito que ocultar la especie).
+            for sym, row in active_rows.items():
+                if row is not None and row.c and row.c > 0:
+                    base[sym] = row
+                    continue
+                fb = _good(floor_rows.get(sym)) or _good(last.get(sym))
+                base[sym] = _with_depth_of(fb, row) if fb is not None else row
             out[settle] = base
         return out, {**(floor_src or {}), **(active_src or {})}
 

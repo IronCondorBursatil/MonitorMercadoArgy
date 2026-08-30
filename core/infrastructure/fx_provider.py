@@ -12,13 +12,12 @@ calls into a single network round-trip while keeping data fresh between
 server cycles — must stay strictly below REFRESH_SEC.
 """
 
+import httpx
 import logging
 import threading
 import time
 from datetime import datetime, timedelta
 from typing import Dict, Optional
-
-from core.infrastructure._http import http_get_json
 
 logger = logging.getLogger(__name__)
 
@@ -47,34 +46,46 @@ class DolarAPIProvider:
         refresh loop at the start of each cycle."""
         type(self)._last_fetch_ts = 0.0
 
+    async def prefetch(self, client) -> None:
+        """Precarga asincrónica (FastAPI event loop)."""
+        if self._cache and (time.time() - self._last_fetch_ts) < self.TTL_SECONDS:
+            return
+        try:
+            payload = await client.get_json(self.URL, timeout=10.0, source="DolarAPI")
+            self._process_payload(payload)
+        except Exception as e:
+            logger.warning(f"DolarAPI prefetch failed: {e}")
+
     def _fetch(self) -> None:
+        """Fetch sincrónico (fallback p/ scripts CLI)."""
         with self._lock:
             if self._cache and (time.time() - self._last_fetch_ts) < self.TTL_SECONDS:
                 return
             try:
-                payload = http_get_json(
-                    self.URL, timeout=10, user_agent="Mozilla/5.0", source="DolarAPI",
-                )
-                fresh = {}
-                for row in payload:
-                    casa = str(row.get("casa", "")).strip().lower()
-                    if not casa:
-                        continue
-                    fresh[casa] = {
-                        "nombre": row.get("nombre"),
-                        "compra": float(row["compra"]) if row.get("compra") else None,
-                        "venta": float(row["venta"]) if row.get("venta") else None,
-                        "fechaActualizacion": row.get("fechaActualizacion"),
-                    }
-                if fresh:
-                    type(self)._cache = fresh
-                    type(self)._last_fetch_ts = time.time()
-                    # Cada ciclo del web server (5s) re-fetchea — INFO inundaría
-                    # ~17k líneas/día. Resumen periódico en server.py / heartbeat.
-                    logger.debug(f"Loaded {len(fresh)} USD quotes from dolarapi.")
-                    self._check_staleness()
+                # Fallback sincrónico directo sin retry (simplificado)
+                resp = httpx.get(self.URL, timeout=10.0, headers={"User-Agent": "Mozilla/5.0"})
+                resp.raise_for_status()
+                self._process_payload(resp.json())
             except Exception as e:
                 logger.warning(f"DolarAPI fetch failed: {e}")
+
+    def _process_payload(self, payload) -> None:
+        fresh = {}
+        for row in payload:
+            casa = str(row.get("casa", "")).strip().lower()
+            if not casa:
+                continue
+            fresh[casa] = {
+                "nombre": row.get("nombre"),
+                "compra": float(row["compra"]) if row.get("compra") else None,
+                "venta": float(row["venta"]) if row.get("venta") else None,
+                "fechaActualizacion": row.get("fechaActualizacion"),
+            }
+        if fresh:
+            type(self)._cache = fresh
+            type(self)._last_fetch_ts = time.time()
+            logger.debug(f"Loaded {len(fresh)} USD quotes from dolarapi.")
+            self._check_staleness()
 
     def _check_staleness(self) -> None:
         # Skip on weekends: the FX market doesn't trade Sat/Sun, so a quote

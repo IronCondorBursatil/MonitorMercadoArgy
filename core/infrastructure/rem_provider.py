@@ -21,7 +21,7 @@ import time
 from datetime import date, datetime
 from typing import Dict, List, Optional
 
-from core.infrastructure._http import http_get_json
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -110,11 +110,6 @@ class REMProvider:
             now = time.time()
             if self._cache_rows and (now - self._last_fetch_ts) < self.TTL_SECONDS:
                 return
-            # Negative cache: si el último intento (primaria+fallback) falló hace poco,
-            # no martillar. Sin esto, con el cache vacío CADA caller (un instrumento
-            # CER por ciclo de pricing) re-fetcheaba → storm de logs/red ante un blip
-            # de DNS. Sirve stale si lo hubiera; si no, queda en degraded hasta el
-            # cooldown (REM es mensual → un par de minutos sin reintentar es inocuo).
             if (now - self._last_fail_ts) < self.FAIL_COOLDOWN:
                 return
 
@@ -122,9 +117,9 @@ class REMProvider:
 
             # Primaria: facujallia.workers.dev
             try:
-                payload = http_get_json(
-                    self.URL_IPC, timeout=10, user_agent="Mozilla/5.0", source="REM/IPC",
-                )
+                resp = httpx.get(self.URL_IPC, timeout=10.0, headers={"User-Agent": "Mozilla/5.0"})
+                resp.raise_for_status()
+                payload = resp.json()
                 rows = payload.get("datos") or []
             except Exception as e:
                 logger.warning("REM primaria falló: %s — intentando ArgentinaDatos", e)
@@ -132,11 +127,9 @@ class REMProvider:
             # Fallback: ArgentinaDatos /v1/finanzas/rem/ultimo
             if not rows:
                 try:
-                    raw = http_get_json(
-                        _ARD_REM_URL, timeout=10,
-                        user_agent="balanz-monitor/1.0",
-                        source="REM/ArgentinaDatos",
-                    )
+                    resp = httpx.get(_ARD_REM_URL, timeout=10.0, headers={"User-Agent": "balanz-monitor/1.0"})
+                    resp.raise_for_status()
+                    raw = resp.json()
                     if isinstance(raw, list):
                         rows = self._normalize_ard(raw)
                         if rows:
@@ -149,7 +142,40 @@ class REMProvider:
                 type(self)._last_fetch_ts  = time.time()
                 logger.info("Loaded %d REM IPC rows.", len(rows))
             else:
-                # Falló todo este ciclo → arma el negative-cache (anti-storm).
+                type(self)._last_fail_ts = time.time()
+
+    async def prefetch(self, client) -> None:
+        """Fetch asincrónico."""
+        with self._lock:
+            now = time.time()
+            if self._cache_rows and (now - self._last_fetch_ts) < self.TTL_SECONDS:
+                return
+            if (now - self._last_fail_ts) < self.FAIL_COOLDOWN:
+                return
+
+        rows: List[dict] = []
+        try:
+            payload = await client.get_json(self.URL_IPC, timeout=10.0, source="REM/IPC")
+            rows = payload.get("datos") or []
+        except Exception as e:
+            logger.warning("REM async primaria falló: %s — intentando ArgentinaDatos", e)
+
+        if not rows:
+            try:
+                raw = await client.get_json(_ARD_REM_URL, timeout=10.0, source="REM/ArgentinaDatos")
+                if isinstance(raw, list):
+                    rows = self._normalize_ard(raw)
+                    if rows:
+                        logger.info("REM async: fallback ArgentinaDatos OK (%d filas).", len(rows))
+            except Exception as e:
+                logger.warning("REM async fallback ArgentinaDatos falló: %s", e)
+
+        with self._lock:
+            if rows:
+                type(self)._cache_rows     = rows
+                type(self)._last_fetch_ts  = time.time()
+                logger.info("Loaded %d REM IPC rows (async).", len(rows))
+            else:
                 type(self)._last_fail_ts = time.time()
 
     @staticmethod

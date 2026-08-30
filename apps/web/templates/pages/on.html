@@ -75,26 +75,27 @@
 
     <!-- ===== TAB 1: SECTORES (tarjetas colapsables + herramienta unificada) ===== -->
     <section id="tab-sectores" class="tab-pane">
-      <!-- Tarjetas por sector (colapsables) + herramienta unificada Sector›Emisor›Título
-           (reemplaza liga + heatmap). El gráfico TIR-vs-MD vive en un modal. -->
-      <div class="sec-cards-section" id="sec-cards-section">
-        <div class="sec-cards-bar">
-          <button class="sec-cards-toggle" id="sec-cards-toggle" title="Mostrar / ocultar tarjetas por sector">▼</button>
-          <span class="lbl">¿Qué rinde cada sector?</span>
-          <span style="flex:1"></span>
-          <label class="lbl" for="sec-sort">Ordenar</label>
-          <select id="sec-sort">
-            <option value="tir_desc">TIR prom ↓</option>
-            <option value="tir_asc">TIR prom ↑</option>
-            <option value="md_desc">MD prom ↓</option>
-            <option value="vol_desc">Vol total ↓</option>
-            <option value="count_desc">Cantidad ↓</option>
-            <option value="canonical" selected>Orden canónico</option>
-          </select>
+      <!-- Listado Sector›Emisor›Título (principal) + rail compacto de tarjetas por sector
+           al costado. El gráfico TIR-vs-MD vive en un modal ("Ver gráfico"). -->
+      <div class="sec-split">
+        <div id="uni-tool" class="uni-panel"></div>
+        <div class="sec-cards-section" id="sec-cards-section">
+          <div class="sec-cards-bar">
+            <span class="lbl">¿Qué rinde cada sector?</span>
+            <span style="flex:1"></span>
+            <label class="lbl" for="sec-sort">Ordenar</label>
+            <select id="sec-sort">
+              <option value="tir_desc">TIR prom ↓</option>
+              <option value="tir_asc">TIR prom ↑</option>
+              <option value="md_desc">MD prom ↓</option>
+              <option value="vol_desc">Vol total ↓</option>
+              <option value="count_desc">Cantidad ↓</option>
+              <option value="canonical" selected>Orden canónico</option>
+            </select>
+          </div>
+          <div class="sec-cards-grid" id="sec-cards"></div>
         </div>
-        <div class="sec-cards-grid" id="sec-cards"></div>
       </div>
-      <div id="uni-tool" class="uni-panel"></div>
     </section>
 
     <!-- ===== TAB 2: CARDS + COMPARADOR ===== -->

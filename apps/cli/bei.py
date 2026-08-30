@@ -52,7 +52,7 @@ from core.infrastructure.fx_provider import DolarAPIProvider
 from core.infrastructure.futures_provider import (
     DEFAULT_SYMBOLS as ROFEX_SYMBOLS,
     RofexProvider,
-    implied_tna,
+    implied_tea,
     parse_contract_maturity,
     resolve_spot_for_tna,
 )
@@ -267,12 +267,12 @@ def _dlr_curve_points(today: date):
         q = quotes.get(sym) or {}
         last = q.get("last") or q.get("settle")
         mat = parse_contract_maturity(sym)
-        tna = implied_tna(last, spot, mat, today)
-        if tna is None:
+        tea = implied_tea(last, spot, mat, today)   # curva de devaluación (efectiva)
+        if tea is None:
             continue
         years = (mat - today).days / 365.25
         if years > 0:
-            points.append((years, tna))
+            points.append((years, tea))
     return points
 
 

@@ -428,7 +428,7 @@ Helper interno: `_resolve_settle(instrument_type, override)` — `override if ov
 | `dolar_linked` | DL con V.Téc en pesos | MD asc |
 | `tamar` | TAMAR PURO + DUAL bonds re-valuados como TAMAR puro (sufijo `_TAM`) | MD asc |
 | `dual_tamar` | DUAL TAMAR (con floor) + DUAL CER/TAMAR (TXMJ*) | MD asc |
-| `futuros` | DLR curve via WS público de Matba; TNA = (futuro_last/`DLR/SPOT`)^(365/d) − 1; spot = índice BCRA A3500 (`Dólar USA` en la UI de Primary) | — |
+| `futuros` | DLR curve via WS público de Matba; **TNA = (futuro_last/`DLR/SPOT` − 1)·365/d** (lineal, = informe A3 Matba y popup Curva Rofex); la efectiva compuesta `(F/S)^(365/d) − 1` es la **TEA** (`implied_tea`), no la TNA; spot = índice BCRA A3500 (`Dólar USA` en la UI de Primary) | — |
 | `panel_lider` | Acciones BYMA: mid + Día% (data912) + 5d% + 30d% + sparkline 30d | — |
 | `bei_tenor` | BEI por tenor estándar (3M-3Y) con TAMAR fwd, BEI γ-adj, BEI TAMAR, Deval DLR, TC real | — |
 | `bei_sendero` | Sendero mensual BEI vs REM-BCRA (12 meses) | calendario |

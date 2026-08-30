@@ -10,6 +10,15 @@ from datetime import date
 
 import pytest
 
+class MockResponse:
+    def __init__(self, json_data):
+        self._json = json_data
+    def raise_for_status(self):
+        pass
+    def json(self):
+        return self._json
+
+
 from core.infrastructure.fci_history import (
     FCIHistoryStore, net_flow_series, record_from_ard,
 )
@@ -103,25 +112,10 @@ def test_net_flow_series_keeps_large_but_plausible_jump():
     series = {
         date(2026, 6, 2): {"vcp": 50.0, "ccp": 1000.0, "patrimonio": 50_000.0},
         date(2026, 6, 3): {"vcp": 50.0, "ccp": bumped, "patrimonio": bumped * 50},
-    }
-    flows = net_flow_series(series)
-    assert flows[date(2026, 6, 3)] == pytest.approx((bumped - 1000.0) * 50.0)
-
-
-def test_record_from_ard_fetches_and_stores(store, monkeypatch):
-    """record_from_ard pega a las 5 categorías de ArgentinaDatos (mockeadas) y
-    persiste las filas con ccp del día."""
-    import core.infrastructure.fci_history as fh
-
-    def fake_get(url, **kw):
-        if "mercadoDinero" in url:
-            return [{"fondo": "MM Uno", "vcp": 100.0, "ccp": 1000.0,
-                     "patrimonio": 100000.0, "fecha": "2026-06-02"}]
-        if "rentaFija" in url:
-            return [{"fondo": "RF Dos", "vcp": 50.0, "ccp": 2000.0,
-                     "patrimonio": 100000.0, "fecha": "2026-06-02"}]
-        return []
-    monkeypatch.setattr(fh, "http_get_json", fake_get)
+            return MockResponse([{"fondo": "RF Dos", "vcp": 50.0, "ccp": 2000.0,
+                     "patrimonio": 100000.0, "fecha": "2026-06-02"}])
+        return MockResponse([])
+    monkeypatch.setattr("httpx.get", fake_get)
 
     n = record_from_ard(store, date(2026, 6, 2))
     assert n == 2

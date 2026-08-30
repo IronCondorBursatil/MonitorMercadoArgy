@@ -370,10 +370,17 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
       emis.sort(function (x, y) { return (y.a.tir_avg || 0) - (x.a.tir_avg || 0); });
       emis.forEach(function (e) {
         var ek = a.key + "||" + e.name, cE = state.colEmi.has(ek);
+        // Emisor = banner a TODO el ancho (nombre entero) + calificación FIX SCR del emisor.
+        var _rt = e.bonds[0] || {};
+        var _cal = _rt.rating
+          ? '<span class="uni-rating uni-rg-' + (_rt.rating_grade || "good") + '" title="Calificación largo plazo ' +
+              ON.esc(_rt.rating) + (_rt.rating_persp ? ' · ' + ON.esc(_rt.rating_persp) : '') + '">' + ON.esc(_rt.rating) +
+              (_rt.rating_persp && _rt.rating_persp !== "N/A" ? '<span class="uni-rp">' + ON.esc(_rt.rating_persp) + '</span>' : '') +
+            '</span>'
+          : '';
         h += '<tr class="uni-emisor" data-emi="' + encodeURIComponent(ek) + '" style="--sc:' + col + '">' +
-          '<td class="uni-grp uni-grp2"><span class="uni-caret">' + (cE ? "▶" : "▼") + '</span>' +
-          '<span class="uni-em" title="' + ON.esc(e.name) + '">' + ON.esc(e.name) + '</span><span class="uni-n">' + e.a.count + '</span></td>' +
-          aggCells(e.a, max, col, { vol: true }) + '</tr>';
+          '<td class="uni-grp uni-grp2" colspan="' + (COLS.length + 1) + '"><span class="uni-caret">' + (cE ? "▶" : "▼") + '</span>' +
+          '<span class="uni-em" title="' + ON.esc(e.name) + '">' + ON.esc(e.name) + '</span><span class="uni-n">' + e.a.count + '</span>' + _cal + '</td></tr>';
         if (cE) return;
         sortBonds(e.bonds).forEach(function (b) {
           h += '<tr class="uni-bond" data-tk="' + b.ticker + '" style="--sc:' + col + '">' +
@@ -457,7 +464,7 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
     el.querySelector('[data-act="expand"]').onclick = function () { state.colSec.clear(); state.colEmi.clear(); render(); };
     el.querySelector('[data-act="collapse"]').onclick = function () { sectorAggs().forEach(function (a) { state.colSec.add(a.key); }); render(); };
     el.querySelectorAll(".uni-action").forEach(function (b) {
-      b.onclick = function () { var a = actions[+b.dataset.action]; if (a && a.onClick) a.onClick(); };
+      b.onclick = function () { var a = actions[+b.dataset.action]; if (a && a.onClick) a.onClick(b); };
     });
     return el;
   }
@@ -848,18 +855,21 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
     return entries.sort(fn);
   }
 
-  function secTop3Html(bonds, sortKey) {
+  function secTopHtml(bonds, sortKey) {
     var sorted = bonds.slice().sort(function (a, b) {
       if (sortKey === "vol") return (b.volume || 0) - (a.volume || 0);
       // Usar null-coalesce explícito: tir=0.0 es legítimo, no debe caer a -Infinity.
       return (b.tir != null ? b.tir : -Infinity) - (a.tir != null ? a.tir : -Infinity);
-    }).slice(0, 3);
-    return sorted.map(function (b, i) {
+    }).slice(0, 5);
+    var valLabel = sortKey === "vol" ? "Vol" : "TIR";
+    var hdr = '<div class="top3-header"><span class="top3-num">#</span><span class="top3-tk">Ticker</span><span class="top3-cl">Clase</span><span class="top3-ley">Ley</span><span class="top3-em">Emisor</span><span class="top3-val">' + valLabel + '</span></div>';
+    return hdr + sorted.map(function (b, i) {
       var valStr = sortKey === "vol" ? ON.vol(b.volume) : ON.pct(b.tir);
       var valClass = sortKey === "vol" ? "" : ON.sign(b.tir);
       var em = (b.emisor || "").replace(/\s*-\s*Clase.*$/i, "").replace(/\s*S\.A\..*$/i, "").trim();
       var ley = b.ley === "AR" ? '<span class="top3-ley ley-ar">AR</span>' : '<span class="top3-ley ley-ext">EXT</span>';
-      return '<div class="top3-row"><span class="top3-num">' + (i + 1) + '</span><span class="top3-tk">' + ON.esc(b.ticker) + '</span>' + ley +
+      var cl = b.clase ? '<span class="top3-cl">' + ON.esc(b.clase) + '</span>' : '<span class="top3-cl dim">—</span>';
+      return '<div class="top3-row"><span class="top3-num">' + (i + 1) + '</span><span class="top3-tk">' + ON.esc(b.ticker) + '</span>' + cl + ley +
         '<span class="top3-em">' + ON.esc(em) + '</span><span class="top3-val ' + valClass + '">' + valStr + '</span></div>';
     }).join("");
   }
@@ -925,13 +935,13 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
           '<div class="scard-kpi"><div class="sk-label">Vol hoy</div><div class="sk-val">' + ON.vol(entry.vol_total) + '</div><div class="sk-sub">nominal</div></div>' +
         '</div>' +
         '<div class="scard-chart"><canvas id="' + canvasId + '"></canvas></div>' +
-        '<div class="scard-top"><div class="top3-head">Top 3<div class="top3-tabs"><button class="top3-tab on" data-s="tir">TIR</button><button class="top3-tab" data-s="vol">Vol</button></div></div><div id="' + top3Id + '">' + secTop3Html(bonds, "tir") + '</div></div>' +
+        '<div class="scard-top"><div class="top3-head">Top 5<div class="top3-tabs"><button class="top3-tab on" data-s="tir">TIR</button><button class="top3-tab" data-s="vol">Vol</button></div></div><div id="' + top3Id + '">' + secTopHtml(bonds, "tir") + '</div></div>' +
         '<button class="expand-btn" data-sec="' + entry.key + '"><span>Ver bonos ↓</span></button>';
       grid.appendChild(card);
       card.querySelectorAll(".top3-tab").forEach(function (tab) {
         tab.addEventListener("click", function () {
           card.querySelectorAll(".top3-tab").forEach(function (x) { x.classList.toggle("on", x === tab); });
-          document.getElementById(top3Id).innerHTML = secTop3Html(bonds, tab.dataset.s);
+          document.getElementById(top3Id).innerHTML = secTopHtml(bonds, tab.dataset.s);
         });
       });
       card.querySelector(".expand-btn").addEventListener("click", function () { secOpenLiga(entry.key); });
@@ -942,13 +952,36 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
   // "Ver bonos ↓" → expandir ese sector en la herramienta unificada y hacer scroll
   function secOpenLiga(key) { if (window.Unified && Unified.openSector) Unified.openSector(key); }
 
+  // Botón 🖨️ de la toolbar: baja el PDF (resumen por sector + detalle) desde /on/pdf,
+  // el MISMO que arma scripts/export_on_pdf.py. Muestra estado de carga (tarda unos seg
+  // por los scatter de matplotlib del server).
+  // POSTea los tickers visibles (filteredList) para que el PDF respete las facetas.
+  function downloadOnPdf(btn) {
+    var orig = btn ? btn.textContent : null;
+    if (btn) { btn.textContent = "⏳ Generando…"; btn.disabled = true; }
+    fetch("/on/pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers: filteredList().map(function (b) { return b.ticker; }) })
+    })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = "Obligaciones_Negociables.pdf";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+      })
+      .catch(function (e) { alert("No se pudo generar el PDF: " + e.message); })
+      .finally(function () { if (btn) { btn.textContent = orig; btn.disabled = false; } });
+  }
+
   function renderSectores() {
-    if (!state.sec.cardsCollapsed) secRenderCards();
-    else { var g = document.getElementById("sec-cards"); if (g) g.innerHTML = ""; }
+    secRenderCards();
     if (!uniMounted) {
       Unified.render(document.getElementById("uni-tool"), {
         bondsFn: filteredList,                                  // sigue el sidebar de facetas global
-        actions: [{ label: "📊 Ver gráfico", onClick: openUniModal }],
+        actions: [{ label: "🖨️ PDF", onClick: downloadOnPdf }, { label: "📊 Ver gráfico", onClick: openUniModal }],
         onRender: function (bonds, aggs) {
           if (uniSel && !aggs.some(function (a) { return a.key === uniSel; })) { uniSel = null; uniUpdateSelNote(); }
           uniRedrawChart(aggs);
@@ -1450,17 +1483,7 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
       var btn = e.target.closest(".subtab"); if (btn) switchTab(btn.dataset.tab);
     });
 
-    // tab 1: tarjetas por sector — orden + colapsar (persistido en localStorage)
-    try { state.sec.cardsCollapsed = localStorage.getItem("on_cards_collapsed") === "1"; } catch (e) {}
-    var cardsSection = document.getElementById("sec-cards-section");
-    function applyCardsCollapsed() { if (cardsSection) cardsSection.classList.toggle("collapsed", !!state.sec.cardsCollapsed); }
-    applyCardsCollapsed();
-    document.getElementById("sec-cards-toggle").addEventListener("click", function () {
-      state.sec.cardsCollapsed = !state.sec.cardsCollapsed;
-      try { localStorage.setItem("on_cards_collapsed", state.sec.cardsCollapsed ? "1" : "0"); } catch (e) {}
-      applyCardsCollapsed();
-      if (!state.sec.cardsCollapsed) secRenderCards();   // re-render al expandir
-    });
+    // tab 1: tarjetas por sector — orden
     document.getElementById("sec-sort").addEventListener("change", function () { state.sec.sortCards = this.value; secRenderCards(); });
 
     // tab 1: modal del gráfico TIR-vs-MD (se abre desde el botón "Ver gráfico" de la toolbar)

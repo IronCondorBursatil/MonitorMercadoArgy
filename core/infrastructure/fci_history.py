@@ -32,7 +32,7 @@ from typing import Dict, List, Optional
 from config.settings import settings
 from core.domain.fci import ARD_FCI_ENDPOINTS as _ARD_FCI
 from core.domain.fci.derive import norm as _norm, to_float as _f
-from core.infrastructure._http import http_get_json
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -186,8 +186,9 @@ def fetch_ard_fci_rows(max_workers: int = 5) -> List[dict]:
     def _one(item):
         tipo, url = item
         try:
-            data = http_get_json(url, timeout=15, user_agent="balanz-monitor/1.0",
-                                 source=f"ARD/FCI/{tipo}")
+            resp = httpx.get(url, timeout=15.0, headers={"User-Agent": "balanz-monitor/1.0"})
+            resp.raise_for_status()
+            data = resp.json()
         except Exception as e:  # noqa: BLE001 — best-effort por categoría
             logger.warning("fci_history: ARD %s failed (%s)", tipo, e)
             return []
