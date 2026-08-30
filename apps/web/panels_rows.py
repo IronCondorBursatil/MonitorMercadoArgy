@@ -442,7 +442,22 @@ def _build_rows(panel_id: str, state, provider=None, cols_override=None,
     else:
         metrics = [m for m in state.metrics()
                    if m.snapshot and m.snapshot.instrument and m.snapshot.instrument.instrument_type in types]
-    metrics.sort(key=lambda m: (m.duration is None, m.duration or 0.0))
+    def _sort_key(m):
+        base_dur = m.duration or 0.0
+        if panel_id == "bonares" and m.snapshot and m.snapshot.instrument:
+            tk = m.snapshot.instrument.ticker.upper()
+            if tk.startswith("AO") or tk.startswith("AN"):
+                group = 0
+            elif tk.startswith("AL") or tk.startswith("AE"):
+                group = 1
+            elif tk.startswith("GD"):
+                group = 2
+            else:
+                group = 3
+            return (m.duration is None, group, base_dur)
+        return (m.duration is None, base_dur)
+
+    metrics.sort(key=_sort_key)
     rows = []
     for m in metrics:
         if price_required and not m.snapshot.price:
