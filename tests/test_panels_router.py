@@ -144,11 +144,14 @@ def test_on_chart_and_share_respect_ley_filter():
 
 
 def test_index_has_ley_filter_buttons_and_css():
-    """El header del panel ON trae el filtro Ley AR / Ley EXT; el CSS define las
-    reglas data-ley-flt (ocultar/mostrar por ley, componiendo con el de moneda)."""
+    """Los paneles de LEY_FILTER_PANELS (ON corporativas y Provinciales) traen el
+    filtro Ley AR / Ley EXT; el CSS define las reglas data-ley-flt (ocultar/mostrar
+    por ley, componiendo con el de moneda)."""
+    from apps.web.routers.panels_schema import LEY_FILTER_PANELS
     with TestClient(app) as c:
         html = c.get("/").text
-    assert html.count('class="ley-filter"') == 1          # solo el panel ON
+    # Uno por panel con filtro de ley (se deriva del set: agregar un panel no rompe).
+    assert html.count('class="ley-filter"') == len(LEY_FILTER_PANELS)
     assert 'data-ley="AR"' in html and 'data-ley="EXT"' in html
     css = (Path(panels.__file__).resolve().parents[1] / "static" / "css" / "app.css").read_text(encoding="utf-8")
     assert "data-ley-flt" in css

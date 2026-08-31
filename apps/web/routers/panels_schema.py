@@ -4,7 +4,7 @@ plazo CI, resalte de columna). Es data pura, separada de los builders/rutas de
 `panels.py` para que agregar o editar un panel sea un solo lugar declarativo.
 """
 
-from core.domain.instrument_groups import OBLIGACIONES_NEGOCIABLES
+from core.domain.instrument_groups import OBLIGACIONES_NEGOCIABLES, PROVINCIALES
 
 # --- Column schemas (espejo de server._get_columns para los paneles de bonos) --- #
 _BONARES_COLS = [
@@ -150,6 +150,10 @@ PANELS = {
     "dolar_linked": ("DOLAR LINKED", {"DOLAR_LINKED"}, _BONARES_COLS),
     "tamar": ("TAMAR / DUAL", {"PURO", "DUAL", "DUAL_CER_TAMAR"}, _TAMAR_COLS),
     "obligaciones_negociables": ("OBLIGACIONES NEGOCIABLES · ON USD", set(OBLIGACIONES_NEGOCIABLES), _ON_COLS),
+    # Deuda subsoberana (provincias/municipios). Columnas de ON: misma economía
+    # (hard-dollar amortizable con paridad/VR), distinto emisor. Tipos propios →
+    # panel separado del de ONs corporativas (ver instrument_groups.PROVINCIALES).
+    "provinciales": ("PROVINCIALES · deuda subsoberana", set(PROVINCIALES), _ON_COLS),
     "valor_relativo": ("VALOR RELATIVO · rich / cheap (curvas peso)", set(), _VR_COLS),
     "panel_lider": ("PANEL LÍDER · acciones", set(), _PANEL_LIDER_COLS),
     "futuros": ("FUTUROS DLR (Matba/Rofex)", set(), _FUTUROS_COLS),
@@ -158,7 +162,7 @@ PANELS = {
     "bei_pares": ("MÉTODO DE PARES (cross-check NT8 §A)", set(), _BEI_PARES_COLS),
 }
 PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreales",
-               "obligaciones_negociables",
+               "obligaciones_negociables", "provinciales",
                "valor_relativo", "panel_lider", "futuros",
                "bei_tenor", "bei_sendero", "bei_pares"]
 
@@ -166,7 +170,7 @@ PANEL_ORDER = ["bonares", "cer", "tasa_fija", "tamar", "dolar_linked", "bopreale
 # ARS/MEP/CABLE en el header (default MEP). La moneda se deriva del sufijo del ticker
 # (D=MEP, C=CABLE, resto=ARS). BOPREALes incluidos: cotizan en pesos (base BPO*),
 # MEP (…D) y cable (…C) — la pata pesos se linkea por ISIN (ver backfill_legs_from_universe).
-CCY_FILTER_PANELS = {"bonares", "obligaciones_negociables", "bopreales"}
+CCY_FILTER_PANELS = {"bonares", "obligaciones_negociables", "bopreales", "provinciales"}
 
 # Paneles que solo muestran especies CON precio de mercado: una pata sin cotización
 # (price None/0.00, ej. board vacío o especie ilíquida) no genera fila. Solo ONs:
@@ -176,7 +180,7 @@ PRICE_REQUIRED_PANELS = {"obligaciones_negociables"}
 # Paneles con filtro de ley aplicable (AR = Argentina / EXT = Extranjera) en el
 # header. La fila lleva `data-ley` (de Instrument.is_ley_argentina; sin dato → EXT,
 # misma convención del pricing MEP/CCL) y el CSS oculta las que no estén activas.
-LEY_FILTER_PANELS = {"obligaciones_negociables"}
+LEY_FILTER_PANELS = {"obligaciones_negociables", "provinciales"}
 
 # Paneles con selector de plazo de liquidación CI (T+0) / 24hs (T+1). El precio y
 # todo lo que deriva de él (TIR/paridad/MD/V.Téc) se recalcula on-demand para el
