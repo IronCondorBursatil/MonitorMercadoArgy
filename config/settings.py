@@ -1,13 +1,13 @@
 """Configuración centralizada.
 
 `settings` (pydantic-settings) es la fuente de verdad de paths y parámetros de
-runtime. Agrega los paths de las bases `.db` **fuera de OneDrive** (el sync de
-OneDrive corrompe SQLite/DuckDB mid-write).
+runtime. Agrega los paths de las bases `.db` **fuera del working tree de git** (la
+`catalog.db` es la fuente de verdad: no debe vivir donde corre `git pull`/`git clean`).
 
 Las constantes legacy (`BASE_DIR`, `DATA_DIR`, `MASTER_XLSX`) y `setup_logging()`
 se conservan: las primeras como alias derivados de `settings` para no romper los
 imports existentes mientras las fases migran a `settings.*`; el logging porque ya
-respeta el límite de tamaño de OneDrive (RotatingFileHandler 5 MB).
+mantiene el árbol liviano (RotatingFileHandler 5 MB).
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ _load_dotenv()
 
 def _resolve_jwt_secret(db_dir: Path) -> str:
     """Secreto para firmar los JWT, sin default hardcodeado (el repo es público).
-    Prioridad: archivo persistido en db_dir/jwt_secret (fuera de OneDrive, 0600) >
+    Prioridad: archivo persistido en db_dir/jwt_secret (fuera del working tree, 0600) >
     generado al vuelo y persistido. El env MONITOR_JWT_SECRET_KEY ya lo resolvió antes
     (llena el campo → esta función no corre). Persistir evita invalidar las sesiones en
     cada reinicio; si no se puede escribir, se usa uno efímero (con WARNING)."""
@@ -84,18 +84,19 @@ def _resolve_jwt_secret(db_dir: Path) -> str:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MONITOR_", env_file=".env", extra="ignore")
 
-    # Raíz del proyecto (donde vive este código, en OneDrive).
+    # Raíz del proyecto (donde vive este código).
     base_dir: Path = _BASE_DIR
-    # Datos append-only que SÍ pueden vivir en OneDrive (CSVs, xlsx seed).
+    # Datos append-only versionados en el repo (CSVs, xlsx seed).
     data_dir: Path = _BASE_DIR / "data"
     master_xlsx: Path = _BASE_DIR / "data" / "instruments_master.xlsx"
     history_dir: Path = _BASE_DIR / "data" / "history"
-    # Bases .db FUERA de OneDrive: el sync corrompe SQLite/DuckDB mid-write.
+    # Bases .db FUERA del working tree: la catalog.db es la fuente de verdad y no debe
+    # quedar donde corre git pull/clean (ver invariante en CLAUDE.md).
     db_dir: Path = Path(os.environ.get("LOCALAPPDATA", str(_BASE_DIR))) / "monitor"
     catalog_db: Path = db_dir / "catalog.db"
     # Backups recuperables de la catalog.db (fuente de verdad viva): snapshot online
     # 1×/día al arrancar, rota a `backup_keep` archivos por pool (daily y tagged por
-    # separado — ver backup.py). Fuera de OneDrive.
+    # separado — ver backup.py). Fuera del working tree.
     backup_dir: Path = db_dir / "backups"
     backup_keep: int = 7
     # Cierres diarios por ticker (variaciones Sem/1M/3M/YTD/1A). Se auto-mantiene
@@ -129,7 +130,7 @@ class Settings(BaseSettings):
     # Clave secreta para firmar las cookies de sesión (JWT). NUNCA un default
     # hardcodeado: con el repo público, cualquiera forjaría un token de admin. Se
     # resuelve en model_post_init: env MONITOR_JWT_SECRET_KEY > archivo persistido
-    # (db_dir/jwt_secret, fuera de OneDrive, 0600) > generado y persistido al vuelo.
+    # (db_dir/jwt_secret, fuera del working tree, 0600) > generado y persistido al vuelo.
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
     # 24h (antes 7 días). Sin refresh token, un token robado vive esto — 1 día es un
@@ -219,7 +220,7 @@ def setup_logging():
     # ARCHIVO: solo WARNING+ — registro durable de PROBLEMAS (errores de conexión,
     # breakers, fallas de fetch) para post-mortem. Antes logueaba INFO+ (httpx/access
     # por ciclo) y crecía a varios MB de ruido. En operación normal casi no crece.
-    # RotatingFileHandler: 5 MB × 5 backups (cap 25 MB, respeta OneDrive).
+    # RotatingFileHandler: 5 MB × 5 backups (cap 25 MB, mantiene el árbol liviano).
     file_handler = RotatingFileHandler(
         _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8",
     )

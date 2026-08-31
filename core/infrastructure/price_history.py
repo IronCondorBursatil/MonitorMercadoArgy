@@ -5,7 +5,7 @@ Por qué existe: el cómputo de rendimientos necesita un histórico de cierres, 
 antes vivía en un CSV manual (`data/history/precio_historico.csv`, 17 tickers,
 refrescado a mano → se desfasaba y daba ventanas engañosas, p.ej. "Sem" == "1M").
 Este store lo complementa/reemplaza con fuentes que se mergean en el read-path,
-todas escritas a un SQLite local en `%LOCALAPPDATA%\\monitor` (fuera de OneDrive,
+todas escritas a un SQLite local en `%LOCALAPPDATA%\\monitor` (fuera del working tree de git,
 que corrompe SQLite mid-write):
 
   1. **Priming de Data912** `/historical/bonds/{ticker}` — historia profunda y

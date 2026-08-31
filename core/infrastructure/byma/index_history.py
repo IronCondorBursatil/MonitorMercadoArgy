@@ -8,7 +8,7 @@ Para que LOS 16 índices muestren un sparkline denso necesitamos acumular nosotr
   2. **Acumulación** del valor de los 16 desde `/index-price` cada poll (una muestra
      timestamped por código) — densifica la curva durante la rueda.
 
-Se persiste a SQLite (fuera de OneDrive) → sobrevive reinicios y va completando las
+Se persiste a SQLite (fuera del working tree) → sobrevive reinicios y va completando las
 5 ruedas. El read-path devuelve las muestras de la ventana (últimas N ruedas) y se
 podan las viejas. Mismo patrón que `price_history.py`.
 """

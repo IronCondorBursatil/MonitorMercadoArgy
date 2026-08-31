@@ -11,8 +11,9 @@ datos de Data912 / BYMA / BCRA / CAFCI / dolarapi.
 
 ## Quick start
 
-Python 3.12 del sistema, **sin venv** (límite OneDrive). Las `.db` viven en
-`%LOCALAPPDATA%\monitor` (fuera de OneDrive).
+Python 3.12 del sistema, **sin venv en el proyecto** (el venv del servidor lo crea
+`deploy.sh` y está gitignoreado). Las `.db` viven en `%LOCALAPPDATA%\monitor`
+(**fuera del working tree de git**: la `catalog.db` es la fuente de verdad).
 
 ```powershell
 $py = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"   # o: py -3.12

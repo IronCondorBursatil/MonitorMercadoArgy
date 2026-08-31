@@ -1,5 +1,5 @@
 """Engine SQLite + sessionmaker. WAL para lectores concurrentes y resistencia
-al sync de OneDrive (aunque la .db vive fuera de OneDrive, WAL no estorba).
+a escrituras concurrentes (lectores no bloquean al escritor).
 
 El engine es **reconfigurable** (`configure(db_path)`): los tests apuntan a una
 .db temporal sin tocar la catalog.db real. `SessionLocal` es un sessionmaker

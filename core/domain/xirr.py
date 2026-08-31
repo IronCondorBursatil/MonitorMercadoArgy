@@ -44,8 +44,7 @@ def _npv(flows: np.ndarray, years: np.ndarray, rate: float) -> float:
     +∞ (hay egreso temprano y flujos futuros descontados explotan)."""
     if rate <= -1.0:
         return 1e18
-    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-        return float(np.sum(flows / (1.0 + rate) ** years))
+    return float((flows / (1.0 + rate) ** years).sum())
 
 
 def _bracket_and_solve(npv) -> float:
@@ -92,16 +91,17 @@ def _xirr_from_years(flows: np.ndarray, years: np.ndarray,
     def npv(rate):
         return _npv(flows, years, rate)
 
-    # Pre-paso Newton (rápido). Se acepta sólo si converge limpio.
-    for guess in _XIRR_GUESSES:
-        try:
-            r = newton(npv, guess, maxiter=50)
-        except (RuntimeError, ValueError, OverflowError, FloatingPointError):
-            continue
-        if np.isfinite(r) and r > -1.0 and abs(npv(r)) < _XIRR_TOLERANCE:
-            return float(r)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        # Pre-paso Newton (rápido). Se acepta sólo si converge limpio.
+        for guess in _XIRR_GUESSES:
+            try:
+                r = newton(npv, guess, maxiter=50)
+            except (RuntimeError, ValueError, OverflowError, FloatingPointError):
+                continue
+            if np.isfinite(r) and r > -1.0 and abs(npv(r)) < _XIRR_TOLERANCE:
+                return float(r)
 
-    return _bracket_and_solve(npv)
+        return _bracket_and_solve(npv)
 
 
 def xirr(flows: List[float], dates: List[date],

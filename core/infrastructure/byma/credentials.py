@@ -4,8 +4,8 @@ El usuario las ingresa por la UI; se guardan en `.env` (gitignored — no se com
 y se aplican en caliente a `os.environ` para que `BymaRealtimeSource` las tome sin
 reiniciar. En el próximo arranque, `config.settings._load_dotenv` las re-carga.
 
-Nota: `.env` vive en la carpeta del proyecto (OneDrive). Se sincroniza a tu nube
-personal; mantené tu OneDrive privado. No quedan en git ni en las `.db`.
+Nota: `.env` vive en la carpeta del proyecto y está gitignoreado — no viaja al repo
+ni queda en las `.db`. En el servidor va en el EnvironmentFile del servicio.
 """
 
 from __future__ import annotations

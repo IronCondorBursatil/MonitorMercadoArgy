@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Layout por defecto del dashboard (posiciones + paneles cerrados + columnas).
-# Se guarda junto a la .db (fuera de OneDrive); si no existe, el front usa el
+# Se guarda junto a la .db (fuera del working tree); si no existe, el front usa el
 # auto-layout. El usuario lo setea con "Guardar como default" en el menú CONFIG.
 _LAYOUT_FILE = str(Path(str(settings.catalog_db)).parent / "dashboard_layout.json")
 

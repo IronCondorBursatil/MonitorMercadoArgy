@@ -5,7 +5,7 @@
 # breaking changes. Este lock fija el estado conocido-bueno. Para reproducir:
 #   py -3.12 -m pip install -r requirements.lock
 #
-# Como no hay venv (límite OneDrive), NO es un `pip freeze` del sistema (173 paquetes,
+# Como en local no hay venv, NO es un `pip freeze` del sistema (173 paquetes,
 # casi todos ajenos): se fijan solo las deps del proyecto + las transitivas que
 # afectan runtime (anyio/starlette/certifi). Regenerar tras validar nuevas versiones.
 

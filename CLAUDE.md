@@ -24,7 +24,7 @@ pwsh scripts/check.ps1                # GATE: ruff + pytest (antes de cerrar bra
 
 `run.py` arranca **uvicorn** sobre `apps/web/app.py:app` (FastAPI). Config en
 `config/settings.py` (`settings`, pydantic-settings; override por env `MONITOR_*`).
-Las `.db` viven en `%LOCALAPPDATA%\monitor` (fuera de OneDrive).
+Las `.db` viven en `%LOCALAPPDATA%\monitor` (**fuera del working tree de git**).
 
 ## Arquitectura
 
@@ -48,7 +48,7 @@ core/infrastructure/
   _http.py             http_get_json SYNC (httpx pooled) — read-path de los 5 providers sync (FX/indices/REM/CAFCI/argentinadatos + histórico), corren en to_thread fuera del event loop
   repositories.py indices_provider.py fx_provider.py futures_provider.py rem_provider.py cafci_provider.py
   price_history.py     store SQLite auto-mantenido de cierres diarios (rendimientos Sem/1M/3M/YTD/1A): priming Data912 /historical/bonds + acumulación del feed vivo; read-path local (merge con el CSV legacy)
-  fci_history.py       store SQLite (fuera de OneDrive) de vcp/ccp/patrimonio por fondo (ArgentinaDatos), acumulado a diario por el loop → flujo neto real Δccp×VCP (`net_flow_series`). cafci_provider._parse_payload conserva los campos ricos de CAFCI (honorarios/horizonte/duration/region/tickers/min/objetivo)
+  fci_history.py       store SQLite (fuera del working tree) de vcp/ccp/patrimonio por fondo (ArgentinaDatos), acumulado a diario por el loop → flujo neto real Δccp×VCP (`net_flow_series`). cafci_provider._parse_payload conserva los campos ricos de CAFCI (honorarios/horizonte/duration/region/tickers/min/objetivo)
   repositories.build_instrument()   parser de fila → Instrument, COMPARTIDO por el loader Excel y el ABM SQLite
 apps/web/
   app.py               FastAPI + lifespan (refresh loop con hub.refresh_all async + BEI loop, motor vía to_thread). MONITOR_DISABLE_LOOPS en tests.
@@ -83,7 +83,7 @@ enriquecido + AUM ArgentinaDatos + lente A3500/CER + flujos reales de `fci_histo
 Toda la app está detrás de login (`apps/web/deps_auth.py` + `routers/auth.py` + `core/security.py`).
 JWT en cookie httponly (`access_token`), firmado HS256. **El secreto NO es hardcodeado**: se
 resuelve en `settings.model_post_init` → env `MONITOR_JWT_SECRET_KEY` > archivo `db_dir/jwt_secret`
-(0600, fuera de OneDrive) > generado y persistido al vuelo. En prod, setear `MONITOR_JWT_SECRET_KEY`.
+(0600, fuera del working tree) > generado y persistido al vuelo. En prod, setear `MONITOR_JWT_SECRET_KEY`.
 
 Permisos por pestaña: `UserORM.allowed_tabs` (JSON) + `RequireTabPermission("<tab>")` como
 `dependencies=` de cada router en `app.py`. `is_admin` bypasea; `"*"` = todas. Los routers de
@@ -124,7 +124,11 @@ paths de DB por campo (`MONITOR_CATALOG_DB`, `MONITOR_BACKUP_DIR`, etc.) fuera d
   server vivo, si borraría altas DB-only, o si el backup de seguridad pre-reseed falló
   (`--force` para override consciente; el snapshot pre-op es incondicional, `backup_db(tag=...)`).
 - **Intérprete Python**: usar `py -3.12` / `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`. Ver memoria `env_python_interpreter`. (El viejo "Store Python" ya no existe; sus deps se reinstalaron acá.)
-- **OneDrive**: nada de venv ni `.db` dentro del proyecto.
+- **Nada de `.db` dentro del proyecto**: las bases viven en `%LOCALAPPDATA%\monitor`
+  (en el droplet, en el `EnvironmentFile` del servicio). Motivo: la `catalog.db` es la
+  FUENTE DE VERDAD y no debe quedar dentro del árbol sobre el que corre `git pull`/`clean`.
+  En local se usa `py -3.12` del sistema, sin venv en el proyecto (el venv del servidor lo
+  crea `deploy.sh` y está gitignoreado).
 - **Schema del catálogo = FORWARD-ONLY**: `init_db` reconcilia con el ORM agregando
   columnas faltantes (`ALTER ADD COLUMN`), **nunca** dropea — un drop borraría las altas
   ABM (que viven solo en la DB). Para transformar datos existentes: migración versionada
@@ -164,11 +168,11 @@ finishing-branch`. Si se usa, los artefactos van a `docs/superpowers/` (`specs/`
 - **TDD aplica** a features nuevas, bugfixes y refactors (test rojo → mínimo verde →
   refactor). Encaja con la disciplina ya existente: `test_pricing_equivalence.py` y los
   137 tests son la red. Excepción: prototipos descartables / config (consultar antes).
-- **Worktrees + OneDrive**: worktrees **sí**, pero **nunca** `.worktrees/` dentro del
-  proyecto (OneDrive + regla de [[feedback_no_venv]]). Usar la tool nativa
+- **Worktrees**: worktrees **sí**, pero **nunca** `.worktrees/` dentro del
+  proyecto (mantiene el árbol limpio). Usar la tool nativa
   `EnterWorktree` del harness, o el path global `~/.config/superpowers/worktrees/`
-  (fuera de OneDrive). Subagentes paralelos: ojo con la sincronización de OneDrive si se
-  trabaja in-place.
+  (fuera del working tree). Subagentes paralelos: ojo con los conflictos si se
+  trabaja in-place sobre el mismo árbol.
 - **Intérprete en los planes**: los comandos de test/run deben usar `py -3.12` (ver
   invariante de abajo), no `python`/`pytest` pelado.
 

@@ -70,7 +70,7 @@ Monitor automatizado de los principales segmentos de renta fija en Argentina (So
 | Pilar | Implementación | Regla |
 |---|---|---|
 | **1. Una config por curva (panel)** | `apps/web/server.py::_build_refresh_context` | Cada curva es un panel del dashboard, declarado como tupla `(id, tipos, opts)`; todos comparten el row-builder `_base_bond_row()`. |
-| **2. SQLite (`catalog.db`) = fuente de verdad del catálogo; Excel/CSV = semillas de bootstrap** | `core/infrastructure/db/catalog_repository.py::CatalogRepository` (runtime) · `instruments_master.xlsx` + `data/obligaciones_negociables.csv` (seeds) · [apps/web/instruments_abm.py](apps/web/instruments_abm.py) (editor) | **(v7.2)** El catálogo VIVO es **SQLite** (en `%LOCALAPPDATA%\monitor`, fuera de OneDrive). El Excel master y el CSV de ON **sólo siembran** la DB en bootstrap (si está vacía). La **ABM escribe SQLite directo** (transaccional) y es el editor de altas/bajas/ediciones — las altas por ABM viven SOLO en la DB. Sin listas hardcodeadas de tickers. *(El viejo "Excel = única fuente" + ABM con writes atómicos al Excel quedó obsoleto en la reingeniería.)* |
+| **2. SQLite (`catalog.db`) = fuente de verdad del catálogo; Excel/CSV = semillas de bootstrap** | `core/infrastructure/db/catalog_repository.py::CatalogRepository` (runtime) · `instruments_master.xlsx` + `data/obligaciones_negociables.csv` (seeds) · [apps/web/instruments_abm.py](apps/web/instruments_abm.py) (editor) | **(v7.2)** El catálogo VIVO es **SQLite** (en `%LOCALAPPDATA%\monitor`, fuera del working tree de git). El Excel master y el CSV de ON **sólo siembran** la DB en bootstrap (si está vacía). La **ABM escribe SQLite directo** (transaccional) y es el editor de altas/bajas/ediciones — las altas por ABM viven SOLO en la DB. Sin listas hardcodeadas de tickers. *(El viejo "Excel = única fuente" + ABM con writes atómicos al Excel quedó obsoleto en la reingeniería.)* |
 | **3. Matemática financiera centralizada** | `core/domain/services.py::FinancialEngine` + `core/domain/cashflow_synth.py` | Única implementación de xirr, TIR, MD, V.Téc, TNA, TEM. Nadie reimplementa fórmulas. Cashflow synthesis es un módulo puro reutilizado por el repo y la ABM. |
 | **4. Datos puramente Data912** | `core/infrastructure/repositories.py::Data912MarketDataProvider` | Único provider de precios live + histórico (OHLC). Excepciones documentadas: BCRA (CER, TAMAR), dolarapi (FX), Matba/Primary WS (futuros DLR + spot A3500, sin auth), REM (expectativas IPC), CAFCI (FCI: catálogo + rendimientos diarios). |
 
@@ -499,7 +499,7 @@ Todos los tickers son clickeables (independiente de si tienen OHLC) — la tab C
 
 ## ENTORNO DE EJECUCIÓN
 
-**Sin venv en el proyecto.** El proyecto corre directamente con `py -3.12` del sistema (launcher de Windows). No existe ni debe existir ningún directorio `.venv` dentro de la carpeta del proyecto — el OneDrive lo sincronizaría y haría la carpeta pesada. Las dependencias se instalan globalmente con `setup.bat` (`py -3.12 -m pip install -r requirements.txt`). Para correr: `run.bat` o `py -3.12 run.py` desde la terminal.
+**Sin venv en el proyecto.** El proyecto corre directamente con `py -3.12` del sistema (launcher de Windows). No existe ni debe existir ningún directorio `.venv` dentro de la carpeta del proyecto (mantiene el árbol liviano y fuera de git). El servidor sí usa un venv, creado por `deploy.sh` y gitignoreado. Las dependencias se instalan globalmente con `setup.bat` (`py -3.12 -m pip install -r requirements.txt`). Para correr: `run.bat` o `py -3.12 run.py` desde la terminal.
 
 ---
 

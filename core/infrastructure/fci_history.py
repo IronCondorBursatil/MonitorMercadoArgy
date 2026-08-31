@@ -13,7 +13,7 @@ corte (es snapshot, sin histórico). Por eso acumulamos ese corte a diario nosot
 —mismo patrón que `price_history.py`— y a las pocas ruedas hay una serie real de
 `ccp` para derivar flujos de TODO el universo, sin depender de fuentes pagas.
 
-Persistencia: SQLite en `%LOCALAPPDATA%\\monitor` (fuera de OneDrive, que corrompe
+Persistencia: SQLite en `%LOCALAPPDATA%\\monitor` (fuera del working tree de git, que evita
 SQLite mid-write). **Read-path** (`get_series`) 100% local con cache en memoria;
 **write-path** (`record_from_ard`) corre en la task de mantenimiento diario (prod).
 Bajo pytest los loops no arrancan → el store queda vacío (determinístico).

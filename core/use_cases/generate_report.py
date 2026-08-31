@@ -1,6 +1,5 @@
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -117,18 +116,15 @@ class GenerateMonitorReport:
         tickers = [i.ticker for i in all_instruments]
         snapshots_dict = self.provider.fetch_snapshots(tickers)
 
-        with ThreadPoolExecutor(max_workers=settings.engine_workers) as executor:
-            futures = []
-            for inst in all_instruments:
-                snapshot = snapshots_dict.get(inst.ticker)
-                if snapshot is None:
-                    continue
-                snapshot.instrument = inst
-                futures.append(executor.submit(
-                    self._enrich_metrics, inst, snapshot, indices, fx, mep_offer,
-                    cable_offer, settle_date, settle_lag))
-
-            results = [f.result() for f in futures]
+        results = []
+        for inst in all_instruments:
+            snapshot = snapshots_dict.get(inst.ticker)
+            if snapshot is None:
+                continue
+            snapshot.instrument = inst
+            results.append(self._enrich_metrics(
+                inst, snapshot, indices, fx, mep_offer,
+                cable_offer, settle_date, settle_lag))
 
         return [r for r in results if r is not None]
 

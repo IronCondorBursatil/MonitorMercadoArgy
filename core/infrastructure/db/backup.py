@@ -6,7 +6,7 @@ transaccional consistente aunque haya un write a medias o cambios pendientes en 
 
 Pensado para la `catalog.db` (fuente de verdad viva): un backup por día calendario,
 rotación acotada (`keep` archivos por pool — daily y tagged rotan por separado), y
-restore verificable. Los backups viven fuera de OneDrive (junto a la .db, en
+restore verificable. Los backups viven fuera del working tree (junto a la .db, en
 %LOCALAPPDATA%\\monitor\\backups)."""
 
 from __future__ import annotations

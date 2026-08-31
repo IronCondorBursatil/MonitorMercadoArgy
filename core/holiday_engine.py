@@ -39,6 +39,10 @@ import logging
 from datetime import date, datetime, timedelta, time
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas_market_calendars as mcal
 
 import holidays as holidays_lib
 import pandas as pd
