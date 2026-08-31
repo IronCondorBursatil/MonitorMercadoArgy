@@ -9,6 +9,7 @@ providers de app.state. Reemplaza los tabs DETALLES/CALCULADORA del SPA.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -133,9 +134,14 @@ async def cer_drawer_calc(ticker: str, request: Request,
         ci = _to_float(form.get("unif"))
         custom_infl = (ci / 100.0) if ci is not None else None
 
-    data = cer_projection(ticker, repo, provider, indices, fx,
-                          price_dirty=price, settlement_lag=lag,
-                          bei_sendero=_sendero(state), rem_provider=_rem_provider(),
-                          custom_infl_monthly=custom_infl, custom_monthly=custom_monthly)
+    # to_thread: `cer_projection` hace red SÍNCRONA (REM + BCRA, con timeouts de 10 s
+    # cada uno). Corriendo en la corrutina congelaba el event loop entero —medido:
+    # 8,5 s de lag, y hasta 40-60 s si los providers timeoutean— lo que frena TODAS
+    # las conexiones SSE y el resto de los paneles de todos los clientes.
+    data = await asyncio.to_thread(
+        cer_projection, ticker, repo, provider, indices, fx,
+        price_dirty=price, settlement_lag=lag,
+        bei_sendero=_sendero(state), rem_provider=_rem_provider(),
+        custom_infl_monthly=custom_infl, custom_monthly=custom_monthly)
     return _render_cer_drawer(request, data, ticker=ticker, lag=lag, price=price,
                               mode=mode, unif=form.get("unif"), raw_inputs=raw_inputs)

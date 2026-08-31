@@ -12,6 +12,7 @@ el Excel: el master ya es solo semilla).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from typing import Optional
@@ -242,8 +243,13 @@ async def abm_save(request: Request, sheet: str = Form(...),
     form = await request.form()
     fields = {k: v for k, v in form.items() if k != "sheet"}
     try:
-        abm_store.save_instrument(sheet, fields)  # cashflows=None → preserva/synth
-        repo.reload()                              # refresca el cache desde SQLite
+        # to_thread: SQLite + repo.reload() (relee ~550 instrumentos con sus cashflows)
+        # son ~130-200 ms de I/O+CPU sincrónico. En la corrutina frenaban el event loop
+        # y con él todos los SSE. CLAUDE.md ya decía que esto corría en to_thread.
+        def _save():
+            abm_store.save_instrument(sheet, fields)  # cashflows=None → preserva/synth
+            repo.reload()                              # refresca el cache desde SQLite
+        await asyncio.to_thread(_save)
     except (ValueError, KeyError) as e:
         # NUNCA tragar el error: el operador tiene que saber que NO se guardó
         # (antes esto era `pass` y el alta "desaparecía" sin aviso).
@@ -264,8 +270,10 @@ async def abm_cashflows(request: Request, repo=Depends(get_repo)):
     cfs = [{"date": d, "amortization": a or 0, "interest": i or 0}
            for d, a, i in zip(dates, amorts, ints) if (d or "").strip()]
     try:
-        abm_store.save_cashflows(ticker, cfs)
-        repo.reload()
+        def _save():                      # to_thread: ver nota en abm_save
+            abm_store.save_cashflows(ticker, cfs)
+            repo.reload()
+        await asyncio.to_thread(_save)
     except (ValueError, KeyError) as e:
         return HTMLResponse(f'<span class="abm-flash" style="color:var(--neg)">⚠ {e}</span>')
     return HTMLResponse(f'<span class="abm-flash">✓ {len(cfs)} flujos guardados</span>')

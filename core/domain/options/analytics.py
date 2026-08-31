@@ -23,14 +23,27 @@ from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
-# Lazy import: si `optionlab` no está instalado, el wrapper devuelve None silenciosamente.
-try:
-    from optionlab import run_strategy as _ol_run_strategy
-    _AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _ol_run_strategy = None
-    _AVAILABLE = False
-    logger.warning("optionlab no instalado; analytics avanzados deshabilitados.")
+# Import PEREZOSO de verdad: `optionlab` arrastra un stack enorme (jupyter es
+# `Requires-Dist` duro suyo) y cuesta ~1,1 s de arranque y ~48,5 MB de RSS que se
+# pagaban SIEMPRE, aunque nadie abriera el analytics de opciones. Ahora se paga en
+# el primer POST /options/analytics — un endpoint on-demand que corre en el
+# threadpool, no en el event loop. Importa sobre todo en Render (plan free: 512 MB).
+# Si `optionlab` no está instalado, el wrapper degrada devolviendo None.
+_ol_run_strategy = None
+_AVAILABLE = None            # None = todavía no se intentó importar
+
+
+def _load() -> bool:
+    """Importa optionlab la primera vez que se lo necesita. Idempotente."""
+    global _ol_run_strategy, _AVAILABLE
+    if _AVAILABLE is None:
+        try:
+            from optionlab import run_strategy
+            _ol_run_strategy, _AVAILABLE = run_strategy, True
+        except ImportError:  # pragma: no cover
+            _ol_run_strategy, _AVAILABLE = None, False
+            logger.warning("optionlab no instalado; analytics avanzados deshabilitados.")
+    return _AVAILABLE
 
 
 def _resolve_premium(item, qty: int) -> float:
@@ -64,7 +77,7 @@ def run_analytics(legs: Iterable[dict], items_by_ticker: dict, spot: float,
         dict con {prob_profit, ev_profit, ev_loss, profit_ranges, strategy_cost}
         o None si optionlab no está disponible o no hay legs válidas.
     """
-    if not _AVAILABLE:
+    if not _load():          # importa optionlab en el primer uso real
         return None
     if not spot or spot <= 0:
         return None

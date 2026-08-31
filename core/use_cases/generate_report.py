@@ -1,6 +1,5 @@
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -9,7 +8,6 @@ from core.domain.models import Instrument, InstrumentMetrics, MarketSnapshot
 from core.domain.services import FinancialEngine
 from core.infrastructure.fx_provider import DolarAPIProvider
 from core.infrastructure.indices_provider import BCRAIndicesProvider
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -117,18 +115,23 @@ class GenerateMonitorReport:
         tickers = [i.ticker for i in all_instruments]
         snapshots_dict = self.provider.fetch_snapshots(tickers)
 
-        with ThreadPoolExecutor(max_workers=settings.engine_workers) as executor:
-            futures = []
-            for inst in all_instruments:
-                snapshot = snapshots_dict.get(inst.ticker)
-                if snapshot is None:
-                    continue
-                snapshot.instrument = inst
-                futures.append(executor.submit(
-                    self._enrich_metrics, inst, snapshot, indices, fx, mep_offer,
-                    cable_offer, settle_date, settle_lag))
-
-            results = [f.result() for f in futures]
+        # SERIAL a propósito. El pricing es CPU puro en Python: con el GIL, N threads
+        # no dan speedup — solo pagan el despacho (14,7 ms por 1.106 tareas) y meten
+        # 8 threads a competir con el event loop de uvicorn. Medido sobre el catálogo
+        # real (1.106 instrumentos, 25 muestras pareadas): serial es ~50 ms/ciclo MÁS
+        # RÁPIDO que el pool de 8, y evita ~121.000 threads/día. El orden de salida es
+        # el mismo que tenía el pool (que ya resolvía los futures en orden de submit).
+        # El ciclo entero sigue corriendo dentro de `asyncio.to_thread` (app.py) → no
+        # bloquea el loop; esto solo cambia CÓMO se recorre adentro.
+        results = []
+        for inst in all_instruments:
+            snapshot = snapshots_dict.get(inst.ticker)
+            if snapshot is None:
+                continue
+            snapshot.instrument = inst
+            results.append(self._enrich_metrics(
+                inst, snapshot, indices, fx, mep_offer,
+                cable_offer, settle_date, settle_lag))
 
         return [r for r in results if r is not None]
 

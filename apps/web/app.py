@@ -257,6 +257,11 @@ async def _price_history_loop(app: FastAPI) -> None:
                 # caído (got=0, sin excepción — es best-effort), reintentamos en el
                 # próximo tick en vez de quedarnos sin la historia profunda.
                 primed = got > 0
+                if primed:
+                    # El JSON crudo del priming ya está en el store: soltarlo libera
+                    # ~37 MB de RSS que quedaban vivos por un TTL que no le sirve a
+                    # nadie (el read-path sale del SQLite, no de este cache).
+                    provider.clear_history_cache()
             # Completar lo que Data912 no cubre (bopreales, letras, ON, patas MEP/CABLE)
             # con las series históricas de BYMA open. El bloque Data912 de arriba ya
             # corrió este tick, así que los tickers que siguen casi sin historia en el

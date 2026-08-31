@@ -289,6 +289,19 @@ class Data912MarketDataProvider(IMarketDataProvider):
             logger.warning(f"Bond history fetch {t} failed: {e}")
             return cached[1] if cached else []
 
+    @classmethod
+    def clear_history_cache(cls) -> None:
+        """Libera el JSON crudo del priming histórico (~37 MB de RSS).
+
+        El priming (`prime_from_data912`) baja la serie completa de cada ticker UNA
+        vez y la persiste en el store SQLite; después de eso el read-path
+        (`fetch_historical_prices`) sale 100% del store y nadie vuelve a leer estos
+        dicts. El TTL de 6 h los mantenía vivos en memoria para nadie: es un cache
+        de un solo uso. Se llama desde `_price_history_loop` tras primar."""
+        with cls._stock_history_lock:
+            cls._bond_history_cache.clear()
+            cls._stock_history_cache.clear()
+
     def fetch_historical_prices(self, ticker: str, days: int) -> Dict[date, float]:
         """`{date: close}` mergeando el CSV legacy (piso estático) con el store vivo
         (price_history.py, que gana en fechas solapadas por ser más fresco/profundo).

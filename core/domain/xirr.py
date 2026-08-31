@@ -41,11 +41,14 @@ _BRACKET_MAX_GROW = 60         # 1.0 · 2^60 ≈ 1.15e18 → cubre cualquier yie
 def _npv(flows: np.ndarray, years: np.ndarray, rate: float) -> float:
     """NPV a la tasa `rate`. Overflow-safe: devuelve no-finito (±inf) en vez de
     tirar OverflowError ante tasas absurdas. En el límite r→-1+ la NPV tiende a
-    +∞ (hay egreso temprano y flujos futuros descontados explotan)."""
+    +∞ (hay egreso temprano y flujos futuros descontados explotan).
+
+    El `np.errstate` NO va acá: se iza al caller (`_xirr_from_years`), que llama a
+    esta función ~20.900 veces por ciclo de pricing. Entrar y salir del context
+    manager en cada llamada costaba más que la cuenta misma."""
     if rate <= -1.0:
         return 1e18
-    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-        return float(np.sum(flows / (1.0 + rate) ** years))
+    return float((flows / (1.0 + rate) ** years).sum())
 
 
 def _bracket_and_solve(npv) -> float:
@@ -92,16 +95,21 @@ def _xirr_from_years(flows: np.ndarray, years: np.ndarray,
     def npv(rate):
         return _npv(flows, years, rate)
 
-    # Pre-paso Newton (rápido). Se acepta sólo si converge limpio.
-    for guess in _XIRR_GUESSES:
-        try:
-            r = newton(npv, guess, maxiter=50)
-        except (RuntimeError, ValueError, OverflowError, FloatingPointError):
-            continue
-        if np.isfinite(r) and r > -1.0 and abs(npv(r)) < _XIRR_TOLERANCE:
-            return float(r)
+    # `errstate` IZADO: cubre las ~20.900 evaluaciones de npv por ciclo con UN solo
+    # context manager en vez de uno por llamada. Tiene que envolver también a
+    # `_bracket_and_solve`, que evalúa npv con `hi` hasta ~1,15e18 (overflow esperado
+    # y tratado: el bracketing descarta los no-finitos).
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        # Pre-paso Newton (rápido). Se acepta sólo si converge limpio.
+        for guess in _XIRR_GUESSES:
+            try:
+                r = newton(npv, guess, maxiter=50)
+            except (RuntimeError, ValueError, OverflowError, FloatingPointError):
+                continue
+            if np.isfinite(r) and r > -1.0 and abs(npv(r)) < _XIRR_TOLERANCE:
+                return float(r)
 
-    return _bracket_and_solve(npv)
+        return _bracket_and_solve(npv)
 
 
 def xirr(flows: List[float], dates: List[date],

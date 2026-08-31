@@ -13,6 +13,7 @@ FastAPI routes, dependency injection, and the CI-metrics memoization cache.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -134,10 +135,13 @@ async def save_default_layout(request: Request):
         obj = json.loads(raw)
     except Exception:
         return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
-    try:
+    def _write():
         os.makedirs(os.path.dirname(_LAYOUT_FILE), exist_ok=True)
         with open(_LAYOUT_FILE, "w", encoding="utf-8") as f:
             json.dump(obj, f, ensure_ascii=False)
+
+    try:
+        await asyncio.to_thread(_write)   # I/O de disco fuera del event loop
     except OSError as e:
         logger.warning("No se pudo guardar el layout default: %s", e)
         return JSONResponse({"ok": False}, status_code=500)
