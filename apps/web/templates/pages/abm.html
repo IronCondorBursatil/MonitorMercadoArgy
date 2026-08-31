@@ -202,8 +202,12 @@
   function uniCopy(td){
     var t=(td.textContent||'').trim().replace(/^✓\s*/,'');
     if(!t || t==='—') return;
-    if(navigator.clipboard) navigator.clipboard.writeText(t);
-    var old=td.innerHTML; td.textContent='✓ '+t; setTimeout(function(){ td.innerHTML=old; }, 700);
+    // mrCopy (base.html) cae a execCommand: navigator.clipboard no existe sin HTTPS.
+    var old=td.innerHTML;
+    window.mrCopy(t, function(ok){
+      td.textContent=(ok?'✓ ':'✗ ')+t;
+      setTimeout(function(){ td.innerHTML=old; }, 700);
+    });
   }
   // flujo de fondos editable (cajón)
   function cfAdd(){

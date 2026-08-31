@@ -453,20 +453,76 @@ function genPwdForInput(inputId) {
   setTimeout(() => input.type = "password", 5000); // Ocultar a los 5 segs
 }
 
+// Reset de contrasena: modal propio en vez de confirm() + clipboard.
+//
+// EL BUG QUE REEMPLAZA: se hacia `navigator.clipboard.writeText(pwd).catch(...)`.
+// Sobre HTTP (el droplet no tiene TLS) `navigator.clipboard` es undefined, asi que
+// eso tiraba un TypeError SINCRONO; el .catch() no lo atrapaba y la funcion moria
+// antes de submitReset() — no copiaba NI reseteaba, y el confirm() ya se habia
+// llevado la contrasena de pantalla. Ahora la contrasena queda VISIBLE y
+// seleccionable hasta que el admin confirma, y el copiado usa window.mrCopy
+// (base.html), que cae a execCommand y funciona sin HTTPS.
 function resetPassword(userId, username) {
   const pwd = generateSecurePassword();
-  const msg = `Atención: Se va a resetear la contraseña del usuario "${username}".\n\nNUEVA CONTRASEÑA:  ${pwd}\n\nPresiona OK para copiarla a tu portapapeles y guardarla. Asegúrate de pegarla y enviársela al usuario, ya que no podrás volver a verla.`;
-  
-  if (confirm(msg)) {
-    // Intentar copiar al portapapeles
-    navigator.clipboard.writeText(pwd).then(() => {
-      submitReset(userId, pwd);
-    }).catch(err => {
-      // Fallback si la API de clipboard falla (ej. sin HTTPS en dev)
-      prompt("No se pudo copiar automáticamente. Copia la contraseña manualmente antes de continuar:", pwd);
-      submitReset(userId, pwd);
+
+  const ov = document.createElement("div");
+  ov.className = "modal-overlay";
+  ov.innerHTML = `
+    <div class="modal-card" style="max-width:460px" role="dialog" aria-modal="true"
+         aria-labelledby="rp-title">
+      <div class="modal-head">
+        <b id="rp-title">Resetear contraseña</b>
+        <span class="mut">${escapeHtml(username)}</span>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 4px">Nueva contraseña para
+           <b>${escapeHtml(username)}</b>:</p>
+        <div style="display:flex; gap:8px; margin:10px 0">
+          <input id="rp-pwd" type="text" readonly value="${escapeHtml(pwd)}"
+                 style="flex:1; font-family:ui-monospace,Consolas,monospace;
+                        font-size:15px; letter-spacing:.5px; padding:9px 10px">
+          <button type="button" id="rp-copy" class="btn">Copiar</button>
+        </div>
+        <p class="help" style="margin:0">Guardala <b>antes</b> de confirmar: una vez
+           aplicada no se puede volver a ver (se almacena hasheada con bcrypt).
+           Tambien podes seleccionarla y copiarla a mano.</p>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px">
+          <button type="button" id="rp-cancel" class="btn">Cancelar</button>
+          <button type="button" id="rp-ok" class="btn btn-primary">Resetear ahora</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  const close = () => { document.removeEventListener("keydown", onKey); ov.remove(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+
+  const input = ov.querySelector("#rp-pwd");
+  const btnCopy = ov.querySelector("#rp-copy");
+
+  // Preseleccionada: con Ctrl+C alcanza aunque falle todo lo demas.
+  input.focus(); input.select();
+
+  btnCopy.addEventListener("click", () => {
+    window.mrCopy(pwd, (ok) => {
+      btnCopy.textContent = ok ? "¡Copiado!" : "Copiá con Ctrl+C";
+      input.focus(); input.select();
+      setTimeout(() => { btnCopy.textContent = "Copiar"; }, 2500);
     });
-  }
+  });
+
+  ov.querySelector("#rp-cancel").addEventListener("click", close);
+  ov.querySelector("#rp-ok").addEventListener("click", () => {
+    close();
+    submitReset(userId, pwd);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 function submitReset(userId, pwd) {

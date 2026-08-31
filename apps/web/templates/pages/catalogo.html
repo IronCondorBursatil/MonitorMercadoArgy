@@ -146,9 +146,12 @@
   function uniCopy(td){
     var t=(td.textContent||'').trim();
     if(!t || t==='—') return;
-    if(navigator.clipboard) navigator.clipboard.writeText(t);
-    var old=td.textContent; td.textContent='✓ '+t;
-    setTimeout(function(){ td.textContent=old; }, 700);
+    // mrCopy (base.html) cae a execCommand: navigator.clipboard no existe sin HTTPS.
+    var old=td.textContent;
+    window.mrCopy(t, function(ok){
+      td.textContent=(ok?'✓ ':'✗ ')+t;
+      setTimeout(function(){ td.textContent=old; }, 700);
+    });
   }
   // ver ficha técnica del ticker tipeado
   function fichaGo(){

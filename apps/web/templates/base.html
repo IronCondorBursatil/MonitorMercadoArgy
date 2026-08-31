@@ -33,6 +33,45 @@
     // El `load` inicial NUNCA se filtra (si no, un panel podría no cargar nunca):
     // sólo se gatean los refrescos REPETIDOS. htmx exige que el filtro devuelva
     // exactamente `true` para dejar pasar el trigger (maybeFilterEvent).
+    // Copia `text` al portapapeles y devuelve true/false (SINCRONO en el fallback).
+    //
+    // POR QUE NO ALCANZA navigator.clipboard: esa API solo existe en CONTEXTO SEGURO
+    // (https:// o localhost). El droplet sirve por HTTP plano, asi que ahi
+    // `navigator.clipboard` es *undefined* y `navigator.clipboard.writeText(...)`
+    // tira un TypeError SINCRONO — que un `.catch()` encadenado NO atrapa, porque no
+    // llego a haber promesa. Por eso el guard es `navigator.clipboard &&`, y por eso
+    // el fallback usa el viejo execCommand("copy") sobre un <textarea> fuera de
+    // pantalla, que si funciona sin TLS.
+    window.mrCopy = function (text, onDone) {
+      var done = function (ok) { if (typeof onDone === "function") onDone(ok); };
+      if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(true); },
+                                                 function () { done(mrCopyFallback(text)); });
+        return;
+      }
+      done(mrCopyFallback(text));
+    };
+
+    function mrCopyFallback(text) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      // Fuera de vista pero seleccionable: display:none o visibility:hidden harian
+      // que la seleccion no exista y execCommand devuelva false.
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      var ok = false;
+      try {
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);   // iOS
+        ok = document.execCommand("copy");
+      } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
     window.mrRefreshOK = function (el) {
       if (document.hidden) return false;
       if (!el || typeof el.getClientRects !== "function") return true;
