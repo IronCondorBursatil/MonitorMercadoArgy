@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     byma_client_id: str = "excel-addin-bd-client-pkg"
     byma_client_secret: str = "20V4nt3k203xc31"
 
+    # Clave secreta para firmar las cookies de sesión (JWT).
+    # En prod, overridable vía MONITOR_JWT_SECRET_KEY.
+    jwt_secret_key: str = "super_secreto_para_desarrollo_cambiar_en_prod"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 1 semana
+
     host: str = "0.0.0.0"
     port: int = 8000
     refresh_sec: int = 5

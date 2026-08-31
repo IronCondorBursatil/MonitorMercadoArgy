@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Usuarios - Monitor Renta Fija AR{% endblock %}
+
+{% block head %}
+<style>
+  .abm-users {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 1rem;
+  }
+  .abm-users table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+  }
+  .abm-users th, .abm-users td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .abm-users th {
+    background: var(--surface);
+  }
+  .add-user-form {
+    background: var(--surface);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    border: 1px solid var(--border);
+  }
+  .add-user-form input[type="text"],
+  .add-user-form input[type="password"] {
+    padding: 0.5rem;
+    margin-right: 1rem;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+  }
+  .add-user-form button {
+    padding: 0.5rem 1rem;
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    cursor: pointer;
+  }
+  .msg { padding: 0.75rem; margin-bottom: 1rem; border-radius: 4px; }
+  .msg.error { background: #fee2e2; color: #991b1b; }
+  .msg.success { background: #dcfce7; color: #166534; }
+  [data-theme="dark"] .msg.error { background: #7f1d1d; color: #fecaca; }
+  [data-theme="dark"] .msg.success { background: #14532d; color: #bbf7d0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="abm-users">
+  <h2>Gestión de Usuarios</h2>
+  
+  {% if error %}
+    <div class="msg error">{{ error }}</div>
+  {% endif %}
+  {% if success %}
+    <div class="msg success">{{ success }}</div>
+  {% endif %}
+
+  <div class="add-user-form">
+    <h3>Alta de Usuario</h3>
+    <form method="POST" action="/users/add">
+      <input type="text" name="username" placeholder="Nombre de usuario" required>
+      <input type="password" name="password" placeholder="Contraseña" required>
+      <label>
+        <input type="checkbox" name="is_admin" value="true"> Es Administrador
+      </label>
+      <button type="submit" style="margin-left: 1rem;">Crear</button>
+    </form>
+  </div>
+
+  <h3>Usuarios Registrados</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Usuario</th>
+        <th>Rol</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.username }}</td>
+        <td>{% if u.is_admin %}Admin{% else %}Usuario{% endif %}</td>
+        <td>
+          <form method="POST" action="/users/delete/{{ u.id }}" style="display:inline;" onsubmit="return confirm('¿Seguro de eliminar al usuario {{ u.username }}?');">
+            <button type="submit" style="color: #ef4444; background: none; border: none; cursor: pointer;">Borrar</button>
+          </form>
+          <span style="margin: 0 0.5rem; color: var(--border);">|</span>
+          <form method="POST" action="/users/reset-password/{{ u.id }}" style="display:inline;">
+            <input type="password" name="password" placeholder="Nueva pass" required style="width:100px; padding:0.2rem; background: var(--bg); color: var(--text); border: 1px solid var(--border);">
+            <button type="submit" style="background: none; border: none; cursor: pointer; color: var(--text);">Cambiar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+{% endblock %}

@@ -26,6 +26,9 @@ SQLAlchemy>=2
 pydantic>=2
 pydantic-settings
 optionlab                # analytics avanzados de estrategias de opciones (P(profit), EV, ranges)
+passlib                  # hashing de contraseñas de usuarios
+bcrypt<4.0.0             # dependencia de passlib fijada por un bug conocido en la lib
+PyJWT                    # generación y validación de tokens JWT (cookies)
 
 # --- export PDF del panel ON (botón 🖨️ /on/pdf + scripts/export_on_pdf.py) ---
 fpdf2                    # armado del PDF (Unicode vía arial.ttf de Windows)

@@ -21,6 +21,16 @@ class Base(DeclarativeBase):
     pass
 
 
+class UserORM(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String)
+    is_admin: Mapped[bool] = mapped_column(default=False)
+
+
+
 class BymaCatalogORM(Base):
     """Universo de especies de BYMA (referencia navegable/buscable, NO el catálogo de
     pricing). Una fila por símbolo cotizante (~6.4k). Se llena del seed

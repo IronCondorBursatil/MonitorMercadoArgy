@@ -25,8 +25,12 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+
+from apps.web.deps_auth import RequiresLoginException, get_current_user_html, get_current_user
+from apps.web.routers import auth as auth_router, users_abm
+
 
 from apps.web.deps import get_bondterminal, get_repo, get_state
 from apps.web.routers import (
@@ -375,6 +379,13 @@ app = FastAPI(title="Monitor Renta Fija AR", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 
+@app.exception_handler(RequiresLoginException)
+async def requires_login_exception_handler(request: Request, exc: RequiresLoginException):
+    if request.headers.get("HX-Request"):
+        return JSONResponse(status_code=200, headers={"HX-Redirect": "/login"})
+    return RedirectResponse(url="/login", status_code=302)
+
+
 # Servir la app de React en producción bajo /react
 class CachedStaticFiles(StaticFiles):
     def is_not_modified(self, response_headers, request_headers) -> bool:
@@ -390,23 +401,30 @@ react_build_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "
 if react_build_dir.exists():
     app.mount("/react", CachedStaticFiles(directory=str(react_build_dir), html=True), name="react")
 
-app.include_router(panels.router)
-app.include_router(bonds.router)
-app.include_router(cartera.router)
-app.include_router(bcra.router)
-app.include_router(cashflows.router)
-app.include_router(escenarios.router)
-app.include_router(curva.router)
-app.include_router(fci.router)
-app.include_router(on.router)
-app.include_router(abm.router)
-app.include_router(catalog.router)
-app.include_router(options.router)
-app.include_router(header.router)
-app.include_router(source.router)
-app.include_router(stream.router)
-app.include_router(api_market.router, prefix="/api/v1/market")
-app.include_router(api_stream.router, prefix="/api/v1/stream")
+app.include_router(auth_router.router)
+app.include_router(users_abm.router)
+
+html_deps = [Depends(get_current_user_html)]
+api_deps = [Depends(get_current_user)]
+
+app.include_router(panels.router, dependencies=html_deps)
+app.include_router(bonds.router, dependencies=html_deps)
+app.include_router(cartera.router, dependencies=html_deps)
+app.include_router(bcra.router, dependencies=html_deps)
+app.include_router(cashflows.router, dependencies=html_deps)
+app.include_router(escenarios.router, dependencies=html_deps)
+app.include_router(curva.router, dependencies=html_deps)
+app.include_router(fci.router, dependencies=html_deps)
+app.include_router(on.router, dependencies=html_deps)
+app.include_router(abm.router, dependencies=html_deps)
+app.include_router(catalog.router, dependencies=html_deps)
+app.include_router(options.router, dependencies=html_deps)
+app.include_router(header.router, dependencies=html_deps)
+app.include_router(source.router, dependencies=html_deps)
+app.include_router(stream.router, dependencies=html_deps)
+app.include_router(api_market.router, prefix="/api/v1/market", dependencies=api_deps)
+app.include_router(api_stream.router, prefix="/api/v1/stream", dependencies=api_deps)
+
 
 
 @app.get("/api/health")
