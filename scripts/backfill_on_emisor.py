@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 from sqlalchemy import select  # noqa: E402
 
+from config.settings import settings  # noqa: E402
 from core.domain.on_classification import classify_sector  # noqa: E402
 from core.infrastructure.db.backup import backup_db  # noqa: E402
 from core.infrastructure.db.engine import SessionLocal  # noqa: E402
@@ -66,7 +67,8 @@ def main(dry: bool) -> int:
             print("  sin ficha en el universo:", [o.ticker for o, _ in sin_resolver])
 
         if not dry:
-            backup_db(tag="pre-on-emisor")
+            backup_db(settings.catalog_db, settings.backup_dir,
+                      keep=settings.backup_keep, tag="pre-on-emisor")
             for o, emi in resueltos:
                 o.short_name = emi
             s.commit()
