@@ -57,6 +57,24 @@ def _d(s) -> date:
     return datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
 
 
+# AMORTIZABLES: (frecuencia de pago de CAPITAL, próximo pago de capital) publicados
+# por el IAMC. Con eso + el vencimiento + el VR el cronograma de capital queda
+# DETERMINADO: las cuotas que faltan son las fechas de `prox_cap` a `vto` a esa
+# frecuencia, y el VR (capital que queda vivo) se reparte en partes IGUALES entre
+# ellas — que es la estructura estándar de estas ON. NO hace falta la ficha BYMA.
+# Ojo: la columna "Cuotas Capital" del informe es el TOTAL de la emisión, no las
+# pendientes (ej. VAC3P dice 3 pero solo queda 1) → se cuenta por fechas, no por ella.
+AMORT_CAP = {                      # ticker: (frec_capital, primer pago pendiente)
+    "CWC6O": ("S", "2026-10-30"), "EAC2O": ("T", "2027-01-12"), "EAC4O": ("A", "2034-06-16"),
+    "GN37O": ("T", "2026-11-11"), "GN38O": ("S", "2027-02-10"), "GN42O": ("T", "2026-11-16"),
+    "GYC3O": ("A", "2027-03-08"), "LMS7O": ("T", "2026-10-12"), "LMS8O": ("T", "2026-09-21"),
+    "MSSBO": ("A", "2026-11-14"), "OZC8O": ("A", "2031-06-11"), "PLC7O": ("A", "2035-09-30"),
+    "PNICO": ("S", "2027-02-07"), "PQCKO": ("A", "2026-12-07"), "RC1CO": ("A", "2031-07-31"),
+    "RUCEO": ("T", "2027-07-30"), "SBC1O": ("T", "2026-09-05"), "VAC3P": ("T", "2027-10-27"),
+    "VES2L": ("S", "2027-04-28"), "VSCPO": ("S", "2027-11-03"), "VSCRO": ("A", "2029-10-10"),
+    "XMC1O": ("S", "2027-05-11"), "YFCIO": ("T", "2027-03-13"), "ZF3BP": ("S", "2027-01-18"),
+}
+
 # "Próximo Cupón" publicado por el IAMC para los bonos cuya grilla NO cae en el
 # aniversario del vencimiento (primer período irregular). Ancla la grilla en la fecha
 # REAL de pago → sin esto el accrued sale mal y la V.Téc no reconcilia.
@@ -84,7 +102,6 @@ def build_cashflows(row: dict):
         return [Cashflow(date=vto, amortization=vr, interest=0.0)]
 
     meses = 12 // freq
-    cupon = (tasa / 100.0) * vr / freq              # monto por período, per VR
     ancla = _d(PROX_CUPON[row["ticker"]]) if row["ticker"] in PROX_CUPON else vto
 
     fechas = []
@@ -99,8 +116,36 @@ def build_cashflows(row: dict):
     if vto not in fechas:
         fechas.append(vto)                          # el vto siempre paga
     fechas = sorted(set(f for f in fechas if f > emision))
-    return [Cashflow(date=f, amortization=(vr if f == vto else 0.0), interest=cupon)
-            for f in fechas]
+
+    # --- Cronograma de CAPITAL: bullet (todo al vto) o cuotas iguales ---------
+    amort = {}
+    if row["ticker"] in AMORT_CAP:
+        fc, primero = AMORT_CAP[row["ticker"]]
+        m_cap = 12 // {"S": 2, "T": 4, "A": 1}[fc]
+        caps, d = [], _d(primero)
+        while d <= vto:
+            caps.append(d)
+            d = d + relativedelta(months=m_cap)
+        if caps:
+            cuota = vr / len(caps)                  # partes iguales del VR vivo
+            for c in caps[:-1]:
+                amort[c] = cuota
+            amort[caps[-1]] = vr - cuota * (len(caps) - 1)   # última absorbe el redondeo
+            for c in caps:                          # el pago de capital también es fecha de flujo
+                if c not in fechas:
+                    fechas.append(c)
+            fechas = sorted(set(fechas))
+    else:
+        amort[vto] = vr
+
+    # --- Cupón sobre el SALDO VIVO (baja a medida que amortiza) ---------------
+    out, saldo = [], vr
+    for f in fechas:
+        interes = (tasa / 100.0) * saldo / freq
+        a = amort.get(f, 0.0)
+        out.append(Cashflow(date=f, amortization=a, interest=interes))
+        saldo -= a
+    return out
 
 
 def build_instrument(row: dict) -> Instrument:
@@ -173,9 +218,11 @@ def validar(row: dict) -> dict:
 def main(dry_run: bool = False) -> int:
     from on_iamc_data import ONS
 
-    bullets = {t: r for t, r in ONS.items() if r["bullet"]}
-    amort = sorted(t for t, r in ONS.items() if not r["bullet"])
-    print("transcriptos %d  ->  bullets %d | amortizables %d (no se cargan)\n"
+    # Se procesan TODOS los que tienen cronograma derivable: bullets + amortizables
+    # con (frec. pago capital, próximo pago capital) publicados -> AMORT_CAP.
+    bullets = {t: r for t, r in ONS.items() if r["bullet"] or t in AMORT_CAP}
+    amort = sorted(t for t, r in ONS.items() if not r["bullet"] and t not in AMORT_CAP)
+    print("transcriptos %d  ->  con cronograma %d | sin cronograma %d\n"
           % (len(ONS), len(bullets), len(amort)))
 
     ok, fail = {}, []
@@ -191,7 +238,8 @@ def main(dry_run: bool = False) -> int:
         print("\nNO validan (%d, no se cargan):" % len(fail))
         for t, det in fail:
             print("  %-7s %s" % (t, det))
-    print("\nAmortizables sin cronograma publicado (%d): %s" % (len(amort), " ".join(amort)))
+    if amort:
+        print("\nSin cronograma de capital (%d): %s" % (len(amort), " ".join(amort)))
 
     if dry_run:
         print("\n== DRY RUN (no escribe) ==")
