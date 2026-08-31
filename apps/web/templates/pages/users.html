@@ -1,204 +1,487 @@
 {% extends "base.html" %}
-{% block title %}Manager - Monitor Renta Fija AR{% endblock %}
+{% block title %}Security Manager - Monitor Renta Fija AR{% endblock %}
 
 {% block head %}
 <style>
-  .abm-users {
-    max-width: 900px;
-    margin: 2rem auto;
-    padding: 1rem;
+  :root {
+    --glass-bg: rgba(30, 41, 59, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --danger: #ef4444;
+    --success: #10b981;
   }
-  .abm-users table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 1rem;
-  }
-  .abm-users th, .abm-users td {
-    padding: 0.75rem;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-  }
-  .abm-users th {
-    background: var(--surface);
-  }
-  .add-user-form, .edit-user-form {
-    background: var(--surface);
-    padding: 1.5rem;
-    border-radius: 8px;
-    margin-bottom: 2rem;
-    border: 1px solid var(--border);
-  }
-  .form-group {
-    margin-bottom: 1rem;
-  }
-  .form-group input[type="text"],
-  .form-group input[type="password"] {
-    padding: 0.5rem;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--text);
-    width: 100%;
-    max-width: 300px;
-  }
-  button {
-    padding: 0.5rem 1rem;
-    background: var(--text);
-    color: var(--bg);
-    border: none;
-    cursor: pointer;
-    font-weight: 500;
-  }
-  .msg { padding: 0.75rem; margin-bottom: 1rem; border-radius: 4px; }
-  .msg.error { background: #fee2e2; color: #991b1b; }
-  .msg.success { background: #dcfce7; color: #166534; }
-  [data-theme="dark"] .msg.error { background: #7f1d1d; color: #fecaca; }
-  [data-theme="dark"] .msg.success { background: #14532d; color: #bbf7d0; }
   
-  .tabs-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-    background: var(--bg);
-    padding: 1rem;
-    border: 1px solid var(--border);
-    border-radius: 4px;
+  .manager-container {
+    max-width: 1000px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    font-family: system-ui, -apple-system, sans-serif;
   }
-  .tabs-grid label {
+  
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  }
+
+  .manager-header {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 0.25rem;
+    margin-bottom: 2rem;
+  }
+  
+  .manager-header h2 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 600;
+    background: linear-gradient(to right, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .msg { padding: 1rem; margin-bottom: 1.5rem; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 0.5rem; }
+  .msg.error { background: rgba(239, 68, 68, 0.1); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
+  .msg.success { background: rgba(16, 185, 129, 0.1); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+  /* Premium Table */
+  .premium-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .premium-table th {
+    text-align: left;
+    padding: 1rem;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .premium-table td {
+    padding: 1rem;
+    vertical-align: middle;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .premium-table tr:last-child td {
+    border-bottom: none;
+  }
+  
+  /* Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+  }
+  .badge.admin {
+    background: rgba(167, 139, 250, 0.15);
+    color: #c4b5fd;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+  }
+  .badge.user {
+    background: rgba(96, 165, 250, 0.15);
+    color: #93c5fd;
+    border: 1px solid rgba(96, 165, 250, 0.3);
+  }
+  .badge.tag {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-dim);
+    border: 1px solid var(--glass-border);
+    margin: 0.15rem;
+  }
+
+  /* Form Elements */
+  .input-field {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.95rem;
+    transition: all 0.2s;
+  }
+  .input-field:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+  
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-weight: 500;
     font-size: 0.9rem;
     cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    gap: 0.5rem;
   }
-  details summary {
+  .btn-primary {
+    background: var(--primary);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--primary-hover); }
+  
+  .btn-danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+  .btn-danger:hover {
+    background: var(--danger);
+    color: white;
+  }
+
+  .btn-reset {
+    background: rgba(16, 185, 129, 0.1);
+    color: #6ee7b7;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+  }
+  .btn-reset:hover {
+    background: var(--success);
+    color: white;
+  }
+
+  /* Toggles (Switches) */
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+  }
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .slider {
+    position: absolute;
     cursor: pointer;
-    font-weight: 500;
-    padding: 0.5rem;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    margin-bottom: 0.5rem;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: .3s;
+    border-radius: 24px;
+    border: 1px solid var(--glass-border);
+  }
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--text-dim);
+    transition: .3s;
+    border-radius: 50%;
+  }
+  input:checked + .slider {
+    background-color: var(--primary);
+    border-color: var(--primary);
+  }
+  input:checked + .slider:before {
+    transform: translateX(20px);
+    background-color: white;
+  }
+  
+  .permissions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+  }
+  
+  .permission-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+
+  /* Modals */
+  details.edit-modal summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  details.edit-modal summary::-webkit-details-marker {
+    display: none;
+  }
+  .edit-panel {
+    margin-top: 1rem;
+    padding: 1.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border: 1px solid var(--glass-border);
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<main class="abm-users">
-  <h2>Manager de Usuarios</h2>
+<div class="manager-container">
   
-  {% if error %}
-    <div class="msg error">{{ error }}</div>
-  {% endif %}
-  {% if success %}
-    <div class="msg success">{{ success }}</div>
-  {% endif %}
-
-  <div class="add-user-form">
-    <h3>Alta de Nuevo Usuario</h3>
-    <form method="POST" action="/users/add">
-      <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
-        <div class="form-group">
-          <input type="text" name="username" placeholder="Nombre de usuario" required>
-        </div>
-        <div class="form-group">
-          <input type="password" name="password" placeholder="Contraseña" required>
-        </div>
-        <div class="form-group" style="display: flex; align-items: center;">
-          <label>
-            <input type="checkbox" name="is_admin" value="true"> Es Administrador
-          </label>
-        </div>
-      </div>
-      
-      <div class="form-group">
-        <label style="font-weight: 500;">Pestañas Permitidas (solo para no-administradores):</label>
-        <div class="tabs-grid">
-          <label><input type="checkbox" name="tabs" value="bonos"> Bonos</label>
-          <label><input type="checkbox" name="tabs" value="on"> O.N's</label>
-          <label><input type="checkbox" name="tabs" value="curva"> Curva</label>
-          <label><input type="checkbox" name="tabs" value="cartera"> Cartera</label>
-          <label><input type="checkbox" name="tabs" value="bcra"> BCRA</label>
-          <label><input type="checkbox" name="tabs" value="cashflows"> Cashflows</label>
-          <label><input type="checkbox" name="tabs" value="fci"> FCI</label>
-          <label><input type="checkbox" name="tabs" value="escenarios"> Escenarios</label>
-          <label><input type="checkbox" name="tabs" value="opciones"> Opciones</label>
-          <label><input type="checkbox" name="tabs" value="catalogo"> Catálogo</label>
-          <label><input type="checkbox" name="tabs" value="abm"> ABM Bonos</label>
-        </div>
-      </div>
-      <button type="submit">Crear Usuario</button>
-    </form>
+  <div class="manager-header">
+    <h2>Security & Access Manager</h2>
+    <button class="btn btn-primary" onclick="document.getElementById('add-user-panel').toggleAttribute('open')">
+      + Nuevo Usuario
+    </button>
   </div>
 
-  <h3>Usuarios Registrados</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Usuario</th>
-        <th>Rol</th>
-        <th>Accesos</th>
-        <th>Acciones Rápidas</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td>{{ u.id }}</td>
-        <td>{{ u.username }}</td>
-        <td>{% if u.is_admin %}Administrador{% else %}Usuario{% endif %}</td>
-        <td>
-          {% if u.is_admin %}
-            <em>Todos</em>
-          {% else %}
-            <span style="font-size: 0.85rem; color: var(--text-dim);">
-              {{ (u.allowed_tabs or []) | join(", ") }}
-            </span>
-          {% endif %}
-        </td>
-        <td>
-          <form method="POST" action="/users/delete/{{ u.id }}" style="display:inline;" onsubmit="return confirm('¿Seguro de eliminar al usuario {{ u.username }}?');">
-            <button type="submit" style="color: #ef4444; background: none; border: none; cursor: pointer; padding: 0;">Borrar</button>
-          </form>
-          <span style="margin: 0 0.5rem; color: var(--border);">|</span>
-          <form method="POST" action="/users/reset-password/{{ u.id }}" style="display:inline;">
-            <input type="password" name="password" placeholder="Nueva pass" required style="width:90px; padding:0.2rem; background: var(--bg); color: var(--text); border: 1px solid var(--border);">
-            <button type="submit" style="background: none; border: none; cursor: pointer; color: var(--text); padding: 0; margin-left: 0.25rem;">Cambiar</button>
-          </form>
-        </td>
-      </tr>
-      <tr>
-        <td colspan="5" style="border-bottom: 2px solid var(--border); padding-bottom: 1rem;">
-          <details>
-            <summary>Editar Permisos para {{ u.username }}</summary>
-            <form method="POST" action="/users/update/{{ u.id }}" class="edit-user-form" style="margin: 0;">
-              <div style="margin-bottom: 1rem;">
-                <label>
-                  <input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %}> Es Administrador (acceso total)
-                </label>
+  {% if error %}
+    <div class="msg error">
+      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      {{ error }}
+    </div>
+  {% endif %}
+  {% if success %}
+    <div class="msg success">
+      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      {{ success }}
+    </div>
+  {% endif %}
+
+  <!-- ADD USER PANEL -->
+  <details id="add-user-panel" class="edit-modal" style="margin-bottom: 2rem;">
+    <summary style="display:none;"></summary>
+    <div class="glass-panel" style="border-color: var(--primary);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h3 style="margin: 0;">Alta de Nuevo Usuario</h3>
+        <button class="btn" style="background: transparent; color: var(--text-dim);" onclick="document.getElementById('add-user-panel').removeAttribute('open')">✕</button>
+      </div>
+      
+      <form method="POST" action="/users/add">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+          <div>
+            <label style="display:block; margin-bottom:0.5rem; font-size:0.85rem; color:var(--text-dim);">Nombre de Usuario</label>
+            <input type="text" name="username" class="input-field" required autocomplete="off">
+          </div>
+          <div>
+            <label style="display:block; margin-bottom:0.5rem; font-size:0.85rem; color:var(--text-dim);">Contraseña Inicial</label>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="password" name="password" id="new-user-pwd" class="input-field" required autocomplete="new-password">
+              <button type="button" class="btn btn-primary" onclick="genPwdForInput('new-user-pwd')" title="Generar contraseña segura">🎲</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="permission-item" style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(167, 139, 250, 0.1); border-radius: 6px; border: 1px solid rgba(167, 139, 250, 0.2);">
+          <label class="toggle-switch">
+            <input type="checkbox" name="is_admin" value="true" onchange="document.getElementById('new-user-tabs').style.opacity = this.checked ? '0.3' : '1'; document.getElementById('new-user-tabs').style.pointerEvents = this.checked ? 'none' : 'auto';">
+            <span class="slider"></span>
+          </label>
+          <div>
+            <strong style="color: #c4b5fd;">Superusuario (Administrador)</strong>
+            <div style="font-size: 0.8rem; color: var(--text-dim);">Tiene acceso irrestricto a todos los módulos y puede gestionar usuarios.</div>
+          </div>
+        </div>
+        
+        <div id="new-user-tabs">
+          <label style="display:block; margin-bottom:0.5rem; font-size:0.85rem; color:var(--text-dim);">Permisos de Módulos (solo usuarios regulares)</label>
+          <div class="permissions-grid">
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="bonos" checked><span class="slider"></span></label> Bonos</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="on" checked><span class="slider"></span></label> O.N's</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="curva"><span class="slider"></span></label> Curva</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="cartera"><span class="slider"></span></label> Cartera</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="bcra"><span class="slider"></span></label> BCRA</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="cashflows"><span class="slider"></span></label> Cashflows</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="fci"><span class="slider"></span></label> FCI</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="escenarios"><span class="slider"></span></label> Escenarios</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="opciones"><span class="slider"></span></label> Opciones</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="catalogo"><span class="slider"></span></label> Catálogo</label>
+            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="abm"><span class="slider"></span></label> ABM Bonos</label>
+          </div>
+        </div>
+        
+        <div style="margin-top: 1.5rem; text-align: right;">
+          <button type="submit" class="btn btn-primary">Guardar Usuario</button>
+        </div>
+      </form>
+    </div>
+  </details>
+
+  <!-- USERS LIST -->
+  <div class="glass-panel">
+    <table class="premium-table">
+      <thead>
+        <tr>
+          <th>Usuario</th>
+          <th>Rol</th>
+          <th>Módulos Permitidos</th>
+          <th style="text-align: right;">Acciones de Seguridad</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>
+            <div style="font-weight: 500; font-size: 1.05rem;">{{ u.username }}</div>
+            <div style="font-size: 0.75rem; color: var(--text-dim);">ID: {{ u.id }}</div>
+          </td>
+          <td>
+            {% if u.is_admin %}
+              <span class="badge admin">Administrador</span>
+            {% else %}
+              <span class="badge user">Usuario</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.is_admin %}
+              <span style="color: var(--text-dim); font-style: italic; font-size: 0.85rem;">Acceso Total</span>
+            {% else %}
+              <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; max-width: 300px;">
+                {% for tab in (u.allowed_tabs or []) %}
+                  {% if tab != "*" %}<span class="badge tag">{{ tab }}</span>{% endif %}
+                {% else %}
+                  <span style="color: var(--danger); font-size: 0.85rem;">Sin accesos</span>
+                {% endfor %}
               </div>
-              <div class="tabs-grid">
-                {% set u_tabs = u.allowed_tabs or [] %}
-                <label><input type="checkbox" name="tabs" value="bonos" {% if "bonos" in u_tabs %}checked{% endif %}> Bonos</label>
-                <label><input type="checkbox" name="tabs" value="on" {% if "on" in u_tabs %}checked{% endif %}> O.N's</label>
-                <label><input type="checkbox" name="tabs" value="curva" {% if "curva" in u_tabs %}checked{% endif %}> Curva</label>
-                <label><input type="checkbox" name="tabs" value="cartera" {% if "cartera" in u_tabs %}checked{% endif %}> Cartera</label>
-                <label><input type="checkbox" name="tabs" value="bcra" {% if "bcra" in u_tabs %}checked{% endif %}> BCRA</label>
-                <label><input type="checkbox" name="tabs" value="cashflows" {% if "cashflows" in u_tabs %}checked{% endif %}> Cashflows</label>
-                <label><input type="checkbox" name="tabs" value="fci" {% if "fci" in u_tabs %}checked{% endif %}> FCI</label>
-                <label><input type="checkbox" name="tabs" value="escenarios" {% if "escenarios" in u_tabs %}checked{% endif %}> Escenarios</label>
-                <label><input type="checkbox" name="tabs" value="opciones" {% if "opciones" in u_tabs %}checked{% endif %}> Opciones</label>
-                <label><input type="checkbox" name="tabs" value="catalogo" {% if "catalogo" in u_tabs %}checked{% endif %}> Catálogo</label>
-                <label><input type="checkbox" name="tabs" value="abm" {% if "abm" in u_tabs %}checked{% endif %}> ABM Bonos</label>
+            {% endif %}
+          </td>
+          <td style="text-align: right;">
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+              <button class="btn btn-reset" onclick="document.getElementById('edit-{{ u.id }}').toggleAttribute('open')" title="Editar Permisos">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              </button>
+              <button class="btn btn-reset" onclick="resetPassword({{ u.id }}, '{{ u.username }}')" title="Generar y Blanquear Contraseña">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                Reset
+              </button>
+              <form method="POST" action="/users/delete/{{ u.id }}" style="margin: 0;" onsubmit="return confirm('¿Peligro: Seguro que deseas eliminar definitivamente al usuario {{ u.username }}?');">
+                <button type="submit" class="btn btn-danger" title="Borrar Usuario">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        
+        <!-- EDIT PANEL (Hidden by default) -->
+        <tr style="background: transparent;">
+          <td colspan="4" style="padding: 0; border: none;">
+            <details id="edit-{{ u.id }}" class="edit-modal">
+              <summary style="display:none;"></summary>
+              <div class="edit-panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                  <h4 style="margin: 0; color: var(--primary);">Editando permisos de {{ u.username }}</h4>
+                  <button class="btn" style="background: transparent; padding: 0; color: var(--text-dim);" onclick="document.getElementById('edit-{{ u.id }}').removeAttribute('open')">✕ Cerrar</button>
+                </div>
+                
+                <form method="POST" action="/users/update/{{ u.id }}">
+                  <div class="permission-item" style="margin-bottom: 1rem;">
+                    <label class="toggle-switch">
+                      <input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %} onchange="document.getElementById('tabs-{{ u.id }}').style.opacity = this.checked ? '0.3' : '1'; document.getElementById('tabs-{{ u.id }}').style.pointerEvents = this.checked ? 'none' : 'auto';">
+                      <span class="slider"></span>
+                    </label>
+                    <strong style="color: #c4b5fd;">Rol Administrador (Acceso Total)</strong>
+                  </div>
+                  
+                  <div id="tabs-{{ u.id }}" style="{% if u.is_admin %}opacity: 0.3; pointer-events: none;{% endif %}">
+                    <label style="font-size:0.85rem; color:var(--text-dim);">Accesos a Módulos:</label>
+                    <div class="permissions-grid">
+                      {% set u_tabs = u.allowed_tabs or [] %}
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="bonos" {% if "bonos" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Bonos</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="on" {% if "on" in u_tabs %}checked{% endif %}><span class="slider"></span></label> O.N's</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="curva" {% if "curva" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Curva</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="cartera" {% if "cartera" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Cartera</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="bcra" {% if "bcra" in u_tabs %}checked{% endif %}><span class="slider"></span></label> BCRA</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="cashflows" {% if "cashflows" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Cashflows</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="fci" {% if "fci" in u_tabs %}checked{% endif %}><span class="slider"></span></label> FCI</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="escenarios" {% if "escenarios" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Escenarios</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="opciones" {% if "opciones" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Opciones</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="catalogo" {% if "catalogo" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Catálogo</label>
+                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="abm" {% if "abm" in u_tabs %}checked{% endif %}><span class="slider"></span></label> ABM Bonos</label>
+                    </div>
+                  </div>
+                  
+                  <div style="margin-top: 1rem; text-align: right;">
+                    <button type="submit" class="btn btn-primary">Aplicar Cambios</button>
+                  </div>
+                </form>
               </div>
-              <button type="submit" style="margin-top: 1rem;">Guardar Permisos</button>
-            </form>
-          </details>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</main>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// Funciones de seguridad para generar contraseñas criptográficamente fuertes
+function generateSecurePassword(length = 12) {
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+~";
+  let retVal = "";
+  // Utilizamos crypto si está disponible para mayor entropía
+  if (window.crypto && window.crypto.getRandomValues) {
+    const values = new Uint32Array(length);
+    window.crypto.getRandomValues(values);
+    for (let i = 0; i < length; i++) {
+      retVal += charset[values[i] % charset.length];
+    }
+  } else {
+    for (let i = 0; i < length; i++) {
+      retVal += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+  }
+  return retVal;
+}
+
+function genPwdForInput(inputId) {
+  const pwd = generateSecurePassword();
+  const input = document.getElementById(inputId);
+  input.value = pwd;
+  input.type = "text"; // Mostrarla brevemente
+  setTimeout(() => input.type = "password", 5000); // Ocultar a los 5 segs
+}
+
+function resetPassword(userId, username) {
+  const pwd = generateSecurePassword();
+  const msg = `Atención: Se va a resetear la contraseña del usuario "${username}".\n\nNUEVA CONTRASEÑA:  ${pwd}\n\nPresiona OK para copiarla a tu portapapeles y guardarla. Asegúrate de pegarla y enviársela al usuario, ya que no podrás volver a verla.`;
+  
+  if (confirm(msg)) {
+    // Intentar copiar al portapapeles
+    navigator.clipboard.writeText(pwd).then(() => {
+      submitReset(userId, pwd);
+    }).catch(err => {
+      // Fallback si la API de clipboard falla (ej. sin HTTPS en dev)
+      prompt("No se pudo copiar automáticamente. Copia la contraseña manualmente antes de continuar:", pwd);
+      submitReset(userId, pwd);
+    });
+  }
+}
+
+function submitReset(userId, pwd) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = `/users/reset-password/${userId}`;
+  
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'password';
+  input.value = pwd;
+  
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+}
+</script>
 {% endblock %}
