@@ -61,7 +61,10 @@ def avg_tamar_tna(
     if period_end <= period_start:
         return None
     today = _domain_today()   # clock inyectable (F1): congelable vía MONITOR_AS_OF
-    key = (period_start, period_end, forecast_tna)
+    # La identidad del provider entra en la key: sin ella, ZeroTamar (stub que fuerza
+    # TAMAR=0 para revaluar un DUAL como tasa fija) comparte cache con el provider real
+    # y devuelve el promedio del real → la pata _TF del popup quedaba sin sentido.
+    key = (period_start, period_end, forecast_tna, type(indices_provider).__name__)
     with _AVG_TAMAR_LOCK:
         if _AVG_TAMAR_DAY != today:
             _AVG_TAMAR_CACHE.clear()

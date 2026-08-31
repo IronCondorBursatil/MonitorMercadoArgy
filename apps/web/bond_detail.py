@@ -376,7 +376,10 @@ def _live_metrics(
         tamar_forecast=tamar_forecast,
     )
     vtec = FinancialEngine.calculate_technical_value(
-        snapshot, indices_provider=indices, fx_provider=fx, ref_date=ref_date,
+        # settle_lag=0: `ref_date` YA es el settle (T+0/T+1) resuelto arriba, igual que
+        # en calculate_tir; sin esto, calculate_technical_value re-aplica settlement_byma
+        # (settle_lag=1 por default) → doble lag en la V.Téc/paridad del popup (+0,26% en CI).
+        snapshot, indices_provider=indices, fx_provider=fx, ref_date=ref_date, settle_lag=0,
     )
     md = (FinancialEngine.calculate_duration(snapshot, tir, settle_date=ref_date)
           if tir is not None else None)

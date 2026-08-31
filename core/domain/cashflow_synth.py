@@ -189,11 +189,18 @@ def _synth_coupon_bond(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
     nominal_initial = 100.0
 
     # Grilla de cupones REGULAR desde la emisión (1er cupón irregular → explícito).
+    # Se ANCLA cada fecha en la emisión (emision + k·n meses), NO se acumula desde el
+    # cupón anterior: acumulando, relativedelta clampea 31→28 en febrero y el día 31 se
+    # perdía para SIEMPRE (emisión 31/08 → 28/02, 28/08, …). Anclado, cada fecha vuelve
+    # al día 31 cuando el mes lo permite (28/02, 31/08, …).
     coupon_dates: List[date] = []
-    cd = emision + relativedelta(months=months_between)
-    while cd <= vto:
+    k = 1
+    while True:
+        cd = emision + relativedelta(months=k * months_between)
+        if cd > vto:
+            break
         coupon_dates.append(cd)
-        cd = cd + relativedelta(months=months_between)
+        k += 1
 
     # "Long last coupon": vto cae DESPUÉS del último cupón regular (ej. vto=31/08
     # pero el schedule va 14/02 → 14/08). El último cupón se calcula hasta 14/08
