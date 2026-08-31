@@ -100,8 +100,9 @@ admin lo crea `scripts/init_admin.py` con `MONITOR_ADMIN_PASSWORD` (ya no un def
 
 El deploy real es **DigitalOcean** (droplet Ubuntu + nginx + systemd `monitores.service`), vía
 `deploy.sh` (`git pull` + `pip install` + `systemctl restart` + healthcheck). Es el ÚNICO
-target: Render y Vercel se dieron de baja (2026-08-31). El `Dockerfile` queda por si algún día
-se contenedoriza, pero hoy NO lo usa nadie — el droplet corre con systemd + venv. En prod, además de `MONITOR_JWT_SECRET_KEY`, setear los
+target: Render, Vercel y el `Dockerfile` se dieron de baja (2026-08-31) — no los usaba nadie.
+El droplet corre con **systemd + venv** (el venv lo crea `deploy.sh`, está gitignoreado; por eso
+allá los scripts se invocan con `venv/bin/python`, no con `python3`). En prod, además de `MONITOR_JWT_SECRET_KEY`, setear los
 paths de DB por campo (`MONITOR_CATALOG_DB`, `MONITOR_BACKUP_DIR`, etc.) fuera del working tree —
 `MONITOR_DB_DIR` solo se usa para el default y **no** re-ubica las bases ya declaradas.
 

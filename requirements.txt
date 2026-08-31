@@ -35,6 +35,6 @@ fpdf2                    # armado del PDF (Unicode vía arial.ttf de Windows)
 matplotlib               # scatter TIR-vs-MD de las tarjetas (sin él → PDF sin charts)
 
 # --- dev: ver requirements-dev.txt ---
-# pytest / hypothesis / ruff NO van acá: los instalan deploy.sh y el Dockerfile, y son
+# pytest / hypothesis / ruff NO van acá: los instalaría deploy.sh en el droplet, y son
 # ~47 MB inútiles en produccion (Render free tiene 512 MB). Para el gate local:
 #   py -3.12 -m pip install -r requirements.lock -r requirements-dev.txt

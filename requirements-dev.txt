@@ -1,6 +1,6 @@
 # Dependencias de DESARROLLO — NO se instalan en producción.
 #
-# Ni `deploy.sh` ni el `Dockerfile` las traen: ambos instalan
+# `deploy.sh` no las trae: instala
 # `requirements.txt`. Sacarlas de ahí ahorra ~47 MB y ~1.200 archivos en cada
 # deploy del droplet.
 #
