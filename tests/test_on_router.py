@@ -429,3 +429,11 @@ def test_on_tipo_facet_defaults_to_hard_dollar_only():
     assert 'name="tipo" value="DL" checked' not in html
     # estado inicial del filtro en el JS servido (el motor del filtro)
     assert "tipo: { HD: true, DL: false }" in js
+
+
+def test_on_data_expone_el_isin():
+    """La columna ISIN del panel se alimenta de /on/data; sin la clave sale vacia."""
+    data = _fetch(_StubState([_on("YMCXD", "YPF S.A.")]))
+    bonds = data["bonds"]
+    assert bonds, "no hay bonos en el dataset"
+    assert all("isin" in b for b in bonds), "falta la clave isin en algun bono"

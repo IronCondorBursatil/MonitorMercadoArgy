@@ -570,6 +570,10 @@ td.uni-grp3 { padding-left: 10px; text-align: center; }
 .uni-tipo.HD { background: rgba(13,110,58,.14); color: var(--pos); }
 .uni-tipo.DL { background: rgba(168,36,43,.13); color: var(--neg); }
 .uni-cl { color: var(--text-dim); }
+/* ISIN: 12 caracteres alfanumericos -> monoespaciado y algo mas chico para que
+   la columna no empuje al resto de la grilla. */
+.uni-isin { color: var(--text-dim); font-family: ui-monospace, Consolas, monospace;
+            font-size: 10.5px; letter-spacing: -.2px; white-space: nowrap; }
 
 /* barra de TIR prom (en la celda TIR de los grupos) */
 .uni-barwrap { display: inline-block; width: 46px; height: 7px; border-radius: 4px;

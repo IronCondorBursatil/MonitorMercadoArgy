@@ -204,6 +204,7 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
   // De Clase en adelante todo centrado. `num` = fuente monoespaciada (tabular).
   var COLS = [
     { k: "clase",      label: "Clase",      align: "center" },
+    { k: "isin",       label: "ISIN",       align: "center", num: true },
     { k: "ley",        label: "Ley",        align: "center" },
     { k: "tipo",       label: "Tipo",       align: "center" },
     { k: "emision",    label: "Emisión",    align: "center", num: true },
@@ -256,7 +257,7 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
         });
     if (!q) return src;
     return src.filter(function (b) {
-      return (b.ticker + " " + (b.emisor || "") + " " + (b.clase || "")).toUpperCase().indexOf(q) >= 0;
+      return (b.ticker + " " + (b.emisor || "") + " " + (b.clase || "") + " " + (b.isin || "")).toUpperCase().indexOf(q) >= 0;
     });
   }
 
@@ -301,6 +302,7 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
   function cell(k, b) {
     var v = b[k];
     if (k === "clase") return b.clase ? '<span class="uni-cl">' + ON.esc(b.clase) + '</span>' : '<span class="dim">—</span>';
+    if (k === "isin") return b.isin ? '<span class="uni-isin">' + ON.esc(b.isin) + '</span>' : '<span class="dim">—</span>';
     if (k === "ley") return '<span class="uni-ley ' + b.ley + '">' + b.ley + '</span>';
     if (k === "tipo") return b.tipo ? '<span class="uni-tipo ' + b.tipo + '">' + b.tipo + '</span>' : '—';
     if (k === "emision") return ON.date(b.emision);
@@ -405,7 +407,7 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
       th.onclick = function () {
         var k = th.dataset.k;
         if (state.sortKey === k) state.sortDir = -state.sortDir;
-        else { state.sortKey = k; state.sortDir = (k === "ticker" || k === "clase") ? 1 : -1; }
+        else { state.sortKey = k; state.sortDir = (k === "ticker" || k === "clase" || k === "isin") ? 1 : -1; }
         render();
       };
     });

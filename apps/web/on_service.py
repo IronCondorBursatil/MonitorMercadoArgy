@@ -104,6 +104,9 @@ def _build_on_dataset(state, fx=None) -> dict:
             "tipo": "HD" if inst.is_hard_dollar else "DL",  # Hard Dollar vs Dollar Linked
             "emisor": inst.short_name,
             "clase": inst.serie_clase,        # "Serie / Clase" del ABM (raw_fields.serie_clase)
+            # ISIN del BONO (uno por fila del catalogo). Las patas MEP/CABLE comparten
+            # el del titulo: el catalogo guarda un ISIN por instrumento, no por especie.
+            "isin": inst.isin,
             "sector": sector_for(inst),       # override manual (ABM) o derivado del emisor
             "emision": inst.emission_date.isoformat() if inst.emission_date else None,
             "vto": vto.isoformat() if vto else None,
