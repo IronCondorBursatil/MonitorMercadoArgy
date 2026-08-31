@@ -1,6 +1,6 @@
 """Pata pesos (…O) de ONs hard-dollar → USD por jurisdicción.
 
-Regla (pedido de David, may-2026): un corporativo **HARD DOLLAR** que cotiza en
+Regla de negocio corporativa (may-2026): un corporativo **HARD DOLLAR** que cotiza en
 pesos (sufijo …O) se pasa a USD dividiendo por el offer del dólar que corresponde
 a su ley: **MEP** (dólar bolsa) si es **Ley Argentina**, **CCL/cable** si es **Ley
 Extranjera** — o sin ley declarada (el universo ON es mayormente ley NY). Las patas

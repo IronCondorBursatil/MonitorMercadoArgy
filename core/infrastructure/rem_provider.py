@@ -1,7 +1,7 @@
 """REM (Relevamiento de Expectativas de Mercado) del BCRA.
 
-Fuente primaria: API pública mantenida por facundo allia
-(https://github.com/facundoallia/rem-bcra-api), que re-publica el dataset
+Fuente primaria: API pública externa
+(endpoint de agregación comunitaria), que re-publica el dataset
 que el BCRA distribuye en PDF mensual.
 
 Fallback: ArgentinaDatos /v1/finanzas/rem/ultimo — misma fuente (BCRA),

@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 _ALL_TYPES = [*SOBERANOS, *BOPREALES, *TASA_FIJA, *CER, *DOLAR_LINKED, *TAMAR,
               *DUAL_TAMAR, *OBLIGACIONES_NEGOCIABLES]
+              
 
 
 async def _refresh_loop(app: FastAPI) -> None:
