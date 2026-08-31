@@ -42,11 +42,7 @@ from pathlib import Path
 
 import holidays as holidays_lib
 import pandas as pd
-import pandas_market_calendars as mcal
 import httpx
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
 log = logging.getLogger("holiday_engine")
@@ -101,7 +97,8 @@ PRIORIDAD_FUENTE = [
 #  CALENDARIO BYMA — instancia cacheada
 # ═════════════════════════════════════════════════════════════════
 @lru_cache(maxsize=1)
-def _get_byma() -> mcal.MarketCalendar:
+def _get_byma() -> "mcal.MarketCalendar":
+    import pandas_market_calendars as mcal
     return mcal.get_calendar("XBUE")
 
 
@@ -561,11 +558,14 @@ def descargar_todos(años=AÑOS_COBERTURA) -> pd.DataFrame:
 # ═════════════════════════════════════════════════════════════════
 
 def _thin_border():
+    from openpyxl.styles import Border, Side
     s = Side(style="thin", color="B4B2A9")
     return Border(left=s, right=s, top=s, bottom=s)
 
 
 def _header_cell(ws, row, col, value, width=None):
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
     c = ws.cell(row=row, column=col, value=value)
     c.font      = Font(name="Arial", color=C_WHITE, bold=True, size=10)
     c.fill      = PatternFill("solid", fgColor=C_HEADER)
@@ -584,6 +584,9 @@ def generar_excel(df: pd.DataFrame, path: Path = EXCEL_PATH) -> Path:
       3. Leyenda tipos  — definicion de cada tipo BYMA
       4. Por año        — pivot resumen
     """
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
     wb = Workbook()
 
     # ── Hoja 1: Feriados AR ──

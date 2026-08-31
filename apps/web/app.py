@@ -38,8 +38,6 @@ from apps.web.routers import (
     abm, bcra, bonds, cartera, cashflows, catalog, curva, escenarios, fci, header,
     on, options, panels, source, stream,
 )
-from apps.web.routers.api_v1 import market as api_market
-from apps.web.routers.api_v1 import stream as api_stream
 from apps.web.state import AppState
 from config.settings import settings
 from core.domain.instrument_groups import (
@@ -453,11 +451,6 @@ async def requires_login_exception_handler(request: Request, exc: RequiresLoginE
     return RedirectResponse(url="/login", status_code=302)
 
 
-# Servir la app de React en producción bajo /react (mismo cache que los vendor).
-react_build_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-if react_build_dir.exists():
-    app.mount("/react", CachedStaticFiles(directory=str(react_build_dir), html=True), name="react")
-
 app.include_router(auth_router.router)
 app.include_router(users_abm.router)
 
@@ -481,10 +474,6 @@ app.include_router(abm.router, dependencies=[Depends(RequireTabPermission("abm")
 app.include_router(header.router, dependencies=html_deps)
 app.include_router(source.router, dependencies=html_deps)
 app.include_router(stream.router, dependencies=html_deps)
-
-# API
-app.include_router(api_market.router, prefix="/api/v1/market", dependencies=api_deps)
-app.include_router(api_stream.router, prefix="/api/v1/stream", dependencies=api_deps)
 
 
 
