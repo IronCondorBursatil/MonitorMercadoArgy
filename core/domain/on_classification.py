@@ -64,7 +64,9 @@ SECTOR_KEYWORDS: list[tuple[str, list[str]]] = [
                           "FUTUROS Y OPCIONES", "VENTURINO"]),
     ("Industrial / Maquinaria", ["JOHN DEERE", "CNH", "MIRGOR", "ALUAR", "LOMA NEGRA",
                                  "SIDERAR", "TERNIUM", "FCA", "TOYOTA", "VOLKSWAGEN",
-                                 "GENERAL MOTORS"]),
+                                 "GENERAL MOTORS",
+                                 # siderurgica (planta integrada San Nicolas, RIGI)
+                                 "SIDERSA"]),
     ("Infraestructura / Construcción", ["AEROPUERTOS", "CLISA", "CAPUTO", "CRIBA",
                                         "ROVELLA", "AUTOPISTAS"]),
     ("Real Estate", ["IRSA", "RAGHSA", "TGLT", "PLAZA LOGISTICA"]),
