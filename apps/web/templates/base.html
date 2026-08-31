@@ -64,6 +64,13 @@
       document.body.appendChild(ta);
       var ok = false;
       try {
+        // Limpiar la seleccion PREVIA de la pagina es obligatorio: si el usuario
+        // tenia texto seleccionado, execCommand("copy") copia ESO y devuelve true
+        // igual — o sea el copiado "funciona" pero con el contenido equivocado.
+        // Verificado en vivo sobre HTTP: sin esto, copiar una contrasena generada
+        // termino poniendo en el portapapeles una palabra suelta de la pagina.
+        var sel = window.getSelection();
+        if (sel && sel.removeAllRanges) sel.removeAllRanges();
         ta.select();
         ta.setSelectionRange(0, ta.value.length);   // iOS
         ok = document.execCommand("copy");
