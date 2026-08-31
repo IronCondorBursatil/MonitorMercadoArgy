@@ -222,9 +222,12 @@ def test_on_data_sectors_summary_uses_mep_leg():
 
 
 def test_nav_has_on_button_next_to_bonos():
+    import re
     with TestClient(app) as c:
         html = c.get("/on").text
-    assert '<a href="/">Bonos</a><a href="/on">O.N\'s</a>' in html
+    # Adyacencia Bonos → O.N's, tolerando el whitespace que introdujeron los
+    # `{% if has_tab(...) %}` del nav (antes iban pegados en una sola línea).
+    assert re.search(r'<a href="/">Bonos</a>\s*<a href="/on">O\.N\'s</a>', html)
 
 
 def test_on_page_uses_unified_tool():

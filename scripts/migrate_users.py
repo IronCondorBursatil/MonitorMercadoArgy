@@ -19,7 +19,7 @@ def migrate():
     # Comprobar si la columna existe
     cursor.execute("PRAGMA table_info(users)")
     columns = [col[1] for col in cursor.fetchall()]
-    
+
     if "allowed_tabs" not in columns:
         print("Añadiendo columna 'allowed_tabs' a la tabla 'users'...")
         cursor.execute("ALTER TABLE users ADD COLUMN allowed_tabs JSON")
@@ -33,7 +33,7 @@ def migrate():
         print("Migración completada con éxito.")
     else:
         print("La columna 'allowed_tabs' ya existe.")
-        
+
     conn.close()
 
 if __name__ == "__main__":

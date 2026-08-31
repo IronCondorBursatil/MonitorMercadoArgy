@@ -17,10 +17,10 @@ def list_users(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/users/add", response_class=HTMLResponse)
 def add_user(
-    request: Request, 
-    username: str = Form(...), 
-    password: str = Form(...), 
-    is_admin: bool = Form(False), 
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    is_admin: bool = Form(False),
     tabs: List[str] = Form(default=[]),
     db: Session = Depends(get_db)
 ):
@@ -29,7 +29,7 @@ def add_user(
     if existing:
         users = db.query(UserORM).all()
         return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "error": f"El usuario {username} ya existe."})
-    
+
     new_user = UserORM(
         username=username,
         hashed_password=get_password_hash(password),
@@ -38,7 +38,7 @@ def add_user(
     )
     db.add(new_user)
     db.commit()
-    
+
     users = db.query(UserORM).all()
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "success": f"Usuario {username} creado exitosamente."})
 
@@ -47,14 +47,14 @@ def delete_user(request: Request, user_id: int, db: Session = Depends(get_db)):
     user = db.query(UserORM).filter(UserORM.id == user_id).first()
     if user:
         # Avoid deleting the last admin
-        admins = db.query(UserORM).filter(UserORM.is_admin == True).count()
+        admins = db.query(UserORM).filter(UserORM.is_admin.is_(True)).count()
         if user.is_admin and admins <= 1:
             users = db.query(UserORM).all()
             return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "error": "No puedes borrar al último administrador."})
-        
+
         db.delete(user)
         db.commit()
-    
+
     users = db.query(UserORM).all()
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "success": "Usuario borrado."})
 
@@ -64,15 +64,15 @@ def reset_password(request: Request, user_id: int, password: str = Form(...), db
     if user:
         user.hashed_password = get_password_hash(password)
         db.commit()
-    
+
     users = db.query(UserORM).all()
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "success": f"Contraseña actualizada para {user.username}."})
 
 @router.post("/users/update/{user_id}", response_class=HTMLResponse)
 def update_user(
-    request: Request, 
-    user_id: int, 
-    is_admin: bool = Form(False), 
+    request: Request,
+    user_id: int,
+    is_admin: bool = Form(False),
     tabs: List[str] = Form(default=[]),
     db: Session = Depends(get_db)
 ):
@@ -80,14 +80,14 @@ def update_user(
     if user:
         # Avoid removing admin from the last admin
         if user.is_admin and not is_admin:
-            admins = db.query(UserORM).filter(UserORM.is_admin == True).count()
+            admins = db.query(UserORM).filter(UserORM.is_admin.is_(True)).count()
             if admins <= 1:
                 users = db.query(UserORM).all()
                 return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "error": "No puedes quitarle el rol de admin al último administrador."})
-                
+
         user.is_admin = is_admin
         user.allowed_tabs = ["*"] if is_admin else tabs
         db.commit()
-        
+
     users = db.query(UserORM).all()
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "success": f"Permisos actualizados para {user.username}."})

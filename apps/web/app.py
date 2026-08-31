@@ -20,10 +20,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -52,15 +53,17 @@ logger = logging.getLogger(__name__)
 
 _ALL_TYPES = [*SOBERANOS, *BOPREALES, *TASA_FIJA, *CER, *DOLAR_LINKED, *TAMAR,
               *DUAL_TAMAR, *OBLIGACIONES_NEGOCIABLES]
-              
+
 
 
 async def _refresh_loop(app: FastAPI) -> None:
     """Ingesta async (§6.3-6.5): `hub.refresh_all()` trae Data912 (5 endpoints en
     paralelo, httpx + circuit breaker + pool) y el motor de pricing corre off-loop
-    vía `to_thread` leyendo el snapshot ya materializado por el hub. Adicionalmente
-    arma la chain enriquecida de opciones (parser + CRR + griegos + tasas)."""
-    from core.domain.options.chain import build_options
+    vía `to_thread` leyendo el snapshot ya materializado por el hub.
+
+    La chain de opciones (parser + CRR + griegos, ~5-20s) NO va acá: vive en su
+    propio `_options_loop` para no espaciar el push SSE de los paneles de bonos —
+    el pricing es ~0.1-0.3s, las opciones dominaban el ciclo y lo llevaban a ~25s."""
     from core.infrastructure.provider_hub import HubMarketDataProvider
     from core.use_cases.generate_report import GenerateMonitorReport
 
@@ -69,22 +72,28 @@ async def _refresh_loop(app: FastAPI) -> None:
     while True:
         await asyncio.sleep(settings.refresh_sec)
         try:
+            _t0 = time.perf_counter()
             await app.state.hub.refresh_all()  # fuente live activa (BYMA/Data912), async
             if hasattr(app.state.indices, "prefetch"):
                 await app.state.indices.prefetch(app.state.client)
             if hasattr(app.state.fx, "prefetch"):
                 await app.state.fx.prefetch(app.state.client)
+            _t_ingest = time.perf_counter()
             use_case = GenerateMonitorReport(repo, provider,
                                              indices=app.state.indices, fx=app.state.fx)
             metrics = await asyncio.to_thread(use_case.execute, _ALL_TYPES)
-            await app.state.app_state.update(metrics)
-            # Opciones (snapshot aparte): BYMA open /options por defecto — OI real +
-            # underlyingSymbol/optionType/maturityDate autoritativos (más profundidad);
-            # Data912 de fallback. El hub elige la fuente y resuelve los subyacentes;
-            # la chain enriquecida (parser + CRR + griegos + tasas) corre off-loop.
-            opt_rows, stk_rows = await app.state.hub.fetch_options(settings.options_source)
-            items = await asyncio.to_thread(build_options, opt_rows, stk_rows)
-            app.state.app_state.set_options(items)
+            await app.state.app_state.update(metrics)   # dispara el SSE `refresh`
+            _total = time.perf_counter() - _t0
+            # Observabilidad del tiempo de ciclo: si un ciclo supera el intervalo de
+            # refresh, los `refresh` del SSE se espacian (los paneles dejan de sentirse
+            # "en vivo"). Se grita a WARNING para que quede en el log durable; en
+            # operación normal (ciclo < intervalo) va a INFO.
+            _lvl = logging.WARNING if _total > settings.refresh_sec else logging.INFO
+            logger.log(
+                _lvl,
+                "refresh cycle: ingest=%.2fs price=%.2fs total=%.2fs (%d instr)",
+                _t_ingest - _t0, time.perf_counter() - _t_ingest, _total, len(metrics),
+            )
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -92,6 +101,35 @@ async def _refresh_loop(app: FastAPI) -> None:
             # Observabilidad (O1): registrar el fallo para que el header lo muestre.
             # La app sigue sirviendo el último snapshot bueno (stale), pero visible.
             await app.state.app_state.record_error(f"{type(e).__name__}: {e}")
+
+
+async def _options_loop(app: FastAPI) -> None:
+    """Loop dedicado de la chain de opciones (pesado: parser + CRR + griegos de
+    ~1000 contratos, ~5-20s). Separado del `_refresh_loop` para no arrastrar el
+    push SSE de los paneles de bonos. Corre 1× al arranque y luego cada
+    `options_refresh_sec` (default 60s: los griegos no cambian material/segundo)."""
+    from core.domain.options.chain import build_options
+
+    first = True
+    while True:
+        if not first:
+            await asyncio.sleep(settings.options_refresh_sec)
+        first = False
+        try:
+            _t0 = time.perf_counter()
+            # Snapshot aparte (BYMA open /options por defecto — OI real +
+            # underlyingSymbol/optionType/maturityDate autoritativos; Data912 de
+            # fallback). El hub elige la fuente y resuelve los subyacentes.
+            opt_rows, stk_rows = await app.state.hub.fetch_options(settings.options_source)
+            items = await asyncio.to_thread(build_options, opt_rows, stk_rows)
+            app.state.app_state.set_options(items)
+            _lvl = logging.WARNING if (time.perf_counter() - _t0) > settings.refresh_sec else logging.INFO
+            logger.log(_lvl, "options cycle: %.2fs (%d opts)",
+                       time.perf_counter() - _t0, len(items))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — un fallo de opciones no debe tumbar el loop
+            logger.exception("options loop iteration failed")
 
 
 def _ensure_obligaciones_negociables() -> int:
@@ -359,6 +397,7 @@ async def lifespan(app: FastAPI):
         tasks = [
             asyncio.create_task(_startup_reconcile(app)),
             asyncio.create_task(_refresh_loop(app)),
+            asyncio.create_task(_options_loop(app)),
             asyncio.create_task(_bei_loop(app)),
             asyncio.create_task(_price_history_loop(app)),
         ]
@@ -376,8 +415,36 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Monitor Renta Fija AR", lifespan=lifespan)
 # GZip: el dataset de /fci/data es grande (~varios MB en JSON) → comprime ~6-7×.
-app.add_middleware(GZipMiddleware, minimum_size=1000)
-app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+# compresslevel=6 (default de Starlette = 9): mismo tamaño de salida en la práctica,
+# ~mitad de CPU por request (medido sobre 4 MB: 107ms→43ms) — para TODA la app.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
+
+
+# ── Estáticos con Cache-Control ─────────────────────────────────────────────
+# Sin esto el navegador revalida ~556KB de vendor (chart/gridstack/htmx/html2canvas)
+# en CADA navegación de página completa → un round-trip por asset contra el droplet
+# = cambio de pestañas lento. Política:
+#   • `?v=<hash/mtime>` presente (cache-busting) → immutable 1 año (la URL cambia si
+#     cambia el contenido, así que cachear para siempre es seguro y un deploy se ve).
+#   • `/vendor/**` (libs de terceros, no cambian entre deploys) → immutable 1 año.
+#   • resto (CSS/JS propio sin versionar) → cache corto revalidable: un deploy se
+#     ve enseguida, pero una ráfaga de navegación no revalida en cada clic.
+_YEAR = "public, max-age=31536000, immutable"
+_SHORT = "public, max-age=300"
+
+
+class CachedStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            qs = scope.get("query_string", b"")
+            versioned = b"v=" in qs
+            is_vendor = path.startswith("vendor/") or path.startswith("vendor\\")
+            response.headers["Cache-Control"] = _YEAR if (versioned or is_vendor) else _SHORT
+        return response
+
+
+app.mount("/static", CachedStaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 
 @app.exception_handler(RequiresLoginException)
 async def requires_login_exception_handler(request: Request, exc: RequiresLoginException):
@@ -386,17 +453,7 @@ async def requires_login_exception_handler(request: Request, exc: RequiresLoginE
     return RedirectResponse(url="/login", status_code=302)
 
 
-# Servir la app de React en producción bajo /react
-class CachedStaticFiles(StaticFiles):
-    def is_not_modified(self, response_headers, request_headers) -> bool:
-        return super().is_not_modified(response_headers, request_headers)
-    
-    async def get_response(self, path: str, scope):
-        response = await super().get_response(path, scope)
-        if response.status_code == 200:
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        return response
-
+# Servir la app de React en producción bajo /react (mismo cache que los vendor).
 react_build_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if react_build_dir.exists():
     app.mount("/react", CachedStaticFiles(directory=str(react_build_dir), html=True), name="react")
@@ -433,18 +490,23 @@ app.include_router(api_stream.router, prefix="/api/v1/stream", dependencies=api_
 
 @app.get("/api/health")
 def health(repo=Depends(get_repo), state=Depends(get_state)):
-    # Umbral de staleness centralizado en AppState.status() (6 ciclos de refresh).
+    # Público (probes externos): NO expone `last_error` — es el string crudo de una
+    # excepción del refresh loop (URLs/params internos de los providers). El detalle
+    # del error lo ve el badge del header (/health/badge), que está detrás de login.
     st = state.status()
     return {
         "status": "ok" if st["ok"] else "degraded",
         "instruments": len(repo.get_all_instruments()),
         "metrics_cached": len(state.metrics()),
-        **st,
+        "is_stale": st["is_stale"],
+        "age_seconds": st["age_seconds"],
+        "last_refresh": st["last_refresh"],
+        "ok": st["ok"],
     }
 
 
 @app.get("/api/riesgo-pais")
-def api_riesgo_pais(bt=Depends(get_bondterminal)):
+def api_riesgo_pais(bt=Depends(get_bondterminal), _user=Depends(get_current_user)):
     """Riesgo país de BondTerminal: spread ponderado EMBI AR + valor Ambito, deltas, bonos.
 
     Endpoint de inspección (hermano de /api/health y /api/metrics): expone el payload
@@ -457,7 +519,7 @@ def api_riesgo_pais(bt=Depends(get_bondterminal)):
 
 
 @app.get("/api/metrics")
-def metrics(state=Depends(get_state)):
+def metrics(state=Depends(get_state), _user=Depends(get_current_user)):
     """Snapshot JSON del último refresh (prueba el wiring end-to-end del motor)."""
     out = []
     for m in state.metrics():

@@ -80,7 +80,9 @@ class FinancialEngine:
     def calculate_duration(snapshot: MarketSnapshot, tir: float,
                            settle_date: Optional[date] = None) -> Optional[float]:
         inst = snapshot.instrument
-        if not inst or tir is None or np.isnan(tir):
+        # not np.isfinite + tir<=-1 (defensa en profundidad; las strategies ya lo
+        # cubren): evita propagar una TIR degenerada que daría duration compleja.
+        if not inst or tir is None or not np.isfinite(tir) or tir <= -1.0:
             return None
         settle = resolve_settle(inst.instrument_type, settle_date)
         ctx = PricingContext(settle=settle)

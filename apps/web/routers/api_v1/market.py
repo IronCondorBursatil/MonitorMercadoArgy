@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from typing import List, Any
+from typing import List
 from datetime import date
 
 from apps.web.deps import get_state
@@ -41,7 +41,7 @@ def build_market_json(panel_id: str, state) -> List[dict]:
         if price_required and not m.snapshot.price:
             continue
         vals = _row_values(m, today)
-        
+
         # Add bid/ask for React to use directly
         vals["px_bid"] = m.snapshot.bid
         vals["px_ask"] = m.snapshot.ask

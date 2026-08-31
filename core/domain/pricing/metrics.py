@@ -271,13 +271,19 @@ def convexity(instrument, tir: float, ref_date: date) -> Optional[float]:
     future, years = discount_year_fractions(instrument, ref_date)
     if not future:
         return None
-    pv = 0.0
-    weighted = 0.0
-    for cf, t in zip(future, years):
-        if t <= 0:
-            continue
-        pv += cf.total / (1.0 + tir) ** t
-        weighted += cf.total * t * (t + 1.0) / ((1.0 + tir) ** (t + 2.0))
+    # Mismo guard que vanilla_pv: con TIR gigante (~1e16) o TIR=-0.9999…9 (pasa el
+    # tir<=-1 de arriba pero deja (1+tir)≈1e-16) el descuento desborda → sin esto,
+    # un OverflowError/ZeroDivisionError sube como 500 (tercer call site: panel ON).
+    try:
+        pv = 0.0
+        weighted = 0.0
+        for cf, t in zip(future, years):
+            if t <= 0:
+                continue
+            pv += cf.total / (1.0 + tir) ** t
+            weighted += cf.total * t * (t + 1.0) / ((1.0 + tir) ** (t + 2.0))
+    except (OverflowError, ZeroDivisionError, ValueError):
+        return None
     if pv <= 0:
         return None
     return weighted / pv

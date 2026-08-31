@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from apps.web.deps_auth import get_admin_user_html
 from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.infrastructure.byma.credentials import clear_credentials, save_credentials
 from core.infrastructure.byma.sources import (
@@ -61,7 +62,8 @@ def source_menu(request: Request):
 
 
 @router.post("/source/select", response_class=HTMLResponse)
-async def source_select(request: Request, mode: str = Form(...)):
+async def source_select(request: Request, mode: str = Form(...),
+                        _admin=Depends(get_admin_user_html)):
     hub = request.app.state.hub
     app_state = request.app.state.app_state
     mode = (mode or "").strip()
@@ -86,7 +88,8 @@ async def source_select(request: Request, mode: str = Form(...)):
 
 
 @router.post("/source/credentials", response_class=HTMLResponse)
-async def source_credentials(request: Request, user: str = Form(...), password: str = Form(...)):
+async def source_credentials(request: Request, user: str = Form(...), password: str = Form(...),
+                             _admin=Depends(get_admin_user_html)):
     """Valida la clave BYMA realtime (login OAuth), la guarda en `.env` y activa el
     modo tiempo real. Si el login falla, NO guarda (devuelve 400 con el motivo)."""
     hub = request.app.state.hub
@@ -118,7 +121,7 @@ async def source_credentials(request: Request, user: str = Form(...), password: 
 
 
 @router.post("/source/credentials/clear", response_class=HTMLResponse)
-async def source_credentials_clear(request: Request):
+async def source_credentials_clear(request: Request, _admin=Depends(get_admin_user_html)):
     """Borra la clave guardada; si la fuente activa era realtime, vuelve a open."""
     hub = request.app.state.hub
     app_state = request.app.state.app_state

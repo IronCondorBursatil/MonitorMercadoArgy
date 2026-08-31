@@ -51,6 +51,36 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
+def _resolve_jwt_secret(db_dir: Path) -> str:
+    """Secreto para firmar los JWT, sin default hardcodeado (el repo es público).
+    Prioridad: archivo persistido en db_dir/jwt_secret (fuera de OneDrive, 0600) >
+    generado al vuelo y persistido. El env MONITOR_JWT_SECRET_KEY ya lo resolvió antes
+    (llena el campo → esta función no corre). Persistir evita invalidar las sesiones en
+    cada reinicio; si no se puede escribir, se usa uno efímero (con WARNING)."""
+    import secrets
+
+    secret_file = db_dir / "jwt_secret"
+    try:
+        if secret_file.is_file():
+            existing = secret_file.read_text(encoding="utf-8").strip()
+            if existing:
+                return existing
+    except OSError:
+        pass
+    generated = secrets.token_urlsafe(64)
+    try:
+        secret_file.write_text(generated, encoding="utf-8")
+        try:
+            os.chmod(secret_file, 0o600)   # no-op efectivo en Windows, correcto en Linux
+        except OSError:
+            pass
+    except OSError:
+        logging.getLogger(__name__).warning(
+            "no se pudo persistir el secreto JWT en %s; se usa uno efímero "
+            "(las sesiones se invalidan al reiniciar)", secret_file)
+    return generated
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MONITOR_", env_file=".env", extra="ignore")
 
@@ -96,15 +126,29 @@ class Settings(BaseSettings):
     byma_client_id: str = "excel-addin-bd-client-pkg"
     byma_client_secret: str = "20V4nt3k203xc31"
 
-    # Clave secreta para firmar las cookies de sesión (JWT).
-    # En prod, overridable vía MONITOR_JWT_SECRET_KEY.
-    jwt_secret_key: str = "super_secreto_para_desarrollo_cambiar_en_prod"
+    # Clave secreta para firmar las cookies de sesión (JWT). NUNCA un default
+    # hardcodeado: con el repo público, cualquiera forjaría un token de admin. Se
+    # resuelve en model_post_init: env MONITOR_JWT_SECRET_KEY > archivo persistido
+    # (db_dir/jwt_secret, fuera de OneDrive, 0600) > generado y persistido al vuelo.
+    jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 1 semana
+    # 24h (antes 7 días). Sin refresh token, un token robado vive esto — 1 día es un
+    # balance razonable seguridad/UX. Override por MONITOR_JWT_ACCESS_TOKEN_EXPIRE_MINUTES.
+    jwt_access_token_expire_minutes: int = 60 * 24
+    # Cookie de sesión con flag Secure (solo viaja por HTTPS). Default False porque el
+    # droplet sirve por HTTP (443 cerrado); poné MONITOR_COOKIE_SECURE=true en cuanto
+    # tengas TLS (certbot/CF) — con Secure la cookie no se filtra en una request HTTP.
+    cookie_secure: bool = False
 
     host: str = "0.0.0.0"
     port: int = 8000
     refresh_sec: int = 5
+    # Chain de opciones (parser + CRR + griegos de ~1000 contratos): ~5-20s según CPU
+    # y cantidad. Fuera del refresh loop de precios (loop propio) para no espaciar el
+    # push SSE de los paneles de bonos — nadie necesita los griegos cada 5s. Es CPU
+    # puro (mantiene el GIL en `to_thread`), así que mientras corre ralentiza los
+    # ciclos de precios; espaciarlo a 60s achica esa ventana de interferencia.
+    options_refresh_sec: int = 60
     # Workers del thread pool del motor de pricing (por ciclo). El trabajo es
     # mayormente CPU (XIRR/root-finding) con algo de I/O cacheado; con el GIL, más
     # threads que cores rinde poco y en laptops chicas genera thrashing. Acotado a los
@@ -127,6 +171,8 @@ class Settings(BaseSettings):
 
     def model_post_init(self, __context: Any) -> None:
         self.db_dir.mkdir(parents=True, exist_ok=True)
+        if not self.jwt_secret_key:
+            self.jwt_secret_key = _resolve_jwt_secret(self.db_dir)
 
 
 settings = Settings()

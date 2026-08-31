@@ -78,6 +78,32 @@ polling como fallback). El detalle es un modal (`/bond/{t}/detail` + `/bond/{t}/
 lo arma `fci_service.get_fci_dataset` (memoizado por corte/día, servido con GZip) combinando CAFCI
 enriquecido + AUM ArgentinaDatos + lente A3500/CER + flujos reales de `fci_history`.
 
+## Autenticación y permisos
+
+Toda la app está detrás de login (`apps/web/deps_auth.py` + `routers/auth.py` + `core/security.py`).
+JWT en cookie httponly (`access_token`), firmado HS256. **El secreto NO es hardcodeado**: se
+resuelve en `settings.model_post_init` → env `MONITOR_JWT_SECRET_KEY` > archivo `db_dir/jwt_secret`
+(0600, fuera de OneDrive) > generado y persistido al vuelo. En prod, setear `MONITOR_JWT_SECRET_KEY`.
+
+Permisos por pestaña: `UserORM.allowed_tabs` (JSON) + `RequireTabPermission("<tab>")` como
+`dependencies=` de cada router en `app.py`. `is_admin` bypasea; `"*"` = todas. Los routers de
+lectura global (`header`, `stream`) van con `get_current_user_html` (solo login); `/source/*` POST
+y `/users/*` exigen **admin**. `/api/health` es público pero recortado (sin `last_error`).
+
+**Al testear la web**: `tests/conftest.py` tiene una fixture autouse `_auth_bypass` que corre los
+tests como admin (overridea `get_current_user*` + parchea `templates._get_user_from_token`). Un
+test que ejerza la auth REAL marca `@pytest.mark.noauth` (ver `tests/test_auth.py`). El primer
+admin lo crea `scripts/init_admin.py` con `MONITOR_ADMIN_PASSWORD` (ya no un default hardcodeado).
+
+## Despliegue
+
+El deploy real es **DigitalOcean** (droplet Ubuntu + nginx + systemd `monitores.service`), vía
+`deploy.sh` (`git pull` + `pip install` + `systemctl restart` + healthcheck). `render.yaml` y
+`vercel.json` son targets alternativos/residuales (Vercel es estructuralmente inviable: 3 loops en
+el lifespan + SQLite como fuente de verdad). En prod, además de `MONITOR_JWT_SECRET_KEY`, setear los
+paths de DB por campo (`MONITOR_CATALOG_DB`, `MONITOR_BACKUP_DIR`, etc.) fuera del working tree —
+`MONITOR_DB_DIR` solo se usa para el default y **no** re-ubica las bases ya declaradas.
+
 ## Invariantes (no romper)
 
 - **Equivalencia del motor**: `tests/test_pricing_equivalence.py` compara el motor nuevo

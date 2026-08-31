@@ -112,6 +112,20 @@ def test_net_flow_series_keeps_large_but_plausible_jump():
     series = {
         date(2026, 6, 2): {"vcp": 50.0, "ccp": 1000.0, "patrimonio": 50_000.0},
         date(2026, 6, 3): {"vcp": 50.0, "ccp": bumped, "patrimonio": bumped * 50},
+    }
+    flows = net_flow_series(series)
+    # Δccp/ccp = 2.5 < 3.0 (umbral) → se conserva como flujo real, no se descarta.
+    assert flows[date(2026, 6, 3)] == pytest.approx((bumped - 1000.0) * 50.0)
+
+
+def test_record_from_ard_fetches_and_stores(store, monkeypatch):
+    """record_from_ard pega a las categorías de ArgentinaDatos (httpx mockeado) y
+    persiste las filas con ccp del día; las categorías vacías se saltan."""
+    def fake_get(url, *args, **kwargs):
+        if "mercadoDinero" in url:
+            return MockResponse([{"fondo": "MM Uno", "vcp": 100.0, "ccp": 1000.0,
+                                  "patrimonio": 100000.0, "fecha": "2026-06-02"}])
+        if "rentaFija" in url:
             return MockResponse([{"fondo": "RF Dos", "vcp": 50.0, "ccp": 2000.0,
                      "patrimonio": 100000.0, "fecha": "2026-06-02"}])
         return MockResponse([])

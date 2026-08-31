@@ -17,9 +17,10 @@
 {% set MARGIN = 5 %}
 {% set DEFH = (372 / CELL) | round | int %}  {# alto por defecto = el de antes (6×62px) #}
 {% set wide = ["valor_relativo", "panel_lider", "futuros", "bei_tenor", "bei_sendero", "bei_pares"] %}
-{# SSE (§7.4): el server pushea `refresh` cada ciclo del loop → los paneles
-   recargan event-driven. `every 15s` queda como fallback si la conexión SSE
-   se cae (reconexión) o la extensión no carga. #}
+{# SSE (§7.4): el server pushea `refresh` cada ciclo del loop (~7s) → los paneles
+   recargan event-driven. El `every 60s` es solo fallback lento si la conexión SSE
+   se cae (htmx-sse ya reconecta solo); antes era `every 15s` y duplicaba el push
+   del SSE → ~200 req/min por cliente de HTML idéntico, agotando el pool con 3-4. #}
 <div class="grid-stack" data-col="{{ COL }}" data-cell="{{ CELL }}" data-margin="{{ MARGIN }}"
      hx-ext="sse" sse-connect="/stream">
   {% for p in panels %}
@@ -78,8 +79,8 @@
           <tbody id="tbody-{{ p.id }}"
                  hx-get="/panels/{{ p.id }}/rows"
                  {% if p.settle_filter %}hx-vals='js:{settle: panelSettle("{{ p.id }}")}'
-                 hx-trigger="load, sse:refresh, every 15s, settlechange"
-                 {% else %}hx-trigger="load, sse:refresh, every 15s"{% endif %}
+                 hx-trigger="load, sse:refresh, every 60s, settlechange"
+                 {% else %}hx-trigger="load, sse:refresh, every 60s"{% endif %}
                  hx-swap="innerHTML">
             {% with rows=p.rows, ncols=p.columns|length %}
               {% include "fragments/panel_rows.html" %}

@@ -110,7 +110,10 @@ class VanillaStrategy:
     def duration(self, inst, tir: float, ctx: PricingContext) -> Optional[float]:
         settle = ctx.settle
         future_cfs, yfs = metrics.discount_year_fractions(inst, settle)
-        if not future_cfs or tir is None or np.isnan(tir):
+        # tir <= -1.0 → (1+tir) <= 0; elevar a un exponente fraccional da un COMPLEJO
+        # (no lanza, así que el try/except no lo atrapa) que rompe el template con
+        # TypeError. TIR ≤ -100% es degenerado (bono infinito) → None.
+        if not future_cfs or tir is None or not np.isfinite(tir) or tir <= -1.0:
             return None
         try:
             total_pv = 0.0

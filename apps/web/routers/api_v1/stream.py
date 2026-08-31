@@ -18,13 +18,13 @@ async def stream_v1(request: Request, state=Depends(get_state)):
     """SSE endpoint for React SPA. Pushes JSON data instead of a generic refresh trigger."""
     async def event_gen():
         last = state.revision
-        
+
         # Sync inicial
-        # Solo mandamos bonares por ahora (proof-of-concept), en el futuro se 
+        # Solo mandamos bonares por ahora (proof-of-concept), en el futuro se
         # enviará un dict consolidado con los paneles activos del usuario.
         initial_data = build_market_json("bonares", state)
         yield {"event": "market_data", "data": json.dumps(initial_data)}
-        
+
         while True:
             if await request.is_disconnected():
                 break

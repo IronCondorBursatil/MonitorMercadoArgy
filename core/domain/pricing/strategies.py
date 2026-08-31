@@ -197,6 +197,8 @@ class TamarStrategy(VanillaStrategy):
 
     def duration(self, inst, tir, ctx: PricingContext):
         settle = ctx.settle
+        if tir is None or not np.isfinite(tir) or tir <= -1.0:
+            return None   # (1+tir)^(1/12) sería complejo con base ≤ 0
         if inst.maturity_date and inst.maturity_date > settle:
             years = inst.year_fraction_to(inst.maturity_date, settle)
             return years / (1 + tir) ** (1.0 / 12.0)
@@ -255,6 +257,8 @@ class DualCerTamarStrategy(VanillaStrategy):
 
     def duration(self, inst, tir, ctx: PricingContext):
         settle = ctx.settle
+        if tir is None or not np.isfinite(tir) or tir <= -1.0:
+            return None   # (1+tir) ≤ 0 → división por cero / duration sin sentido
         if inst.maturity_date and inst.maturity_date > settle:
             years = inst.year_fraction_to(inst.maturity_date, settle)
             return years / (1 + tir) ** 1.0

@@ -1,7 +1,7 @@
 """Punto de entrada para Vercel Serverless Functions.
 
 Monta la aplicacion FastAPI de apps.web.app en el entorno de Vercel.
-NOTA: Vercel detiene las tareas de fondo tras cada peticion, 
+NOTA: Vercel detiene las tareas de fondo tras cada peticion,
 y el almacenamiento es volatil y de solo lectura (excepto /tmp).
 """
 
@@ -18,4 +18,3 @@ import os
 os.environ["MONITOR_DB_DIR"] = "/tmp/monitor"
 
 # Importar la app de FastAPI
-from apps.web.app import app

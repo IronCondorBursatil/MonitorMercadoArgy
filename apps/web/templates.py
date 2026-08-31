@@ -26,7 +26,7 @@ class AuthJinja2Templates(Jinja2Templates):
     ):
         if context is None:
             context = {}
-            
+
         if "current_user" not in context:
             db = SessionLocal()
             try:
@@ -35,7 +35,7 @@ class AuthJinja2Templates(Jinja2Templates):
                 context["has_tab"] = lambda tab: user and (user.is_admin or "*" in (user.allowed_tabs or []) or tab in (user.allowed_tabs or []))
             finally:
                 db.close()
-                
+
         return super().TemplateResponse(
             request, name, context, status_code, headers, media_type, background
         )

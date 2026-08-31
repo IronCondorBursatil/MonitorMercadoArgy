@@ -37,6 +37,12 @@ pydantic==2.13.4
 pydantic-settings==2.14.1
 optionlab==1.6.0
 
+# --- auth (login JWT + hashing). Sin esto, el bootstrap documentado con el lock
+# (CLAUDE.md/README) revienta con ModuleNotFoundError: core.security las importa. ---
+passlib==1.7.4
+bcrypt==3.2.2
+PyJWT==2.13.0
+
 # --- export PDF del panel ON ---
 fpdf2==2.8.7
 matplotlib==3.10.9

@@ -26,4 +26,7 @@ def test_api_health_reports_degraded_when_stale():
         body = r.json()
         assert body["status"] == "degraded"   # nunca refrescado → degradado
         assert body["is_stale"] is True
-        assert "age_seconds" in body and "last_error" in body
+        assert "age_seconds" in body
+        # `last_error` NO va en el payload público (filtra strings crudos de excepción
+        # con URLs/params internos); el detalle lo muestra el badge, detrás de login.
+        assert "last_error" not in body

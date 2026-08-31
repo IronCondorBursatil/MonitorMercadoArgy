@@ -1,7 +1,6 @@
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 class RequiresLoginException(Exception):
@@ -26,18 +25,18 @@ def _get_user_from_token(request: Request, db: Session) -> Optional[UserORM]:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
-            
+
     if not token:
         return None
-        
+
     payload = decode_access_token(token)
     if not payload:
         return None
-        
+
     username: str = payload.get("sub")
     if username is None:
         return None
-        
+
     user = db.query(UserORM).filter(UserORM.username == username).first()
     return user
 
@@ -78,10 +77,10 @@ class RequireTabPermission:
     def __call__(self, current_user: UserORM = Depends(get_current_user_html)):
         if current_user.is_admin:
             return current_user
-        
+
         tabs = current_user.allowed_tabs or []
         if "*" in tabs or self.tab_name in tabs:
             return current_user
-            
+
         raise RequiresLoginException() # O un 403, pero RequiresLoginException lo redirige a un lugar seguro/Login. Alternativamente, lanzar 403 Forbidden.
 

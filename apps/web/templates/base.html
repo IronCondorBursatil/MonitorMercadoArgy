@@ -139,6 +139,12 @@
                  hx-get="/source/menu" hx-trigger="load"
                  hx-target="#source-wrap" hx-swap="outerHTML"></details>
         <button class="theme-btn" onclick="toggleTheme()" title="Cambiar tema">◑</button>
+        {# Logout por POST (no GET, anti-CSRF). Solo si hay sesión. #}
+        {% if current_user %}
+        <form method="post" action="/logout" style="display:inline">
+          <button type="submit" class="theme-btn" title="Cerrar sesión ({{ current_user.username }})">⎋</button>
+        </form>
+        {% endif %}
       </nav>
     </div>
     {# Strip de cotizaciones (dólares + reservas + riesgo país). Autocargable por

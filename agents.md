@@ -240,9 +240,9 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
 
 ### Bonos TAMAR (PURO, DUAL, DUAL_CER_TAMAR)
 
-- **`spread`**: anual decimal sobre TAMAR (ej. 0.05 = TAMAR + 5%). Aplica al rail TAMAR diario: `(1 + (TAMAR_d + spread)/365)`.
-- **`tasa_fija_mensual`** (solo DUAL): floor mensual decimal. Bond paga max(TAMAR diario, fixed_daily).
-- **`cer_base` + `cer_spread`** (solo DUAL_CER_TAMAR, serie TXMJ*): rail CER independiente. Payoff a vto = max(rail_TAMAR, CER_ratio × (1+cer_spread)^years). Para futuros lejanos, CER se proyecta linealmente desde los últimos 30 días observados (`_project_cer_at`).
+- **`spread`**: anual decimal sobre TAMAR (ej. 0.05 = TAMAR + 5%). ⚠️ **DESACTUALIZADO** (el código manda): el rail NO es diario `(1+(TAMAR_d+spread)/365)`. El BONTE TAMAR capitaliza **mensualmente** — `conventions.py:23-31` (`_TAMAR_K = 365/32`, `tamar_tem`) y `tamar.py:145-149` (`payoff = 100·(1+tem_max)^n_months`, validado contra Balanz para TTJ26). Ver el docstring de `tamar.py`.
+- **`tasa_fija_mensual`** (solo DUAL): floor **mensual** decimal. Bond paga `max(tem_tamar, floor_mensual)` por mes (no diario).
+- **`cer_base` + `cer_spread`** (solo DUAL_CER_TAMAR, serie TXMJ*): rail CER independiente. Payoff a vto = max(rail_TAMAR, CER_ratio × (1+cer_spread)^years). ⚠️ Para futuros lejanos el CER se proyecta **compuesto**, NO linealmente — `tamar.project_cer_at` (la línea vieja decía "linealmente").
 - **MD bullet** TAMAR/DUAL usa **m=12** (capitalización mensual) → `MD = years / (1+TEA)^(1/12)`. DL usa m=1.
 - **Panel TAMAR** incluye los bonos DUAL re-valuados como si fueran PURO (sufijo `_TAM`) via `FinancialEngine.recompute_as_tamar_puro`.
 
@@ -368,9 +368,12 @@ Los métodos públicos que dependen del settle date aceptan un parámetro opcion
 
 Helper interno: `_resolve_settle(instrument_type, override)` — `override if override is not None else _settlement_for(instrument_type)`.
 
-**Convención T+0 / T+1** en `_settlement_for`:
-- **T+0** (Contado Inmediato): LECAP, BONCAP, LECER, cualquier tipo con token "CI"
-- **T+1**: todo lo demás (BONAR, GLOBAL, BOPREAL, CER, DOLAR_LINKED, TAMAR PURO, DUAL, DUAL_CER_TAMAR)
+**Convención T+0 / T+1** — ⚠️ **DESACTUALIZADO** (el código manda): `conventions.py:104-107`
+usa **lag=1 (T+1) para TODOS los tipos**, LECAP/BONCAP/LECER incluidos (el motor legacy
+congelado hace lo mismo → el cambio es anterior al refactor). El toggle T+0/T+1 del popup
+sigue siendo del usuario, pero el default por tipo ya no distingue LECAP. La descripción vieja:
+- ~~**T+0** (Contado Inmediato): LECAP, BONCAP, LECER, cualquier tipo con token "CI"~~
+- ~~**T+1**: todo lo demás~~
 
 ### Curvas y BEI ([core/domain/yield_curve.py](core/domain/yield_curve.py))
 

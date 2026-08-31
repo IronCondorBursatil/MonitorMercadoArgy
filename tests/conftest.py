@@ -65,3 +65,53 @@ def tmp_db(tmp_path):
         yield tmp_path
     finally:
         db_engine.configure(settings.catalog_db)
+
+
+# --------------------------------------------------------------------------- #
+# Bypass de auth (los 3 commits de auth cablearon RequireTabPermission en los 12
+# routers pero no tocaron tests/ → 87 tests recibían el HTML de /login). Por
+# defecto los tests corren como un admin autenticado: overrideamos las deps hoja
+# de auth (get_current_user*) por un admin falso; RequireTabPermission.__call__ y
+# get_admin_user* pasan por el short-circuit de is_admin. Los tests que ejercen la
+# auth REAL (login/permisos) marcan @pytest.mark.noauth para NO recibir el bypass.
+# Function-scoped: se re-aplica en cada test, así los `dependency_overrides.clear()`
+# de teardown de otros tests no lo dejan sin efecto para el resto de la corrida.
+# --------------------------------------------------------------------------- #
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "noauth: correr el test SIN el bypass de auth (auth real)")
+
+
+class _FakeAdminUser:
+    id = 1
+    username = "test-admin"
+    is_admin = True
+    allowed_tabs = ["*"]
+    hashed_password = ""
+
+
+@pytest.fixture(autouse=True)
+def _auth_bypass(request, monkeypatch):
+    if "noauth" in request.keywords:
+        yield
+        return
+    from apps.web.app import app
+    from apps.web import deps_auth
+    fake = _FakeAdminUser()
+    overrides = {
+        deps_auth.get_current_user: lambda: fake,
+        deps_auth.get_current_user_html: lambda: fake,
+        deps_auth.get_admin_user: lambda: fake,
+        deps_auth.get_admin_user_html: lambda: fake,
+    }
+    app.dependency_overrides.update(overrides)
+    # El contexto del template resuelve el usuario aparte de las dependencias
+    # (templates.py llama a _get_user_from_token directo, no vía Depends) → sin esto
+    # `has_tab()` devuelve False y el nav renderiza vacío en los tests.
+    monkeypatch.setattr("apps.web.templates._get_user_from_token",
+                        lambda request, db=None: fake, raising=False)
+    try:
+        yield
+    finally:
+        for key in overrides:
+            app.dependency_overrides.pop(key, None)
