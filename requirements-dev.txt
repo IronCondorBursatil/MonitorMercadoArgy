@@ -1,0 +1,14 @@
+# Dependencias de DESARROLLO — NO se instalan en producción.
+#
+# Ni `deploy.sh` (droplet) ni el `Dockerfile` (Render) las traen: ambos instalan
+# `requirements.txt`. Sacarlas de ahí ahorra ~47 MB y ~1.200 archivos por deploy,
+# en los DOS targets — y en Render el plan free tiene 512 MB, así que cuenta doble.
+#
+# Instalación local (para correr el gate):
+#   py -3.12 -m pip install -r requirements.lock -r requirements-dev.txt
+#
+# Versiones fijas: mismo criterio que requirements.lock (estado conocido-bueno).
+
+pytest==9.0.3
+hypothesis==6.155.2      # property-based testing (invariantes de pricing/day-count)
+ruff==0.15.16            # linter (config en ruff.toml): F/E/W, sin reformateo masivo

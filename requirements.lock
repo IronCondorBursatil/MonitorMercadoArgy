@@ -47,7 +47,4 @@ PyJWT==2.13.0
 fpdf2==2.8.7
 matplotlib==3.10.9
 
-# --- dev ---
-pytest==9.0.3
-hypothesis==6.155.2
-ruff==0.15.16
+# --- dev: ver requirements-dev.txt (fuera de prod) ---

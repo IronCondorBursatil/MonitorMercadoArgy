@@ -18,7 +18,7 @@ Python 3.12 del sistema, **sin venv en el proyecto** (el venv del servidor lo cr
 ```powershell
 $py = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"   # o: py -3.12
 
-& $py -m pip install -r requirements.lock   # instalación reproducible (versiones fijas)
+& $py -m pip install -r requirements.lock -r requirements-dev.txt   # runtime + gate
 & $py run.py                                 # → http://localhost:8000  (o run.bat)
 ```
 

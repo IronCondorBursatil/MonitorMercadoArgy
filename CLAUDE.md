@@ -15,7 +15,8 @@ Bopreales, Futuros DLR, BEI, Panel Líder) + Cartera + ABM. Precios de **Data912
 # Python 3.12 del sistema (el de Programs; `py -3.12` resuelve a él). El antiguo
 # "Microsoft Store Python" ya NO existe en esta máquina — ver memoria env_python_interpreter.
 $py = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"   # o simplemente: py -3.12
-& $py -m pip install -r requirements.lock   # instalación reproducible (versiones fijas)
+& $py -m pip install -r requirements.lock -r requirements-dev.txt   # runtime + gate
+# (prod instala SOLO requirements.txt: pytest/hypothesis/ruff no van al servidor)
 & $py run.py                          # levanta uvicorn → http://localhost:8000
 & $py -m pytest tests/ -q             # tests (~1270)
 pwsh scripts/check.ps1                # GATE: ruff + pytest (antes de cerrar branch)

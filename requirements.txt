@@ -34,7 +34,7 @@ PyJWT                    # generación y validación de tokens JWT (cookies)
 fpdf2                    # armado del PDF (Unicode vía arial.ttf de Windows)
 matplotlib               # scatter TIR-vs-MD de las tarjetas (sin él → PDF sin charts)
 
-# --- dev ---
-pytest
-hypothesis              # property-based testing (invariantes de pricing/day-count)
-ruff                    # linter (config en pyproject.toml): F/E/W, sin reformateo masivo
+# --- dev: ver requirements-dev.txt ---
+# pytest / hypothesis / ruff NO van acá: los instalan deploy.sh y el Dockerfile, y son
+# ~47 MB inútiles en produccion (Render free tiene 512 MB). Para el gate local:
+#   py -3.12 -m pip install -r requirements.lock -r requirements-dev.txt
