@@ -34,6 +34,16 @@ from core.infrastructure.db.models import BymaCatalogORM, InstrumentORM  # noqa:
 
 SHEET = "Obligaciones_Negociables"
 
+# ON sin ficha en el Universo BYMA, identificadas a mano contra fuentes publicas
+# (2026-08-31). Solo se cargan las que tienen fuente verificable; las que no se
+# pudieron identificar (EAC4O, RAC8O, SIC2O) se dejan sin emisor a proposito:
+# un nombre equivocado clasifica mal el bono y es peor que dejarlo en "Otros".
+MANUAL: dict[str, str] = {
+    "DNCBO": "Empresa Distribuidora y Comercializadora Norte S.A.",  # EDENOR
+    "OZC8O": "Empresa Distribuidora de Electricidad de Mendoza S.A.",  # EDEMSA
+    "MTC2O": "Mastellone Hermanos S.A.",                             # La Serenisima
+}
+
 
 def _needs_fix(short_name: str | None, ticker: str) -> bool:
     sn = (short_name or "").strip()
@@ -59,7 +69,7 @@ def main(dry: bool) -> int:
         resueltos, sin_resolver = [], []
         for o in pendientes:
             emi = next((universo[t] for t in (o.ticker, o.ticker_mep, o.ticker_ccl)
-                        if t and t in universo), None)
+                        if t and t in universo), None) or MANUAL.get(o.ticker)
             (resueltos if emi else sin_resolver).append((o, emi))
 
         print(f"\nresueltos: {len(resueltos)}  |  sin resolver: {len(sin_resolver)}")
