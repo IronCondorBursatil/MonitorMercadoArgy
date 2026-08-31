@@ -33,7 +33,7 @@ from typing import Any, Callable, List, Optional, Tuple
 import numpy as np
 
 from apps.cli._common import build_use_case
-from config.settings import settings
+from core.infrastructure.history_paths import resolve_read, state_path
 from core.domain.inflation_path import monthly_inflation_path
 from core.domain.instrument_groups import CER, DUAL_TAMAR, TAMAR, TASA_FIJA
 from core.domain.yield_curve import (
@@ -115,7 +115,9 @@ _TENORS = [
     ("18M", 1.50), ("2Y", 2.00), ("3Y", 3.00),
 ]
 
-_HISTORY_CSV = os.path.join(str(settings.history_dir), "bei_diario.csv")
+# Estado de runtime, FUERA del working tree (ver history_paths.py): el loop del BEI
+# apendea una fila por rueda y en data/history/ eso ensuciaba el arbol de git.
+_HISTORY_CSV = state_path("bei_diario.csv")
 _HISTORY_COLS = [
     "fecha", "tenor_label", "tenor_years",
     "tea_nominal", "tea_real", "tamar_fwd",
@@ -282,9 +284,10 @@ def _append_history(rows: list):
     the file, skip. The dedup check scans the tail rather than the whole file
     so it stays O(1) regardless of history length."""
     today_str = date.today().strftime("%Y-%m-%d")
-    if os.path.isfile(_HISTORY_CSV):
+    _hist_src = resolve_read(_HISTORY_CSV)
+    if os.path.isfile(_hist_src):
         try:
-            with open(_HISTORY_CSV, "rb") as f:
+            with open(_hist_src, "rb") as f:
                 # Cheap tail scan: read last ~4 KiB which holds the most
                 # recent ~25 rows (1 BEI snapshot = ~7 rows ≈ 1 KiB).
                 f.seek(0, os.SEEK_END)

@@ -11,6 +11,10 @@ venv/
 
 # Logs
 *.log
+# Rotados de logrotate/systemd: `*.log` NO los matchea (terminan en .1, .2, ...).
+# Sin esto quedan como untracked en la raiz y ensucian el arbol en cada git pull.
+*.log.[0-9]
+*.log.[0-9].gz
 
 # Generated artifacts (PNG outputs, caches)
 data/monitor_*.png

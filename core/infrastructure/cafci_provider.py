@@ -37,7 +37,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
-from config.settings import settings
+from core.infrastructure.history_paths import resolve_read, state_path
 # Helpers/endpoints viven en core.domain.fci (fuente única): _to_float parsea los
 # números-string de CAFCI; _ARD_FCI_CATEGORIAS son los endpoints del fallback ArgentinaDatos.
 from core.domain.fci import ARD_FCI_ENDPOINTS as _ARD_FCI_CATEGORIAS
@@ -56,7 +56,8 @@ def _ar_today() -> date:
 
 
 _CAFCI_URL  = "https://estadisticas.cafci.org.ar/comparador-de-fondos.json"
-_CAFCI_JSON = os.path.join(str(settings.history_dir), "cafci_diario.json")
+# Estado de runtime, fuera del working tree (ver history_paths.py).
+_CAFCI_JSON = state_path("cafci_diario.json")
 
 # Periods present in matriz.clases[*] (no 1-day point upstream — shortest is 7d).
 _PERIODS = ("dias_7", "mes_1", "dias_90", "dias_180", "ytd", "meses_12")
@@ -190,7 +191,7 @@ class CAFCIProvider:
 
     @classmethod
     def _hydrate_from_disk(cls) -> None:
-        data = _load_json(_CAFCI_JSON)
+        data = _load_json(resolve_read(_CAFCI_JSON))
         if data:
             cls._dataset = data
             logger.info(

@@ -23,7 +23,7 @@ import threading
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Optional
 
-from config.settings import settings
+from core.infrastructure.history_paths import resolve_read, state_path
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +39,13 @@ def _ar_today() -> date:
 
 _BCRA_BASE = "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias"
 
-_HISTORY_DIR = str(settings.history_dir)
-_CER_CSV      = os.path.join(_HISTORY_DIR, "cer_diario.csv")
-_TAMAR_CSV    = os.path.join(_HISTORY_DIR, "tamar_diario.csv")
-_A3500_CSV    = os.path.join(_HISTORY_DIR, "a3500_diario.csv")
-_RESERVAS_CSV = os.path.join(_HISTORY_DIR, "reservas_diario.csv")
+# Semilla versionada vs. estado de runtime — ver core/infrastructure/history_paths.py.
+# Estos CSV se reescriben en cada ciclo; si el destino cae en data/history/ (que esta
+# en git) el `git pull` del deploy aborta contra el arbol sucio.
+_CER_CSV      = state_path("cer_diario.csv")
+_TAMAR_CSV    = state_path("tamar_diario.csv")
+_A3500_CSV    = state_path("a3500_diario.csv")
+_RESERVAS_CSV = state_path("reservas_diario.csv")
 
 
 def _fetch_series(variable_id: int, days: int) -> Dict[date, float]:
@@ -91,8 +93,14 @@ async def _async_fetch_series(client, variable_id: int, days: int) -> Dict[date,
 
 
 def _load_csv(path: str) -> Dict[date, float]:
-    """Read a `fecha,valor` CSV into a date->float dict. Missing file = {}."""
+    """Read a `fecha,valor` CSV into a date->float dict. Missing file = {}.
+
+    Si el archivo de ESTADO todavia no existe (clon nuevo, primer arranque tras el
+    deploy), cae a la SEMILLA versionada del repo con el mismo nombre. La semilla
+    solo se lee: la acumulacion posterior va siempre al state dir.
+    """
     out: Dict[date, float] = {}
+    path = resolve_read(path)
     if not os.path.isfile(path):
         return out
     try:

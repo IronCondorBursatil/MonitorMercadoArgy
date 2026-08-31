@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     # Datos append-only versionados en el repo (CSVs, xlsx seed).
     data_dir: Path = _BASE_DIR / "data"
     master_xlsx: Path = _BASE_DIR / "data" / "instruments_master.xlsx"
+    # SEMILLA versionada, read-only: bootstrap de un clon nuevo. La app NUNCA
+    # escribe aca (ver history_state_dir).
     history_dir: Path = _BASE_DIR / "data" / "history"
     # Bases .db FUERA del working tree: la catalog.db es la fuente de verdad y no debe
     # quedar donde corre git pull/clean (ver invariante en CLAUDE.md).
@@ -98,6 +100,12 @@ class Settings(BaseSettings):
     # 1×/día al arrancar, rota a `backup_keep` archivos por pool (daily y tagged por
     # separado — ver backup.py). Fuera del working tree.
     backup_dir: Path = db_dir / "backups"
+    # ESTADO de runtime de las series de indices (CER/TAMAR/A3500/reservas).
+    # Va FUERA del working tree: estos CSV se reescriben en cada ciclo y, cuando
+    # vivian en data/history/ (versionado), dejaban el arbol del droplet sucio de
+    # forma permanente y `git pull` abortaba en cada deploy. Se siembra de
+    # history_dir la primera vez y a partir de ahi acumula solo aca.
+    history_state_dir: Path = db_dir / "history"
     backup_keep: int = 7
     # Cierres diarios por ticker (variaciones Sem/1M/3M/YTD/1A). Se auto-mantiene
     # (priming Data912 historical + acumulación del feed vivo) — ver price_history.py.
