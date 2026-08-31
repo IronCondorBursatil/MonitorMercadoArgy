@@ -1,8 +1,8 @@
 # Dependencias de DESARROLLO — NO se instalan en producción.
 #
-# Ni `deploy.sh` (droplet) ni el `Dockerfile` (Render) las traen: ambos instalan
-# `requirements.txt`. Sacarlas de ahí ahorra ~47 MB y ~1.200 archivos por deploy,
-# en los DOS targets — y en Render el plan free tiene 512 MB, así que cuenta doble.
+# Ni `deploy.sh` ni el `Dockerfile` las traen: ambos instalan
+# `requirements.txt`. Sacarlas de ahí ahorra ~47 MB y ~1.200 archivos en cada
+# deploy del droplet.
 #
 # Instalación local (para correr el gate):
 #   py -3.12 -m pip install -r requirements.lock -r requirements-dev.txt

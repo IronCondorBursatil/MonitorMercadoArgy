@@ -4,9 +4,9 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 # Evitar que Python haga buffer a stdout/stderr
 ENV PYTHONUNBUFFERED=1
-# Host de uvicorn y puerto dinamico de Render
+# Host de uvicorn y puerto (override por env en plataformas que lo asignan solas)
 ENV MONITOR_HOST="0.0.0.0"
-# Render define $PORT dinamicamente, pero damos 8000 como default
+# 8000 por default; si la plataforma inyecta $PORT, se pisa por env
 ENV MONITOR_PORT="8000"
 # Definir directorio de base de datos local para entorno Linux (dentro de /app)
 ENV MONITOR_DB_DIR="/app/monitor"

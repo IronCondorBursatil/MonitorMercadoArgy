@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # `Requires-Dist` duro suyo) y cuesta ~1,1 s de arranque y ~48,5 MB de RSS que se
 # pagaban SIEMPRE, aunque nadie abriera el analytics de opciones. Ahora se paga en
 # el primer POST /options/analytics — un endpoint on-demand que corre en el
-# threadpool, no en el event loop. Importa sobre todo en Render (plan free: 512 MB).
+# threadpool, no en el event loop.
 # Si `optionlab` no está instalado, el wrapper degrada devolviendo None.
 _ol_run_strategy = None
 _AVAILABLE = None            # None = todavía no se intentó importar
