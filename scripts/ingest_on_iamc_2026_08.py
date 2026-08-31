@@ -25,7 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scratch"))
+sys.path.insert(0, str(ROOT / "data" / "iamc"))
 
 from dateutil.relativedelta import relativedelta  # noqa: E402
 
@@ -216,7 +216,7 @@ def validar(row: dict) -> dict:
 
 
 def main(dry_run: bool = False) -> int:
-    from on_iamc_data import ONS
+    from on_data_2026_08_28 import ONS
 
     # Se procesan TODOS los que tienen cronograma derivable: bullets + amortizables
     # con (frec. pago capital, próximo pago capital) publicados -> AMORT_CAP.

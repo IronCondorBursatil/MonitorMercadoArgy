@@ -1,0 +1,4057 @@
+{
+ "BUN26": {
+  "ticker": "BUN26",
+  "short_name": "Letra Chubut S.CXVI Cl.2 Nov-26",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0008294347",
+  "emission_date": "2026-03-05",
+  "maturity_date": "2026-11-29",
+  "day_count": "ACT/365",
+  "payment_frequency": 12,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-04-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.474932
+   },
+   {
+    "fecha_pago": "2026-05-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.560274
+   },
+   {
+    "fecha_pago": "2026-06-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.560274
+   },
+   {
+    "fecha_pago": "2026-07-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.560274
+   },
+   {
+    "fecha_pago": "2026-08-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.560274
+   },
+   {
+    "fecha_pago": "2026-08-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.560274
+   },
+   {
+    "fecha_pago": "2026-09-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.560274
+   },
+   {
+    "fecha_pago": "2026-10-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.560274
+   },
+   {
+    "fecha_pago": "2026-11-29",
+    "amortizacion": 100.0,
+    "cupon_interes": 2.560274
+   }
+  ]
+ },
+ "CO3D7": {
+  "ticker": "CO3D7",
+  "short_name": "Cordoba Cl.6 CER 2027",
+  "instrument_type": "BONCER",
+  "sheet": "Provinciales",
+  "isin": "AR0545352251",
+  "emission_date": "2025-12-05",
+  "maturity_date": "2027-12-05",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "Argentina",
+  "cer_base": 655.19398285644,
+  "cashflows": [
+   {
+    "fecha_pago": "2026-06-05",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2026-12-05",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2027-06-05",
+    "amortizacion": 25.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2027-12-05",
+    "amortizacion": 75.0,
+    "cupon_interes": 3.65625
+   }
+  ],
+  "cer_lag": 10
+ },
+ "COY27": {
+  "ticker": "COY27",
+  "short_name": "Cordoba Cl.2 CER 2027",
+  "instrument_type": "BONCER",
+  "sheet": "Provinciales",
+  "isin": "AR0401732018",
+  "emission_date": "2024-05-24",
+  "maturity_date": "2027-05-24",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "Argentina",
+  "cer_base": 366.38035981061,
+  "cashflows": [
+   {
+    "fecha_pago": "2024-11-24",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.25
+   },
+   {
+    "fecha_pago": "2025-05-24",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.25
+   },
+   {
+    "fecha_pago": "2025-11-24",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.25
+   },
+   {
+    "fecha_pago": "2026-05-24",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.25
+   },
+   {
+    "fecha_pago": "2026-11-24",
+    "amortizacion": 25.0,
+    "cupon_interes": 2.25
+   },
+   {
+    "fecha_pago": "2027-05-24",
+    "amortizacion": 75.0,
+    "cupon_interes": 1.6875
+   }
+  ],
+  "cer_lag": 10
+ },
+ "PMM27": {
+  "ticker": "PMM27",
+  "short_name": "Mendoza CER Cl.2 2027",
+  "instrument_type": "BONCER ZC",
+  "sheet": "Provinciales",
+  "isin": "AR0970492929",
+  "emission_date": "2024-03-14",
+  "maturity_date": "2027-03-14",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "Argentina",
+  "cer_base": 267.56871670344,
+  "cashflows": [
+   {
+    "fecha_pago": "2026-09-14",
+    "amortizacion": 33.33,
+    "cupon_interes": 0.0
+   },
+   {
+    "fecha_pago": "2026-12-14",
+    "amortizacion": 33.33,
+    "cupon_interes": 0.0
+   },
+   {
+    "fecha_pago": "2027-03-14",
+    "amortizacion": 33.34,
+    "cupon_interes": 0.0
+   }
+  ],
+  "cer_lag": 10
+ },
+ "BAS26": {
+  "ticker": "BAS26",
+  "short_name": "Munic. Cordoba Ser.I 2026",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0180354703",
+  "emission_date": "2024-09-09",
+  "maturity_date": "2026-09-09",
+  "day_count": "ACT/365",
+  "payment_frequency": 4,
+  "ley_aplicable": "ARG",
+  "cashflows": [
+   {
+    "fecha_pago": "2024-12-09",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.080548
+   },
+   {
+    "fecha_pago": "2025-03-09",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.00274
+   },
+   {
+    "fecha_pago": "2025-06-09",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.158356
+   },
+   {
+    "fecha_pago": "2025-09-09",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.158356
+   },
+   {
+    "fecha_pago": "2025-12-09",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.080548
+   },
+   {
+    "fecha_pago": "2026-03-09",
+    "amortizacion": 33.0,
+    "cupon_interes": 7.00274
+   },
+   {
+    "fecha_pago": "2026-06-09",
+    "amortizacion": 33.0,
+    "cupon_interes": 4.796099
+   },
+   {
+    "fecha_pago": "2026-09-09",
+    "amortizacion": 34.0,
+    "cupon_interes": 2.433841
+   }
+  ]
+ },
+ "SFN27": {
+  "ticker": "SFN27",
+  "short_name": "Santa Fe Vial 2027",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0810026069",
+  "emission_date": "2024-11-25",
+  "maturity_date": "2027-11-25",
+  "day_count": "ACT/365",
+  "payment_frequency": 4,
+  "ley_aplicable": "ARG",
+  "cashflows": [
+   {
+    "fecha_pago": "2025-02-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.763288
+   },
+   {
+    "fecha_pago": "2025-05-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.510137
+   },
+   {
+    "fecha_pago": "2025-08-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.763288
+   },
+   {
+    "fecha_pago": "2025-11-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.763288
+   },
+   {
+    "fecha_pago": "2026-02-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.763288
+   },
+   {
+    "fecha_pago": "2026-05-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.510137
+   },
+   {
+    "fecha_pago": "2026-08-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.763288
+   },
+   {
+    "fecha_pago": "2026-11-25",
+    "amortizacion": 33.33,
+    "cupon_interes": 7.763288
+   },
+   {
+    "fecha_pago": "2027-02-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 5.175784
+   },
+   {
+    "fecha_pago": "2027-05-25",
+    "amortizacion": 33.33,
+    "cupon_interes": 5.007008
+   },
+   {
+    "fecha_pago": "2027-08-25",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.58828
+   },
+   {
+    "fecha_pago": "2027-11-25",
+    "amortizacion": 33.34,
+    "cupon_interes": 2.58828
+   }
+  ]
+ },
+ "TB27": {
+  "ticker": "TB27",
+  "short_name": "BONTE BADLAR 2027",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Tasa Fija",
+  "isin": "ARARGE320D33",
+  "emission_date": "2022-11-23",
+  "maturity_date": "2027-11-23",
+  "day_count": "ACT/365",
+  "payment_frequency": 4,
+  "ley_aplicable": "ARG",
+  "cashflows": [
+   {
+    "fecha_pago": "2023-02-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.058082
+   },
+   {
+    "fecha_pago": "2023-05-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.925753
+   },
+   {
+    "fecha_pago": "2023-08-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.058082
+   },
+   {
+    "fecha_pago": "2023-11-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.058082
+   },
+   {
+    "fecha_pago": "2024-02-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.058082
+   },
+   {
+    "fecha_pago": "2024-05-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.969863
+   },
+   {
+    "fecha_pago": "2024-08-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.058082
+   },
+   {
+    "fecha_pago": "2024-11-23",
+    "amortizacion": 25.0,
+    "cupon_interes": 4.058082
+   },
+   {
+    "fecha_pago": "2025-02-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.043562
+   },
+   {
+    "fecha_pago": "2025-05-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.944315
+   },
+   {
+    "fecha_pago": "2025-08-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.043562
+   },
+   {
+    "fecha_pago": "2025-11-23",
+    "amortizacion": 25.0,
+    "cupon_interes": 3.043562
+   },
+   {
+    "fecha_pago": "2026-02-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.029041
+   },
+   {
+    "fecha_pago": "2026-05-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.962877
+   },
+   {
+    "fecha_pago": "2026-08-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.029041
+   },
+   {
+    "fecha_pago": "2026-11-23",
+    "amortizacion": 25.0,
+    "cupon_interes": 2.029041
+   },
+   {
+    "fecha_pago": "2027-02-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.014521
+   },
+   {
+    "fecha_pago": "2027-05-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.981438
+   },
+   {
+    "fecha_pago": "2027-08-23",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.014521
+   },
+   {
+    "fecha_pago": "2027-11-23",
+    "amortizacion": 25.0,
+    "cupon_interes": 1.014521
+   }
+  ]
+ },
+ "S15S6": {
+  "ticker": "S15S6",
+  "short_name": "S15S6",
+  "instrument_type": "LECAP",
+  "sheet": "Tasa_Fija",
+  "isin": "AR0614758420",
+  "emission_date": "2026-05-29",
+  "maturity_date": "2026-09-15",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "Argentina",
+  "cer_base": 1.0,
+  "floor_rate_monthly": 0.0199,
+  "cashflows": [
+   {
+    "fecha_pago": "2026-09-15",
+    "amortizacion": 107.21037727507621,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "S16O6": {
+  "ticker": "S16O6",
+  "short_name": "S16O6",
+  "instrument_type": "LECAP",
+  "sheet": "Tasa_Fija",
+  "isin": "AR0183520128",
+  "emission_date": "2026-07-31",
+  "maturity_date": "2026-10-16",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "Argentina",
+  "cer_base": 1.0,
+  "floor_rate_monthly": 0.0205,
+  "cashflows": [
+   {
+    "fecha_pago": "2026-10-16",
+    "amortizacion": 105.2752519814636,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "S13N6": {
+  "ticker": "S13N6",
+  "short_name": "S13N6",
+  "instrument_type": "LECAP",
+  "sheet": "Tasa_Fija",
+  "isin": "AR0087656622",
+  "emission_date": "2026-06-30",
+  "maturity_date": "2026-11-13",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "Argentina",
+  "cer_base": 1.0,
+  "floor_rate_monthly": 0.021,
+  "cashflows": [
+   {
+    "fecha_pago": "2026-11-13",
+    "amortizacion": 109.65138541823494,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "AO29": {
+  "ticker": "AO29",
+  "short_name": "Bono Tesoro Nacional USD 6% 2029",
+  "instrument_type": "BONAR",
+  "sheet": "Soberanos",
+  "isin": "AR0550263393",
+  "emission_date": "2026-07-16",
+  "maturity_date": "2029-10-31",
+  "day_count": "30/360",
+  "payment_frequency": 12,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-07-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.25
+   },
+   {
+    "fecha_pago": "2026-08-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2026-09-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2026-10-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2026-11-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2026-12-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-01-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-02-28",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.4667
+   },
+   {
+    "fecha_pago": "2027-03-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.55
+   },
+   {
+    "fecha_pago": "2027-04-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-05-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-06-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-07-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-08-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-09-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-10-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-11-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2027-12-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-01-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-02-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.4833
+   },
+   {
+    "fecha_pago": "2028-03-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5333
+   },
+   {
+    "fecha_pago": "2028-04-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-05-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-06-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-07-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-08-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-09-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-10-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-11-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2028-12-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2029-01-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2029-02-28",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.4667
+   },
+   {
+    "fecha_pago": "2029-03-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.55
+   },
+   {
+    "fecha_pago": "2029-04-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2029-05-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2029-06-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2029-07-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2029-08-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2029-09-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.5
+   },
+   {
+    "fecha_pago": "2029-10-31",
+    "amortizacion": 100.0,
+    "cupon_interes": 0.5
+   }
+  ]
+ },
+ "BPOA8": {
+  "ticker": "BPOA8",
+  "short_name": "BOPREAL Serie 4A",
+  "instrument_type": "BOPREAL",
+  "sheet": "Soberanos",
+  "isin": "AR0029227748",
+  "emission_date": "2025-06-24",
+  "maturity_date": "2028-10-31",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2025-10-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.0583
+   },
+   {
+    "fecha_pago": "2026-04-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.5
+   },
+   {
+    "fecha_pago": "2026-10-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.5
+   },
+   {
+    "fecha_pago": "2027-04-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.5
+   },
+   {
+    "fecha_pago": "2027-10-31",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.5
+   },
+   {
+    "fecha_pago": "2028-04-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.5
+   },
+   {
+    "fecha_pago": "2028-10-31",
+    "amortizacion": 100.0,
+    "cupon_interes": 1.5
+   }
+  ]
+ },
+ "BAF27": {
+  "ticker": "BAF27",
+  "short_name": "Munic. Cordoba S-II 2027",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0562543014",
+  "emission_date": "2025-11-13",
+  "maturity_date": "2027-02-13",
+  "day_count": "ACT/365",
+  "payment_frequency": 12,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2025-12-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-01-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-02-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-03-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-04-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-05-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-06-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-07-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-08-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-09-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-10-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2026-12-13",
+    "amortizacion": 25.0,
+    "cupon_interes": 2.666667
+   },
+   {
+    "fecha_pago": "2027-01-13",
+    "amortizacion": 25.0,
+    "cupon_interes": 2.0
+   },
+   {
+    "fecha_pago": "2027-02-13",
+    "amortizacion": 50.0,
+    "cupon_interes": 1.333333
+   }
+  ]
+ },
+ "BAM27": {
+  "ticker": "BAM27",
+  "short_name": "Munic. Cordoba S-I 2027",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0971566150",
+  "emission_date": "2025-03-26",
+  "maturity_date": "2027-03-26",
+  "day_count": "ACT/365",
+  "payment_frequency": 4,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2025-06-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.15
+   },
+   {
+    "fecha_pago": "2025-09-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.15
+   },
+   {
+    "fecha_pago": "2025-12-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.15
+   },
+   {
+    "fecha_pago": "2026-03-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.15
+   },
+   {
+    "fecha_pago": "2026-06-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.15
+   },
+   {
+    "fecha_pago": "2026-09-26",
+    "amortizacion": 50.0,
+    "cupon_interes": 9.15
+   },
+   {
+    "fecha_pago": "2026-12-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.575
+   },
+   {
+    "fecha_pago": "2027-03-26",
+    "amortizacion": 50.0,
+    "cupon_interes": 4.575
+   }
+  ]
+ },
+ "BAO27": {
+  "ticker": "BAO27",
+  "short_name": "Munic. Cordoba Proveedores 2027",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0966036656",
+  "emission_date": "2025-10-01",
+  "maturity_date": "2027-10-01",
+  "day_count": "ACT/365",
+  "payment_frequency": 3,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-02-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.166667
+   },
+   {
+    "fecha_pago": "2026-06-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.166667
+   },
+   {
+    "fecha_pago": "2026-10-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.166667
+   },
+   {
+    "fecha_pago": "2027-02-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.166667
+   },
+   {
+    "fecha_pago": "2027-06-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.166667
+   },
+   {
+    "fecha_pago": "2027-10-01",
+    "amortizacion": 100.0,
+    "cupon_interes": 9.166667
+   }
+  ]
+ },
+ "ERE27": {
+  "ticker": "ERE27",
+  "short_name": "Entre Rios S-II 2027",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0987015754",
+  "emission_date": "2025-07-17",
+  "maturity_date": "2027-01-17",
+  "day_count": "ACT/365",
+  "payment_frequency": 4,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2025-10-17",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.225
+   },
+   {
+    "fecha_pago": "2026-01-17",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.225
+   },
+   {
+    "fecha_pago": "2026-04-17",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.225
+   },
+   {
+    "fecha_pago": "2026-07-17",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.225
+   },
+   {
+    "fecha_pago": "2026-10-17",
+    "amortizacion": 50.0,
+    "cupon_interes": 9.225
+   },
+   {
+    "fecha_pago": "2027-01-17",
+    "amortizacion": 50.0,
+    "cupon_interes": 4.6125
+   }
+  ]
+ },
+ "PBM27": {
+  "ticker": "PBM27",
+  "short_name": "Buenos Aires TV 2027",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0728973071",
+  "emission_date": "2025-12-15",
+  "maturity_date": "2027-03-18",
+  "day_count": "ACT/365",
+  "payment_frequency": 4,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-03-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 8.111667
+   },
+   {
+    "fecha_pago": "2026-06-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.85
+   },
+   {
+    "fecha_pago": "2026-09-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.85
+   },
+   {
+    "fecha_pago": "2026-12-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 7.85
+   },
+   {
+    "fecha_pago": "2027-03-18",
+    "amortizacion": 100.0,
+    "cupon_interes": 7.85
+   }
+  ]
+ },
+ "PBM28": {
+  "ticker": "PBM28",
+  "short_name": "Buenos Aires TV 2028",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0683752304",
+  "emission_date": "2026-04-01",
+  "maturity_date": "2028-03-30",
+  "day_count": "ACT/365",
+  "payment_frequency": 2,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-09-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 15.811667
+   },
+   {
+    "fecha_pago": "2027-03-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 15.9
+   },
+   {
+    "fecha_pago": "2027-09-30",
+    "amortizacion": 0.0,
+    "cupon_interes": 15.9
+   },
+   {
+    "fecha_pago": "2028-03-30",
+    "amortizacion": 100.0,
+    "cupon_interes": 15.9
+   }
+  ]
+ },
+ "PMD26": {
+  "ticker": "PMD26",
+  "short_name": "Mendoza TAMAR Cl.2 2026",
+  "instrument_type": "BONOFIJA",
+  "sheet": "Provinciales",
+  "isin": "AR0769321784",
+  "emission_date": "2025-03-20",
+  "maturity_date": "2026-12-20",
+  "day_count": "30/360",
+  "payment_frequency": 4,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2025-06-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.35
+   },
+   {
+    "fecha_pago": "2025-09-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.35
+   },
+   {
+    "fecha_pago": "2025-12-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.35
+   },
+   {
+    "fecha_pago": "2026-03-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.35
+   },
+   {
+    "fecha_pago": "2026-06-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.35
+   },
+   {
+    "fecha_pago": "2026-09-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 9.35
+   },
+   {
+    "fecha_pago": "2026-12-20",
+    "amortizacion": 100.0,
+    "cupon_interes": 9.35
+   }
+  ]
+ },
+ "BA37D": {
+  "ticker": "BA37D",
+  "short_name": "Buenos Aires 2037 A",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "XS2385150334",
+  "emission_date": "2021-06-30",
+  "maturity_date": "2037-09-01",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2021-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.423611
+   },
+   {
+    "fecha_pago": "2022-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.95
+   },
+   {
+    "fecha_pago": "2022-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.95
+   },
+   {
+    "fecha_pago": "2023-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2023-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2024-03-01",
+    "amortizacion": 1.83,
+    "cupon_interes": 3.1875
+   },
+   {
+    "fecha_pago": "2024-09-01",
+    "amortizacion": 1.83,
+    "cupon_interes": 3.129169
+   },
+   {
+    "fecha_pago": "2025-03-01",
+    "amortizacion": 2.25,
+    "cupon_interes": 3.010625
+   },
+   {
+    "fecha_pago": "2025-09-01",
+    "amortizacion": 2.25,
+    "cupon_interes": 2.940313
+   },
+   {
+    "fecha_pago": "2026-03-01",
+    "amortizacion": 2.9,
+    "cupon_interes": 2.87
+   },
+   {
+    "fecha_pago": "2026-09-01",
+    "amortizacion": 2.9,
+    "cupon_interes": 2.779375
+   },
+   {
+    "fecha_pago": "2027-03-01",
+    "amortizacion": 3.28,
+    "cupon_interes": 2.68875
+   },
+   {
+    "fecha_pago": "2027-09-01",
+    "amortizacion": 3.28,
+    "cupon_interes": 2.58625
+   },
+   {
+    "fecha_pago": "2028-03-01",
+    "amortizacion": 3.47,
+    "cupon_interes": 2.48375
+   },
+   {
+    "fecha_pago": "2028-09-01",
+    "amortizacion": 3.47,
+    "cupon_interes": 2.375312
+   },
+   {
+    "fecha_pago": "2029-03-01",
+    "amortizacion": 3.79,
+    "cupon_interes": 2.266875
+   },
+   {
+    "fecha_pago": "2029-09-01",
+    "amortizacion": 3.79,
+    "cupon_interes": 2.148437
+   },
+   {
+    "fecha_pago": "2030-03-01",
+    "amortizacion": 3.08,
+    "cupon_interes": 2.03
+   },
+   {
+    "fecha_pago": "2030-09-01",
+    "amortizacion": 3.08,
+    "cupon_interes": 1.93375
+   },
+   {
+    "fecha_pago": "2031-03-01",
+    "amortizacion": 3.59,
+    "cupon_interes": 1.8375
+   },
+   {
+    "fecha_pago": "2031-09-01",
+    "amortizacion": 3.59,
+    "cupon_interes": 1.725312
+   },
+   {
+    "fecha_pago": "2032-03-01",
+    "amortizacion": 3.77,
+    "cupon_interes": 1.613125
+   },
+   {
+    "fecha_pago": "2032-09-01",
+    "amortizacion": 3.77,
+    "cupon_interes": 1.495312
+   },
+   {
+    "fecha_pago": "2033-03-01",
+    "amortizacion": 3.94,
+    "cupon_interes": 1.3775
+   },
+   {
+    "fecha_pago": "2033-09-01",
+    "amortizacion": 3.94,
+    "cupon_interes": 1.254375
+   },
+   {
+    "fecha_pago": "2034-03-01",
+    "amortizacion": 4.2,
+    "cupon_interes": 1.13125
+   },
+   {
+    "fecha_pago": "2034-09-01",
+    "amortizacion": 4.2,
+    "cupon_interes": 1.0
+   },
+   {
+    "fecha_pago": "2035-03-01",
+    "amortizacion": 4.4,
+    "cupon_interes": 0.86875
+   },
+   {
+    "fecha_pago": "2035-09-01",
+    "amortizacion": 4.4,
+    "cupon_interes": 0.73125
+   },
+   {
+    "fecha_pago": "2036-03-01",
+    "amortizacion": 4.67,
+    "cupon_interes": 0.59375
+   },
+   {
+    "fecha_pago": "2036-09-01",
+    "amortizacion": 4.67,
+    "cupon_interes": 0.447812
+   },
+   {
+    "fecha_pago": "2037-03-01",
+    "amortizacion": 4.83,
+    "cupon_interes": 0.301875
+   },
+   {
+    "fecha_pago": "2037-09-01",
+    "amortizacion": 4.83,
+    "cupon_interes": 0.150937
+   }
+  ]
+ },
+ "BB37D": {
+  "ticker": "BB37D",
+  "short_name": "Buenos Aires 2037 B",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "XS2385151738",
+  "emission_date": "2021-06-30",
+  "maturity_date": "2037-09-01",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2021-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.423611
+   },
+   {
+    "fecha_pago": "2022-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.75
+   },
+   {
+    "fecha_pago": "2022-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.75
+   },
+   {
+    "fecha_pago": "2023-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.25
+   },
+   {
+    "fecha_pago": "2023-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.25
+   },
+   {
+    "fecha_pago": "2024-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.75
+   },
+   {
+    "fecha_pago": "2024-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.75
+   },
+   {
+    "fecha_pago": "2025-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.9375
+   },
+   {
+    "fecha_pago": "2025-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.9375
+   },
+   {
+    "fecha_pago": "2026-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.9375
+   },
+   {
+    "fecha_pago": "2026-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.9375
+   },
+   {
+    "fecha_pago": "2027-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.9375
+   },
+   {
+    "fecha_pago": "2027-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.9375
+   },
+   {
+    "fecha_pago": "2028-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.9375
+   },
+   {
+    "fecha_pago": "2028-09-01",
+    "amortizacion": 0.75,
+    "cupon_interes": 2.9375
+   },
+   {
+    "fecha_pago": "2029-03-01",
+    "amortizacion": 0.75,
+    "cupon_interes": 2.915469
+   },
+   {
+    "fecha_pago": "2029-09-01",
+    "amortizacion": 0.75,
+    "cupon_interes": 2.893438
+   },
+   {
+    "fecha_pago": "2030-03-01",
+    "amortizacion": 6.15,
+    "cupon_interes": 2.871406
+   },
+   {
+    "fecha_pago": "2030-09-01",
+    "amortizacion": 6.15,
+    "cupon_interes": 2.69075
+   },
+   {
+    "fecha_pago": "2031-03-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 2.510094
+   },
+   {
+    "fecha_pago": "2031-09-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 2.323562
+   },
+   {
+    "fecha_pago": "2032-03-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 2.137031
+   },
+   {
+    "fecha_pago": "2032-09-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 1.9505
+   },
+   {
+    "fecha_pago": "2033-03-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 1.763969
+   },
+   {
+    "fecha_pago": "2033-09-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 1.577438
+   },
+   {
+    "fecha_pago": "2034-03-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 1.390906
+   },
+   {
+    "fecha_pago": "2034-09-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 1.217594
+   },
+   {
+    "fecha_pago": "2035-03-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 1.044281
+   },
+   {
+    "fecha_pago": "2035-09-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 0.870969
+   },
+   {
+    "fecha_pago": "2036-03-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 0.697656
+   },
+   {
+    "fecha_pago": "2036-09-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 0.524344
+   },
+   {
+    "fecha_pago": "2037-03-01",
+    "amortizacion": 5.98,
+    "cupon_interes": 0.351031
+   },
+   {
+    "fecha_pago": "2037-09-01",
+    "amortizacion": 5.97,
+    "cupon_interes": 0.175369
+   }
+  ]
+ },
+ "BC37D": {
+  "ticker": "BC37D",
+  "short_name": "Buenos Aires 2037 C",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "XS2385150847",
+  "emission_date": "2021-06-30",
+  "maturity_date": "2037-09-01",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2021-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 0.338889
+   },
+   {
+    "fecha_pago": "2022-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.5
+   },
+   {
+    "fecha_pago": "2022-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.5
+   },
+   {
+    "fecha_pago": "2023-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.0
+   },
+   {
+    "fecha_pago": "2023-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.0
+   },
+   {
+    "fecha_pago": "2024-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2024-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2025-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2025-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2026-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2026-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2027-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2027-09-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2028-03-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2028-09-01",
+    "amortizacion": 0.75,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2029-03-01",
+    "amortizacion": 0.75,
+    "cupon_interes": 2.605313
+   },
+   {
+    "fecha_pago": "2029-09-01",
+    "amortizacion": 0.75,
+    "cupon_interes": 2.585625
+   },
+   {
+    "fecha_pago": "2030-03-01",
+    "amortizacion": 6.15,
+    "cupon_interes": 2.565937
+   },
+   {
+    "fecha_pago": "2030-09-01",
+    "amortizacion": 6.15,
+    "cupon_interes": 2.4045
+   },
+   {
+    "fecha_pago": "2031-03-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 2.243062
+   },
+   {
+    "fecha_pago": "2031-09-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 2.076375
+   },
+   {
+    "fecha_pago": "2032-03-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 1.909687
+   },
+   {
+    "fecha_pago": "2032-09-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 1.743
+   },
+   {
+    "fecha_pago": "2033-03-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 1.576313
+   },
+   {
+    "fecha_pago": "2033-09-01",
+    "amortizacion": 6.35,
+    "cupon_interes": 1.409625
+   },
+   {
+    "fecha_pago": "2034-03-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 1.242938
+   },
+   {
+    "fecha_pago": "2034-09-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 1.088063
+   },
+   {
+    "fecha_pago": "2035-03-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 0.933188
+   },
+   {
+    "fecha_pago": "2035-09-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 0.778313
+   },
+   {
+    "fecha_pago": "2036-03-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 0.623438
+   },
+   {
+    "fecha_pago": "2036-09-01",
+    "amortizacion": 5.9,
+    "cupon_interes": 0.468563
+   },
+   {
+    "fecha_pago": "2037-03-01",
+    "amortizacion": 5.98,
+    "cupon_interes": 0.313688
+   },
+   {
+    "fecha_pago": "2037-09-01",
+    "amortizacion": 5.97,
+    "cupon_interes": 0.156713
+   }
+  ]
+ },
+ "BDC33": {
+  "ticker": "BDC33",
+  "short_name": "CABA Serie 13 2033",
+  "instrument_type": "PROVINCIAL HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "XS3237223311",
+  "emission_date": "2025-11-26",
+  "maturity_date": "2033-11-26",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-05-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2026-11-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2027-05-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2027-11-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2028-05-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2028-11-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2029-05-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2029-11-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2030-05-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2030-11-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2031-05-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2031-11-26",
+    "amortizacion": 33.33,
+    "cupon_interes": 3.9
+   },
+   {
+    "fecha_pago": "2032-05-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.60013
+   },
+   {
+    "fecha_pago": "2032-11-26",
+    "amortizacion": 33.33,
+    "cupon_interes": 2.60013
+   },
+   {
+    "fecha_pago": "2033-05-26",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.30026
+   },
+   {
+    "fecha_pago": "2033-11-26",
+    "amortizacion": 33.34,
+    "cupon_interes": 1.30026
+   }
+  ]
+ },
+ "BDC36": {
+  "ticker": "BDC36",
+  "short_name": "CABA Serie 14 2036",
+  "instrument_type": "PROVINCIAL HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP1911JAE75",
+  "emission_date": "2026-05-13",
+  "maturity_date": "2036-05-13",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2027-05-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2027-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2028-05-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2028-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2029-05-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2029-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2030-05-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2030-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2031-05-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2031-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2032-05-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2032-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2033-05-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2033-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2034-05-13",
+    "amortizacion": 33.33,
+    "cupon_interes": 3.525
+   },
+   {
+    "fecha_pago": "2034-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.350117
+   },
+   {
+    "fecha_pago": "2035-05-13",
+    "amortizacion": 33.33,
+    "cupon_interes": 2.350117
+   },
+   {
+    "fecha_pago": "2035-11-13",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.175235
+   },
+   {
+    "fecha_pago": "2036-05-13",
+    "amortizacion": 33.34,
+    "cupon_interes": 1.175235
+   }
+  ]
+ },
+ "CO32": {
+  "ticker": "CO32",
+  "short_name": "Cordoba 2032",
+  "instrument_type": "PROVINCIAL HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP79171AG28",
+  "emission_date": "2025-07-02",
+  "maturity_date": "2032-07-02",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-01-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2026-07-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2027-01-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2027-07-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2028-01-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2028-07-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2029-01-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2029-07-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2030-01-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2030-07-02",
+    "amortizacion": 33.0,
+    "cupon_interes": 4.875
+   },
+   {
+    "fecha_pago": "2031-01-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.26625
+   },
+   {
+    "fecha_pago": "2031-07-02",
+    "amortizacion": 33.0,
+    "cupon_interes": 3.26625
+   },
+   {
+    "fecha_pago": "2032-01-02",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.6575
+   },
+   {
+    "fecha_pago": "2032-07-02",
+    "amortizacion": 34.0,
+    "cupon_interes": 1.6575
+   }
+  ]
+ },
+ "CO35": {
+  "ticker": "CO35",
+  "short_name": "Cordoba 2035",
+  "instrument_type": "PROVINCIAL HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP79171AH01",
+  "emission_date": "2026-02-03",
+  "maturity_date": "2035-02-03",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2027-02-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2027-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2028-02-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2028-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2029-02-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2029-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2030-02-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2030-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2031-02-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2031-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2032-02-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2032-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2033-02-03",
+    "amortizacion": 33.0,
+    "cupon_interes": 4.3
+   },
+   {
+    "fecha_pago": "2033-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.881
+   },
+   {
+    "fecha_pago": "2034-02-03",
+    "amortizacion": 33.0,
+    "cupon_interes": 2.881
+   },
+   {
+    "fecha_pago": "2034-08-03",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.462
+   },
+   {
+    "fecha_pago": "2035-02-03",
+    "amortizacion": 34.0,
+    "cupon_interes": 1.462
+   }
+  ]
+ },
+ "CO27D": {
+  "ticker": "CO27D",
+  "short_name": "Cordoba Step-Up 2029",
+  "instrument_type": "PROVINCIAL HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP79171AF45",
+  "emission_date": "2017-07-07",
+  "maturity_date": "2029-02-01",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2022-02-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2022-08-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2023-02-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2023-08-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2024-02-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2024-08-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2025-02-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2025-08-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2026-02-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2026-08-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2027-02-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2027-08-01",
+    "amortizacion": 25.0,
+    "cupon_interes": 3.4375
+   },
+   {
+    "fecha_pago": "2028-02-01",
+    "amortizacion": 25.0,
+    "cupon_interes": 2.578125
+   },
+   {
+    "fecha_pago": "2028-08-01",
+    "amortizacion": 25.0,
+    "cupon_interes": 1.71875
+   },
+   {
+    "fecha_pago": "2029-02-01",
+    "amortizacion": 25.0,
+    "cupon_interes": 0.859375
+   }
+  ]
+ },
+ "CO26": {
+  "ticker": "CO26",
+  "short_name": "Cordoba 2026 Garantizado",
+  "instrument_type": "PROVINCIAL HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "ARPCDB320099",
+  "emission_date": "2016-10-27",
+  "maturity_date": "2026-10-27",
+  "day_count": "30/360",
+  "payment_frequency": 4,
+  "ley_aplicable": "Argentina",
+  "cashflows": [
+   {
+    "fecha_pago": "2017-01-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2017-04-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2017-07-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2017-10-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2018-01-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2018-04-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2018-07-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2018-10-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2019-01-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.78125
+   },
+   {
+    "fecha_pago": "2019-04-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.725586
+   },
+   {
+    "fecha_pago": "2019-07-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.669922
+   },
+   {
+    "fecha_pago": "2019-10-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.614258
+   },
+   {
+    "fecha_pago": "2020-01-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.558594
+   },
+   {
+    "fecha_pago": "2020-04-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.50293
+   },
+   {
+    "fecha_pago": "2020-07-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.447266
+   },
+   {
+    "fecha_pago": "2020-10-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.391602
+   },
+   {
+    "fecha_pago": "2021-01-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.335937
+   },
+   {
+    "fecha_pago": "2021-04-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.280273
+   },
+   {
+    "fecha_pago": "2021-07-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.224609
+   },
+   {
+    "fecha_pago": "2021-10-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.168945
+   },
+   {
+    "fecha_pago": "2022-01-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.113281
+   },
+   {
+    "fecha_pago": "2022-04-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.057617
+   },
+   {
+    "fecha_pago": "2022-07-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 1.001953
+   },
+   {
+    "fecha_pago": "2022-10-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.946289
+   },
+   {
+    "fecha_pago": "2023-01-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.890625
+   },
+   {
+    "fecha_pago": "2023-04-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.834961
+   },
+   {
+    "fecha_pago": "2023-07-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.779297
+   },
+   {
+    "fecha_pago": "2023-10-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.723633
+   },
+   {
+    "fecha_pago": "2024-01-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.667969
+   },
+   {
+    "fecha_pago": "2024-04-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.612305
+   },
+   {
+    "fecha_pago": "2024-07-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.556641
+   },
+   {
+    "fecha_pago": "2024-10-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.500977
+   },
+   {
+    "fecha_pago": "2025-01-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.445312
+   },
+   {
+    "fecha_pago": "2025-04-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.389648
+   },
+   {
+    "fecha_pago": "2025-07-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.333984
+   },
+   {
+    "fecha_pago": "2025-10-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.27832
+   },
+   {
+    "fecha_pago": "2026-01-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.222656
+   },
+   {
+    "fecha_pago": "2026-04-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.166992
+   },
+   {
+    "fecha_pago": "2026-07-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.111328
+   },
+   {
+    "fecha_pago": "2026-10-27",
+    "amortizacion": 3.125,
+    "cupon_interes": 0.055664
+   }
+  ]
+ },
+ "CO24D": {
+  "ticker": "CO24D",
+  "short_name": "Cordoba Step-Up 2027",
+  "instrument_type": "PROVINCIAL HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP79171AE79",
+  "emission_date": "2017-03-01",
+  "maturity_date": "2027-06-01",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2021-12-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2022-06-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2022-12-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.495
+   },
+   {
+    "fecha_pago": "2023-06-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.495
+   },
+   {
+    "fecha_pago": "2023-12-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.495
+   },
+   {
+    "fecha_pago": "2024-06-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.495
+   },
+   {
+    "fecha_pago": "2024-12-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.495
+   },
+   {
+    "fecha_pago": "2025-06-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.495
+   },
+   {
+    "fecha_pago": "2025-12-01",
+    "amortizacion": 25.0,
+    "cupon_interes": 3.495
+   },
+   {
+    "fecha_pago": "2026-06-01",
+    "amortizacion": 25.0,
+    "cupon_interes": 2.62125
+   },
+   {
+    "fecha_pago": "2026-12-01",
+    "amortizacion": 25.0,
+    "cupon_interes": 1.7475
+   },
+   {
+    "fecha_pago": "2027-06-01",
+    "amortizacion": 25.0,
+    "cupon_interes": 0.87375
+   }
+  ]
+ },
+ "ERF25": {
+  "ticker": "ERF25",
+  "short_name": "Entre Rios 2028 Step-Up",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP37341AA50",
+  "emission_date": "2017-02-08",
+  "maturity_date": "2028-08-08",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2017-08-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.125
+   },
+   {
+    "fecha_pago": "2018-02-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.125
+   },
+   {
+    "fecha_pago": "2018-08-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.125
+   },
+   {
+    "fecha_pago": "2019-02-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.125
+   },
+   {
+    "fecha_pago": "2019-08-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.125
+   },
+   {
+    "fecha_pago": "2020-02-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.125
+   },
+   {
+    "fecha_pago": "2020-08-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.125
+   },
+   {
+    "fecha_pago": "2021-02-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.125
+   },
+   {
+    "fecha_pago": "2021-08-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2022-02-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2022-08-08",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.5
+   },
+   {
+    "fecha_pago": "2023-02-08",
+    "amortizacion": 5.0,
+    "cupon_interes": 2.875
+   },
+   {
+    "fecha_pago": "2023-08-08",
+    "amortizacion": 5.0,
+    "cupon_interes": 3.8475
+   },
+   {
+    "fecha_pago": "2024-02-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 3.7125
+   },
+   {
+    "fecha_pago": "2024-08-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 3.34125
+   },
+   {
+    "fecha_pago": "2025-02-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 2.97
+   },
+   {
+    "fecha_pago": "2025-08-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 2.59875
+   },
+   {
+    "fecha_pago": "2026-02-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 2.2275
+   },
+   {
+    "fecha_pago": "2026-08-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 1.85625
+   },
+   {
+    "fecha_pago": "2027-02-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 1.485
+   },
+   {
+    "fecha_pago": "2027-08-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 1.11375
+   },
+   {
+    "fecha_pago": "2028-02-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 0.7425
+   },
+   {
+    "fecha_pago": "2028-08-08",
+    "amortizacion": 9.0,
+    "cupon_interes": 0.37125
+   }
+  ]
+ },
+ "ERM33": {
+  "ticker": "ERM33",
+  "short_name": "Entre Rios 2033 9,55%",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP37341AC17",
+  "emission_date": "2026-03-04",
+  "maturity_date": "2033-03-04",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-09-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2027-03-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2027-09-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2028-03-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2028-09-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2029-03-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2029-09-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2030-03-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2030-09-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2031-03-04",
+    "amortizacion": 33.33,
+    "cupon_interes": 4.775
+   },
+   {
+    "fecha_pago": "2031-09-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.183493
+   },
+   {
+    "fecha_pago": "2032-03-04",
+    "amortizacion": 33.33,
+    "cupon_interes": 3.183493
+   },
+   {
+    "fecha_pago": "2032-09-04",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.591985
+   },
+   {
+    "fecha_pago": "2033-03-04",
+    "amortizacion": 33.34,
+    "cupon_interes": 1.591985
+   }
+  ]
+ },
+ "CH24D": {
+  "ticker": "CH24D",
+  "short_name": "Chaco 2028 Step-Up",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP2389CAA10",
+  "emission_date": "2016-08-18",
+  "maturity_date": "2028-02-18",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2017-02-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2017-08-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2018-02-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2018-08-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2019-02-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2019-08-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2020-02-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2020-08-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2021-02-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2021-08-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.6875
+   },
+   {
+    "fecha_pago": "2022-02-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.75
+   },
+   {
+    "fecha_pago": "2022-08-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.375
+   },
+   {
+    "fecha_pago": "2023-02-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.375
+   },
+   {
+    "fecha_pago": "2023-08-18",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.25
+   },
+   {
+    "fecha_pago": "2024-02-18",
+    "amortizacion": 11.111111,
+    "cupon_interes": 3.25
+   },
+   {
+    "fecha_pago": "2024-08-18",
+    "amortizacion": 11.111111,
+    "cupon_interes": 3.666667
+   },
+   {
+    "fecha_pago": "2025-02-18",
+    "amortizacion": 11.111111,
+    "cupon_interes": 3.208333
+   },
+   {
+    "fecha_pago": "2025-08-18",
+    "amortizacion": 11.111111,
+    "cupon_interes": 2.75
+   },
+   {
+    "fecha_pago": "2026-02-18",
+    "amortizacion": 11.111111,
+    "cupon_interes": 2.291667
+   },
+   {
+    "fecha_pago": "2026-08-18",
+    "amortizacion": 11.111111,
+    "cupon_interes": 1.833333
+   },
+   {
+    "fecha_pago": "2027-02-18",
+    "amortizacion": 11.111111,
+    "cupon_interes": 1.375
+   },
+   {
+    "fecha_pago": "2027-08-18",
+    "amortizacion": 11.111111,
+    "cupon_interes": 0.916667
+   },
+   {
+    "fecha_pago": "2028-02-18",
+    "amortizacion": 11.111112,
+    "cupon_interes": 0.458333
+   }
+  ]
+ },
+ "JUS22": {
+  "ticker": "JUS22",
+  "short_name": "Jujuy 2027 Step-Up",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "XS1686882298",
+  "emission_date": "2017-09-20",
+  "maturity_date": "2027-03-20",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2018-03-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2018-09-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2019-03-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2019-09-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2020-03-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2020-09-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2021-03-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2021-09-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.625
+   },
+   {
+    "fecha_pago": "2022-03-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.875
+   },
+   {
+    "fecha_pago": "2022-09-20",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2023-03-20",
+    "amortizacion": 11.11,
+    "cupon_interes": 4.1875
+   },
+   {
+    "fecha_pago": "2023-09-20",
+    "amortizacion": 11.11,
+    "cupon_interes": 3.722269
+   },
+   {
+    "fecha_pago": "2024-03-20",
+    "amortizacion": 11.11,
+    "cupon_interes": 3.257038
+   },
+   {
+    "fecha_pago": "2024-09-20",
+    "amortizacion": 11.11,
+    "cupon_interes": 2.791806
+   },
+   {
+    "fecha_pago": "2025-03-20",
+    "amortizacion": 11.11,
+    "cupon_interes": 2.326575
+   },
+   {
+    "fecha_pago": "2025-09-20",
+    "amortizacion": 11.11,
+    "cupon_interes": 1.861344
+   },
+   {
+    "fecha_pago": "2026-03-20",
+    "amortizacion": 11.11,
+    "cupon_interes": 1.396113
+   },
+   {
+    "fecha_pago": "2026-09-20",
+    "amortizacion": 11.11,
+    "cupon_interes": 0.930881
+   },
+   {
+    "fecha_pago": "2027-03-20",
+    "amortizacion": 11.12,
+    "cupon_interes": 0.46565
+   }
+  ]
+ },
+ "NDT11": {
+  "ticker": "NDT11",
+  "short_name": "Neuquen TICADE 2030",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP71695AC75",
+  "emission_date": "2016-05-12",
+  "maturity_date": "2030-05-12",
+  "day_count": "30/360",
+  "payment_frequency": 4,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2021-02-12",
+    "amortizacion": 0.25,
+    "cupon_interes": 1.2925
+   },
+   {
+    "fecha_pago": "2021-05-12",
+    "amortizacion": 0.25,
+    "cupon_interes": 1.289269
+   },
+   {
+    "fecha_pago": "2021-08-12",
+    "amortizacion": 0.25,
+    "cupon_interes": 1.286037
+   },
+   {
+    "fecha_pago": "2021-11-12",
+    "amortizacion": 0.25,
+    "cupon_interes": 1.282806
+   },
+   {
+    "fecha_pago": "2022-02-12",
+    "amortizacion": 1.25,
+    "cupon_interes": 2.134688
+   },
+   {
+    "fecha_pago": "2022-05-12",
+    "amortizacion": 1.25,
+    "cupon_interes": 2.107734
+   },
+   {
+    "fecha_pago": "2022-08-12",
+    "amortizacion": 1.25,
+    "cupon_interes": 2.080781
+   },
+   {
+    "fecha_pago": "2022-11-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 2.053828
+   },
+   {
+    "fecha_pago": "2023-02-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.987576
+   },
+   {
+    "fecha_pago": "2023-05-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.921323
+   },
+   {
+    "fecha_pago": "2023-08-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.855071
+   },
+   {
+    "fecha_pago": "2023-11-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.788818
+   },
+   {
+    "fecha_pago": "2024-02-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.722566
+   },
+   {
+    "fecha_pago": "2024-05-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.656313
+   },
+   {
+    "fecha_pago": "2024-08-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.59006
+   },
+   {
+    "fecha_pago": "2024-11-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.523808
+   },
+   {
+    "fecha_pago": "2025-02-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.457555
+   },
+   {
+    "fecha_pago": "2025-05-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.391303
+   },
+   {
+    "fecha_pago": "2025-08-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.32505
+   },
+   {
+    "fecha_pago": "2025-11-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.258798
+   },
+   {
+    "fecha_pago": "2026-02-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.192545
+   },
+   {
+    "fecha_pago": "2026-05-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.126293
+   },
+   {
+    "fecha_pago": "2026-08-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 1.06004
+   },
+   {
+    "fecha_pago": "2026-11-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.993788
+   },
+   {
+    "fecha_pago": "2027-02-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.927535
+   },
+   {
+    "fecha_pago": "2027-05-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.861283
+   },
+   {
+    "fecha_pago": "2027-08-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.79503
+   },
+   {
+    "fecha_pago": "2027-11-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.728778
+   },
+   {
+    "fecha_pago": "2028-02-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.662525
+   },
+   {
+    "fecha_pago": "2028-05-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.596273
+   },
+   {
+    "fecha_pago": "2028-08-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.53002
+   },
+   {
+    "fecha_pago": "2028-11-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.463768
+   },
+   {
+    "fecha_pago": "2029-02-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.397515
+   },
+   {
+    "fecha_pago": "2029-05-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.331263
+   },
+   {
+    "fecha_pago": "2029-08-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.26501
+   },
+   {
+    "fecha_pago": "2029-11-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.198758
+   },
+   {
+    "fecha_pago": "2030-02-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.132505
+   },
+   {
+    "fecha_pago": "2030-05-12",
+    "amortizacion": 3.072581,
+    "cupon_interes": 0.066253
+   }
+  ]
+ },
+ "NDT25": {
+  "ticker": "NDT25",
+  "short_name": "Neuquen TIDENEU 2030",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP7169GAA78",
+  "emission_date": "2017-04-27",
+  "maturity_date": "2030-04-27",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2021-04-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.25
+   },
+   {
+    "fecha_pago": "2021-10-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.25
+   },
+   {
+    "fecha_pago": "2022-04-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3125
+   },
+   {
+    "fecha_pago": "2022-10-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3125
+   },
+   {
+    "fecha_pago": "2023-04-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.3125
+   },
+   {
+    "fecha_pago": "2023-10-27",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.3125
+   },
+   {
+    "fecha_pago": "2024-04-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 3.375
+   },
+   {
+    "fecha_pago": "2024-10-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 3.115385
+   },
+   {
+    "fecha_pago": "2025-04-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 2.908654
+   },
+   {
+    "fecha_pago": "2025-10-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 2.644231
+   },
+   {
+    "fecha_pago": "2026-04-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 2.379808
+   },
+   {
+    "fecha_pago": "2026-10-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 2.115385
+   },
+   {
+    "fecha_pago": "2027-04-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.850962
+   },
+   {
+    "fecha_pago": "2027-10-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.586538
+   },
+   {
+    "fecha_pago": "2028-04-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.322115
+   },
+   {
+    "fecha_pago": "2028-10-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.057692
+   },
+   {
+    "fecha_pago": "2029-04-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 0.793269
+   },
+   {
+    "fecha_pago": "2029-10-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 0.528846
+   },
+   {
+    "fecha_pago": "2030-04-27",
+    "amortizacion": 7.692308,
+    "cupon_interes": 0.264423
+   }
+  ]
+ },
+ "PMM29": {
+  "ticker": "PMM29",
+  "short_name": "Mendoza 2029",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP6480JAH07",
+  "emission_date": "2020-10-05",
+  "maturity_date": "2029-03-19",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2021-09-19",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.125
+   },
+   {
+    "fecha_pago": "2022-03-19",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.125
+   },
+   {
+    "fecha_pago": "2022-09-19",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.125
+   },
+   {
+    "fecha_pago": "2023-03-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 2.125
+   },
+   {
+    "fecha_pago": "2023-09-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 2.653846
+   },
+   {
+    "fecha_pago": "2024-03-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 2.432692
+   },
+   {
+    "fecha_pago": "2024-09-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 2.211538
+   },
+   {
+    "fecha_pago": "2025-03-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.990385
+   },
+   {
+    "fecha_pago": "2025-09-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.769231
+   },
+   {
+    "fecha_pago": "2026-03-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.548077
+   },
+   {
+    "fecha_pago": "2026-09-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.326923
+   },
+   {
+    "fecha_pago": "2027-03-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 1.105769
+   },
+   {
+    "fecha_pago": "2027-09-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 0.884615
+   },
+   {
+    "fecha_pago": "2028-03-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 0.663462
+   },
+   {
+    "fecha_pago": "2028-09-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 0.442308
+   },
+   {
+    "fecha_pago": "2029-03-19",
+    "amortizacion": 7.692308,
+    "cupon_interes": 0.221154
+   }
+  ]
+ },
+ "PUA36": {
+  "ticker": "PUA36",
+  "short_name": "Chubut 2036",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP25619AC41",
+  "emission_date": "2026-04-29",
+  "maturity_date": "2036-04-29",
+  "day_count": "30/360",
+  "payment_frequency": 4,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-07-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2026-10-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2027-01-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2027-04-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2027-07-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2027-10-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2028-01-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2028-04-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2028-07-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2028-10-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2029-01-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2029-04-29",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2029-07-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 2.3625
+   },
+   {
+    "fecha_pago": "2029-10-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 2.278126
+   },
+   {
+    "fecha_pago": "2030-01-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 2.193751
+   },
+   {
+    "fecha_pago": "2030-04-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 2.109377
+   },
+   {
+    "fecha_pago": "2030-07-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 2.025003
+   },
+   {
+    "fecha_pago": "2030-10-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.940628
+   },
+   {
+    "fecha_pago": "2031-01-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.856254
+   },
+   {
+    "fecha_pago": "2031-04-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.77188
+   },
+   {
+    "fecha_pago": "2031-07-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.687505
+   },
+   {
+    "fecha_pago": "2031-10-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.603131
+   },
+   {
+    "fecha_pago": "2032-01-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.518757
+   },
+   {
+    "fecha_pago": "2032-04-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.434382
+   },
+   {
+    "fecha_pago": "2032-07-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.350008
+   },
+   {
+    "fecha_pago": "2032-10-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.265634
+   },
+   {
+    "fecha_pago": "2033-01-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.181259
+   },
+   {
+    "fecha_pago": "2033-04-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.096885
+   },
+   {
+    "fecha_pago": "2033-07-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 1.012511
+   },
+   {
+    "fecha_pago": "2033-10-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.928136
+   },
+   {
+    "fecha_pago": "2034-01-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.843762
+   },
+   {
+    "fecha_pago": "2034-04-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.759388
+   },
+   {
+    "fecha_pago": "2034-07-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.675014
+   },
+   {
+    "fecha_pago": "2034-10-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.590639
+   },
+   {
+    "fecha_pago": "2035-01-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.506265
+   },
+   {
+    "fecha_pago": "2035-04-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.421891
+   },
+   {
+    "fecha_pago": "2035-07-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.337516
+   },
+   {
+    "fecha_pago": "2035-10-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.253142
+   },
+   {
+    "fecha_pago": "2036-01-29",
+    "amortizacion": 3.5714,
+    "cupon_interes": 0.168768
+   },
+   {
+    "fecha_pago": "2036-04-29",
+    "amortizacion": 3.5722,
+    "cupon_interes": 0.084393
+   }
+  ]
+ },
+ "SA24D": {
+  "ticker": "SA24D",
+  "short_name": "Salta 2027",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP8388TAB00",
+  "emission_date": "2016-07-07",
+  "maturity_date": "2027-12-01",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2022-06-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.25
+   },
+   {
+    "fecha_pago": "2022-12-01",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.25
+   },
+   {
+    "fecha_pago": "2023-06-01",
+    "amortizacion": 5.0,
+    "cupon_interes": 4.25
+   },
+   {
+    "fecha_pago": "2023-12-01",
+    "amortizacion": 5.0,
+    "cupon_interes": 4.0375
+   },
+   {
+    "fecha_pago": "2024-06-01",
+    "amortizacion": 7.5,
+    "cupon_interes": 3.825
+   },
+   {
+    "fecha_pago": "2024-12-01",
+    "amortizacion": 7.5,
+    "cupon_interes": 3.50625
+   },
+   {
+    "fecha_pago": "2025-06-01",
+    "amortizacion": 12.5,
+    "cupon_interes": 3.1875
+   },
+   {
+    "fecha_pago": "2025-12-01",
+    "amortizacion": 12.5,
+    "cupon_interes": 2.65625
+   },
+   {
+    "fecha_pago": "2026-06-01",
+    "amortizacion": 12.5,
+    "cupon_interes": 2.125
+   },
+   {
+    "fecha_pago": "2026-12-01",
+    "amortizacion": 12.5,
+    "cupon_interes": 1.59375
+   },
+   {
+    "fecha_pago": "2027-06-01",
+    "amortizacion": 12.5,
+    "cupon_interes": 1.0625
+   },
+   {
+    "fecha_pago": "2027-12-01",
+    "amortizacion": 12.5,
+    "cupon_interes": 0.53125
+   }
+  ]
+ },
+ "SFD34": {
+  "ticker": "SFD34",
+  "short_name": "Santa Fe 2034",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP84641AD49",
+  "emission_date": "2025-12-11",
+  "maturity_date": "2034-12-11",
+  "day_count": "30/360",
+  "payment_frequency": 2,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2026-12-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2027-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2027-12-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2028-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2028-12-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2029-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2029-12-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2030-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2030-12-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2031-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2031-12-11",
+    "amortizacion": 25.0,
+    "cupon_interes": 4.05
+   },
+   {
+    "fecha_pago": "2032-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 3.0375
+   },
+   {
+    "fecha_pago": "2032-12-11",
+    "amortizacion": 25.0,
+    "cupon_interes": 3.0375
+   },
+   {
+    "fecha_pago": "2033-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.025
+   },
+   {
+    "fecha_pago": "2033-12-11",
+    "amortizacion": 25.0,
+    "cupon_interes": 2.025
+   },
+   {
+    "fecha_pago": "2034-06-11",
+    "amortizacion": 0.0,
+    "cupon_interes": 1.0125
+   },
+   {
+    "fecha_pago": "2034-12-11",
+    "amortizacion": 25.0,
+    "cupon_interes": 1.0125
+   }
+  ]
+ },
+ "TFU27": {
+  "ticker": "TFU27",
+  "short_name": "Tierra del Fuego 2030",
+  "instrument_type": "HARD DOLLAR",
+  "sheet": "Provinciales",
+  "isin": "USP91528AA03",
+  "emission_date": "2017-04-17",
+  "maturity_date": "2030-01-21",
+  "day_count": "30/360",
+  "payment_frequency": 4,
+  "ley_aplicable": "EXT",
+  "cashflows": [
+   {
+    "fecha_pago": "2024-04-21",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.2375
+   },
+   {
+    "fecha_pago": "2024-07-21",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.2375
+   },
+   {
+    "fecha_pago": "2024-10-21",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.2375
+   },
+   {
+    "fecha_pago": "2025-01-21",
+    "amortizacion": 0.0,
+    "cupon_interes": 2.2375
+   },
+   {
+    "fecha_pago": "2025-04-21",
+    "amortizacion": 4.0,
+    "cupon_interes": 2.2375
+   },
+   {
+    "fecha_pago": "2025-07-21",
+    "amortizacion": 4.0,
+    "cupon_interes": 2.148
+   },
+   {
+    "fecha_pago": "2025-10-21",
+    "amortizacion": 4.0,
+    "cupon_interes": 2.0585
+   },
+   {
+    "fecha_pago": "2026-01-21",
+    "amortizacion": 4.0,
+    "cupon_interes": 1.969
+   },
+   {
+    "fecha_pago": "2026-04-21",
+    "amortizacion": 5.0,
+    "cupon_interes": 1.8795
+   },
+   {
+    "fecha_pago": "2026-07-21",
+    "amortizacion": 5.0,
+    "cupon_interes": 1.767625
+   },
+   {
+    "fecha_pago": "2026-10-21",
+    "amortizacion": 5.0,
+    "cupon_interes": 1.65575
+   },
+   {
+    "fecha_pago": "2027-01-21",
+    "amortizacion": 5.0,
+    "cupon_interes": 1.543875
+   },
+   {
+    "fecha_pago": "2027-04-21",
+    "amortizacion": 5.0,
+    "cupon_interes": 1.432
+   },
+   {
+    "fecha_pago": "2027-07-21",
+    "amortizacion": 5.0,
+    "cupon_interes": 1.320125
+   },
+   {
+    "fecha_pago": "2027-10-21",
+    "amortizacion": 5.0,
+    "cupon_interes": 1.20825
+   },
+   {
+    "fecha_pago": "2028-01-21",
+    "amortizacion": 5.0,
+    "cupon_interes": 1.096375
+   },
+   {
+    "fecha_pago": "2028-04-21",
+    "amortizacion": 5.5,
+    "cupon_interes": 0.9845
+   },
+   {
+    "fecha_pago": "2028-07-21",
+    "amortizacion": 5.5,
+    "cupon_interes": 0.861437
+   },
+   {
+    "fecha_pago": "2028-10-21",
+    "amortizacion": 5.5,
+    "cupon_interes": 0.738375
+   },
+   {
+    "fecha_pago": "2029-01-21",
+    "amortizacion": 5.5,
+    "cupon_interes": 0.615312
+   },
+   {
+    "fecha_pago": "2029-04-21",
+    "amortizacion": 5.5,
+    "cupon_interes": 0.49225
+   },
+   {
+    "fecha_pago": "2029-07-21",
+    "amortizacion": 5.5,
+    "cupon_interes": 0.369187
+   },
+   {
+    "fecha_pago": "2029-10-21",
+    "amortizacion": 5.5,
+    "cupon_interes": 0.246125
+   },
+   {
+    "fecha_pago": "2030-01-21",
+    "amortizacion": 5.5,
+    "cupon_interes": 0.123062
+   }
+  ]
+ },
+ "TML27": {
+  "ticker": "TML27",
+  "short_name": "TML27",
+  "instrument_type": "PURO",
+  "sheet": "TAMAR",
+  "isin": "AR0033716868",
+  "emission_date": "2026-06-30",
+  "maturity_date": "2027-07-30",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "ARGENTINA",
+  "cer_base": 1.0,
+  "cer_lag": 10,
+  "spread_rate": 0.054,
+  "cer_spread": null,
+  "floor_rate_monthly": null,
+  "cashflows": [],
+  "_check": "BONTE TAMAR capitalizable mensual 30/360, integra al vencimiento, margen fijo 5,40% (IAMC margen_fijo=5.4). payoff@vto calculado 138.27 vs IAMC monto_vto 138.29 (-0.014%); TIR 34.125% vs IAMC TEA 34.11% (+1.5bp) al cierre 105.80."
+ },
+ "TXMD8": {
+  "ticker": "TXMD8",
+  "short_name": "TXMD8",
+  "instrument_type": "DUAL_CER_TAMAR",
+  "sheet": "TAMAR",
+  "isin": "AR0926114783",
+  "emission_date": "2026-06-12",
+  "maturity_date": "2028-12-15",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "ARGENTINA",
+  "cer_base": 779.88639312623,
+  "cer_lag": 10,
+  "spread_rate": 0.03,
+  "cer_spread": 0.0,
+  "floor_rate_monthly": null,
+  "cashflows": [],
+  "_check": "max(riel CER sin margen, riel TAMAR TEM + 3,00%). payoff@vto 200.17 vs IAMC monto_vto_tamar 200.00 (+0.085%); riel CER: 100*CER(28-08-26)/779.88639 = 106.4383 vs IAMC monto_vto_cer 106.44 (exacto)."
+ },
+ "TXMD9": {
+  "ticker": "TXMD9",
+  "short_name": "TXMD9",
+  "instrument_type": "DUAL_CER_TAMAR",
+  "sheet": "TAMAR",
+  "isin": "AR0917535343",
+  "emission_date": "2026-06-12",
+  "maturity_date": "2029-12-14",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "ARGENTINA",
+  "cer_base": 779.88639312623,
+  "cer_lag": 10,
+  "spread_rate": 0.03,
+  "cer_spread": 0.0,
+  "floor_rate_monthly": null,
+  "cashflows": [],
+  "_check": "payoff@vto 264.24 vs IAMC monto_vto_tamar 264.02 (+0.083%); riel CER 106.4383 vs IAMC 106.44."
+ },
+ "TXMJ0": {
+  "ticker": "TXMJ0",
+  "short_name": "TXMJ0",
+  "instrument_type": "DUAL_CER_TAMAR",
+  "sheet": "TAMAR",
+  "isin": "AR0268283071",
+  "emission_date": "2026-06-12",
+  "maturity_date": "2030-06-28",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "ARGENTINA",
+  "cer_base": 779.88639312623,
+  "cer_lag": 10,
+  "spread_rate": 0.03,
+  "cer_spread": 0.0,
+  "floor_rate_monthly": null,
+  "cashflows": [],
+  "_check": "payoff@vto 307.02 vs IAMC monto_vto_tamar 306.76 (+0.085%); riel CER 106.4383 vs IAMC 106.44."
+ },
+ "TZXO7": {
+  "ticker": "TZXO7",
+  "short_name": "TZXO7",
+  "instrument_type": "BONCER ZC",
+  "sheet": "CER",
+  "isin": "AR0919348364",
+  "emission_date": "2026-06-30",
+  "maturity_date": "2027-10-29",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "ARGENTINA",
+  "cer_lag": 10,
+  "denominacion": "BONO DEL TESORO NACIONAL EN PESOS CERO CUPON CON AJUSTE POR CER VTO 29/10/2027",
+  "categoria": "BONCERES CERO CUPON",
+  "cer_base": 791.4897385,
+  "cer_base_fuente": "CER de cer_reference_date(emision, 10 dias habiles) - misma convencion que TZXS7/X30N6 en la DB",
+  "cashflows": [
+   {
+    "fecha_pago": "2027-10-29",
+    "amortizacion": 103.9,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "TZXD8": {
+  "ticker": "TZXD8",
+  "short_name": "TZXD8",
+  "instrument_type": "BONCER ZC",
+  "sheet": "CER",
+  "isin": "AR0695340130",
+  "emission_date": "2026-06-30",
+  "maturity_date": "2028-12-15",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "ARGENTINA",
+  "cer_lag": 10,
+  "denominacion": "BONO DEL TESORO NACIONAL EN PESOS CERO CUPON CON AJUSTE POR CER VTO 15/12/2028",
+  "categoria": "BONCERES CERO CUPON",
+  "cer_base": 791.4897385,
+  "cer_base_fuente": "CER de cer_reference_date(emision, 10 dias habiles) - misma convencion que TZXS7/X30N6 en la DB",
+  "cashflows": [
+   {
+    "fecha_pago": "2028-12-15",
+    "amortizacion": 103.9,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "X29E7": {
+  "ticker": "X29E7",
+  "short_name": "X29E7",
+  "instrument_type": "LECER",
+  "sheet": "CER",
+  "isin": "AR0744490605",
+  "emission_date": "2026-08-14",
+  "maturity_date": "2027-01-29",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 1,
+  "ley_aplicable": "ARGENTINA",
+  "cer_lag": 10,
+  "denominacion": "LETRA DEL TESORO NACIONAL EN PESOS AJUSTADA POR CER A DESCUENTO VTO 29/01/2027",
+  "categoria": "LETRA TESORO DESCUENTO CER",
+  "cer_base": 815.4345109,
+  "cer_base_fuente": "CER de cer_reference_date(emision, 10 dias habiles) - misma convencion que TZXS7/X30N6 en la DB",
+  "cashflows": [
+   {
+    "fecha_pago": "2027-01-29",
+    "amortizacion": 100.9,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "D30O6": {
+  "ticker": "D30O6",
+  "short_name": "D30O6",
+  "instrument_type": "DOLAR_LINKED",
+  "sheet": "Dolar_Linked",
+  "isin": "AR0540625909",
+  "emission_date": "2026-08-14",
+  "maturity_date": "2026-10-30",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 2,
+  "ley_aplicable": "ARGENTINA",
+  "cer_lag": 10,
+  "denominacion": "LETRA DEL TESORO NACIONAL VINCULADA AL DOLAR CERO CUPON VTO 30/10/2026",
+  "cer_base": 1.0,
+  "tc_inicial": 1488.6984,
+  "tc_inicial_fuente": "A3500 (mayorista BCRA) de la fecha de emision",
+  "cashflows": [
+   {
+    "fecha_pago": "2026-10-30",
+    "amortizacion": 101.7,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "D15E7": {
+  "ticker": "D15E7",
+  "short_name": "D15E7",
+  "instrument_type": "DOLAR_LINKED",
+  "sheet": "Dolar_Linked",
+  "isin": "AR0420048891",
+  "emission_date": "2026-07-31",
+  "maturity_date": "2027-01-15",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 2,
+  "ley_aplicable": "ARGENTINA",
+  "cer_lag": 10,
+  "denominacion": "LETRA DEL TESORO NACIONAL VINCULADA AL DOLAR CERO CUPON VTO 15/01/2027",
+  "cer_base": 1.0,
+  "tc_inicial": 1488.4531,
+  "tc_inicial_fuente": "A3500 (mayorista BCRA) de la fecha de emision",
+  "cashflows": [
+   {
+    "fecha_pago": "2027-01-15",
+    "amortizacion": 101.7,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "D31M7": {
+  "ticker": "D31M7",
+  "short_name": "D31M7",
+  "instrument_type": "DOLAR_LINKED",
+  "sheet": "Dolar_Linked",
+  "isin": "AR0637963668",
+  "emission_date": "2026-05-29",
+  "maturity_date": "2027-03-31",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 2,
+  "ley_aplicable": "ARGENTINA",
+  "cer_lag": 10,
+  "denominacion": "LETRA DEL TESORO NACIONAL VINCULADA AL DOLAR CERO CUPON VTO 31/03/2027",
+  "cer_base": 1.0,
+  "tc_inicial": 1410.2904,
+  "tc_inicial_fuente": "A3500 (mayorista BCRA) de la fecha de emision",
+  "cashflows": [
+   {
+    "fecha_pago": "2027-03-31",
+    "amortizacion": 107.3,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "D10Y7": {
+  "ticker": "D10Y7",
+  "short_name": "D10Y7",
+  "instrument_type": "DOLAR_LINKED",
+  "sheet": "Dolar_Linked",
+  "isin": "AR0804842737",
+  "emission_date": "2026-07-16",
+  "maturity_date": "2027-05-10",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 2,
+  "ley_aplicable": "ARGENTINA",
+  "cer_lag": 10,
+  "denominacion": "LETRA DEL TESORO NACIONAL VINCULADA AL DOLAR CERO CUPON VTO 10/05/2027",
+  "cer_base": 1.0,
+  "tc_inicial": 1474.7696,
+  "tc_inicial_fuente": "A3500 (mayorista BCRA) de la fecha de emision",
+  "cashflows": [
+   {
+    "fecha_pago": "2027-05-10",
+    "amortizacion": 102.7,
+    "cupon_interes": 0.0
+   }
+  ]
+ },
+ "TZVD8": {
+  "ticker": "TZVD8",
+  "short_name": "TZVD8",
+  "instrument_type": "DOLAR_LINKED",
+  "sheet": "Dolar_Linked",
+  "isin": "AR0781107484",
+  "emission_date": "2026-06-12",
+  "maturity_date": "2028-12-15",
+  "day_count": "ACT/365.25",
+  "payment_frequency": 2,
+  "ley_aplicable": "ARGENTINA",
+  "cer_lag": 10,
+  "denominacion": "BONO DEL TESORO NACIONAL VINCULADO AL DOLAR CERO CUPON VTO 15/12/2028",
+  "cer_base": 1.0,
+  "tc_inicial": 1430.8092,
+  "tc_inicial_fuente": "A3500 (mayorista BCRA) de la fecha de emision",
+  "cashflows": [
+   {
+    "fecha_pago": "2028-12-15",
+    "amortizacion": 105.8,
+    "cupon_interes": 0.0
+   }
+  ]
+ }
+}

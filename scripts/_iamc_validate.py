@@ -56,7 +56,9 @@ class _StubFx:
 
     def get_ccl(self):
         return _FX_IAMC
-_REF_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "iamc_ref.json")
+# Oraculo versionado en el repo (antes vivia en scratch/, que esta gitignoreado y
+# por eso el script no corria en el servidor).
+_REF_PATH = os.path.join(_ROOT, "data", "iamc", "ref_2026_08_28.json")
 with open(_REF_PATH, encoding="utf-8") as _f:
     REF = json.load(_f)
 

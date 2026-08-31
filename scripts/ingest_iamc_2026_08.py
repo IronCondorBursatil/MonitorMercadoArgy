@@ -19,17 +19,16 @@ DB-only, no destructivo (append/update por ticker). Snapshot pre-op. Idempotente
 
 from __future__ import annotations
 
-import glob
 import json
-import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scratch"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
-SPEC_GLOB = str(ROOT / "scratch" / "specs_*.json")
+# Specs versionados en el repo (antes scratch/, gitignoreado -> no llegaban al server).
+SPEC_FILE = str(ROOT / "data" / "iamc" / "specs_2026_08_28.json")
 
 # instrument_type del spec → (sheet, tipo final en la DB). Los provinciales se
 # re-tipan para caer en su propio panel sin cambiar su pricing.
@@ -58,23 +57,14 @@ _SHEET_BY_GRUPO = {
 
 
 def _load_specs() -> dict:
-    out = {}
-    for path in sorted(glob.glob(SPEC_GLOB)):
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError) as e:
-            print(f"  ! {os.path.basename(path)}: {e}")
-            continue
-        for tk, spec in data.items():
-            if tk.startswith("_") or not isinstance(spec, dict):
-                continue
-            out[tk.upper()] = spec        # último gana (los grupos no se solapan)
-    return out
+    with open(SPEC_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    return {t.upper(): sp for t, sp in data.items()
+            if not t.startswith("_") and isinstance(sp, dict)}
 
 
 def main(dry_run: bool = False) -> int:
-    from validate_bond import REF, build_instrument, validar
+    from _iamc_validate import REF, build_instrument, validar
 
     specs = _load_specs()
     print(f"specs encontrados: {len(specs)}\n")
