@@ -45,6 +45,7 @@ scratch/
 *.duckdb
 *.db-wal
 *.db-shm
+monitor/
 
 # Baseline de regresión (artefacto local de Fase 0)
 baseline_tests.txt
