@@ -70,3 +70,18 @@ def get_admin_user_html(current_user: UserORM = Depends(get_current_user_html)) 
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No admin")
     return current_user
+
+class RequireTabPermission:
+    def __init__(self, tab_name: str):
+        self.tab_name = tab_name
+
+    def __call__(self, current_user: UserORM = Depends(get_current_user_html)):
+        if current_user.is_admin:
+            return current_user
+        
+        tabs = current_user.allowed_tabs or []
+        if "*" in tabs or self.tab_name in tabs:
+            return current_user
+            
+        raise RequiresLoginException() # O un 403, pero RequiresLoginException lo redirige a un lugar seguro/Login. Alternativamente, lanzar 403 Forbidden.
+

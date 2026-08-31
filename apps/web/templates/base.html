@@ -114,8 +114,18 @@
         <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
       </span>
       <nav>
-        <a href="/">Bonos</a><a href="/on">O.N's</a><a href="/curva">Curva</a><a href="/cartera">Cartera</a><a href="/bcra">BCRA</a>
-        <a href="/cashflows">Cashflows</a><a href="/fci">FCI</a><a href="/escenarios">Escenarios</a><a href="/options">Opciones</a><a href="/catalogo">Catálogo</a><a href="/abm">ABM</a>
+        {% if has_tab("bonos") %}<a href="/">Bonos</a>{% endif %}
+        {% if has_tab("on") %}<a href="/on">O.N's</a>{% endif %}
+        {% if has_tab("curva") %}<a href="/curva">Curva</a>{% endif %}
+        {% if has_tab("cartera") %}<a href="/cartera">Cartera</a>{% endif %}
+        {% if has_tab("bcra") %}<a href="/bcra">BCRA</a>{% endif %}
+        {% if has_tab("cashflows") %}<a href="/cashflows">Cashflows</a>{% endif %}
+        {% if has_tab("fci") %}<a href="/fci">FCI</a>{% endif %}
+        {% if has_tab("escenarios") %}<a href="/escenarios">Escenarios</a>{% endif %}
+        {% if has_tab("opciones") %}<a href="/options">Opciones</a>{% endif %}
+        {% if has_tab("catalogo") %}<a href="/catalogo">Catálogo</a>{% endif %}
+        {% if has_tab("abm") %}<a href="/abm">ABM Bonos</a>{% endif %}
+        {% if current_user and current_user.is_admin %}<a href="/users" style="color: #60a5fa; font-weight: bold;">Manager</a>{% endif %}
         {# CONFIG de paneles: elegir qué cuadros ver / restaurar los cerrados con X.
            El menú lo arma el JS del dashboard (index.html); en otras páginas el
            link lleva al dashboard. #}

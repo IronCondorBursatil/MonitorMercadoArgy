@@ -28,6 +28,7 @@ class UserORM(Base):
     username: Mapped[str] = mapped_column(String, unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String)
     is_admin: Mapped[bool] = mapped_column(default=False)
+    allowed_tabs: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["*"])
 
 
 

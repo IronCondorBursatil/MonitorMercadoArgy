@@ -28,7 +28,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from apps.web.deps_auth import RequiresLoginException, get_current_user_html, get_current_user
+from apps.web.deps_auth import RequiresLoginException, get_current_user_html, get_current_user, RequireTabPermission
 from apps.web.routers import auth as auth_router, users_abm
 
 
@@ -407,21 +407,25 @@ app.include_router(users_abm.router)
 html_deps = [Depends(get_current_user_html)]
 api_deps = [Depends(get_current_user)]
 
-app.include_router(panels.router, dependencies=html_deps)
-app.include_router(bonds.router, dependencies=html_deps)
-app.include_router(cartera.router, dependencies=html_deps)
-app.include_router(bcra.router, dependencies=html_deps)
-app.include_router(cashflows.router, dependencies=html_deps)
-app.include_router(escenarios.router, dependencies=html_deps)
-app.include_router(curva.router, dependencies=html_deps)
-app.include_router(fci.router, dependencies=html_deps)
-app.include_router(on.router, dependencies=html_deps)
-app.include_router(abm.router, dependencies=html_deps)
-app.include_router(catalog.router, dependencies=html_deps)
-app.include_router(options.router, dependencies=html_deps)
+app.include_router(panels.router, dependencies=[Depends(RequireTabPermission("bonos"))])
+app.include_router(bonds.router, dependencies=[Depends(RequireTabPermission("bonos"))])
+app.include_router(on.router, dependencies=[Depends(RequireTabPermission("on"))])
+app.include_router(curva.router, dependencies=[Depends(RequireTabPermission("curva"))])
+app.include_router(cartera.router, dependencies=[Depends(RequireTabPermission("cartera"))])
+app.include_router(bcra.router, dependencies=[Depends(RequireTabPermission("bcra"))])
+app.include_router(cashflows.router, dependencies=[Depends(RequireTabPermission("cashflows"))])
+app.include_router(fci.router, dependencies=[Depends(RequireTabPermission("fci"))])
+app.include_router(escenarios.router, dependencies=[Depends(RequireTabPermission("escenarios"))])
+app.include_router(options.router, dependencies=[Depends(RequireTabPermission("opciones"))])
+app.include_router(catalog.router, dependencies=[Depends(RequireTabPermission("catalogo"))])
+app.include_router(abm.router, dependencies=[Depends(RequireTabPermission("abm"))])
+
+# Parciales globales de HTMX
 app.include_router(header.router, dependencies=html_deps)
 app.include_router(source.router, dependencies=html_deps)
 app.include_router(stream.router, dependencies=html_deps)
+
+# API
 app.include_router(api_market.router, prefix="/api/v1/market", dependencies=api_deps)
 app.include_router(api_stream.router, prefix="/api/v1/stream", dependencies=api_deps)
 

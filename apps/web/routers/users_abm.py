@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -15,7 +16,14 @@ def list_users(request: Request, db: Session = Depends(get_db)):
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users})
 
 @router.post("/users/add", response_class=HTMLResponse)
-def add_user(request: Request, username: str = Form(...), password: str = Form(...), is_admin: bool = Form(False), db: Session = Depends(get_db)):
+def add_user(
+    request: Request, 
+    username: str = Form(...), 
+    password: str = Form(...), 
+    is_admin: bool = Form(False), 
+    tabs: List[str] = Form(default=[]),
+    db: Session = Depends(get_db)
+):
     # Check if exists
     existing = db.query(UserORM).filter(UserORM.username == username).first()
     if existing:
@@ -25,7 +33,8 @@ def add_user(request: Request, username: str = Form(...), password: str = Form(.
     new_user = UserORM(
         username=username,
         hashed_password=get_password_hash(password),
-        is_admin=is_admin
+        is_admin=is_admin,
+        allowed_tabs=["*"] if is_admin else tabs
     )
     db.add(new_user)
     db.commit()
@@ -58,3 +67,27 @@ def reset_password(request: Request, user_id: int, password: str = Form(...), db
     
     users = db.query(UserORM).all()
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "success": f"Contraseña actualizada para {user.username}."})
+
+@router.post("/users/update/{user_id}", response_class=HTMLResponse)
+def update_user(
+    request: Request, 
+    user_id: int, 
+    is_admin: bool = Form(False), 
+    tabs: List[str] = Form(default=[]),
+    db: Session = Depends(get_db)
+):
+    user = db.query(UserORM).filter(UserORM.id == user_id).first()
+    if user:
+        # Avoid removing admin from the last admin
+        if user.is_admin and not is_admin:
+            admins = db.query(UserORM).filter(UserORM.is_admin == True).count()
+            if admins <= 1:
+                users = db.query(UserORM).all()
+                return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "error": "No puedes quitarle el rol de admin al último administrador."})
+                
+        user.is_admin = is_admin
+        user.allowed_tabs = ["*"] if is_admin else tabs
+        db.commit()
+        
+    users = db.query(UserORM).all()
+    return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "success": f"Permisos actualizados para {user.username}."})

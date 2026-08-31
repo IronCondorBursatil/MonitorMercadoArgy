@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Usuarios - Monitor Renta Fija AR{% endblock %}
+{% block title %}Manager - Monitor Renta Fija AR{% endblock %}
 
 {% block head %}
 <style>
   .abm-users {
-    max-width: 800px;
+    max-width: 900px;
     margin: 2rem auto;
     padding: 1rem;
   }
@@ -21,39 +21,71 @@
   .abm-users th {
     background: var(--surface);
   }
-  .add-user-form {
+  .add-user-form, .edit-user-form {
     background: var(--surface);
     padding: 1.5rem;
     border-radius: 8px;
     margin-bottom: 2rem;
     border: 1px solid var(--border);
   }
-  .add-user-form input[type="text"],
-  .add-user-form input[type="password"] {
+  .form-group {
+    margin-bottom: 1rem;
+  }
+  .form-group input[type="text"],
+  .form-group input[type="password"] {
     padding: 0.5rem;
-    margin-right: 1rem;
     border: 1px solid var(--border);
     background: var(--bg);
     color: var(--text);
+    width: 100%;
+    max-width: 300px;
   }
-  .add-user-form button {
+  button {
     padding: 0.5rem 1rem;
     background: var(--text);
     color: var(--bg);
     border: none;
     cursor: pointer;
+    font-weight: 500;
   }
   .msg { padding: 0.75rem; margin-bottom: 1rem; border-radius: 4px; }
   .msg.error { background: #fee2e2; color: #991b1b; }
   .msg.success { background: #dcfce7; color: #166534; }
   [data-theme="dark"] .msg.error { background: #7f1d1d; color: #fecaca; }
   [data-theme="dark"] .msg.success { background: #14532d; color: #bbf7d0; }
+  
+  .tabs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    background: var(--bg);
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .tabs-grid label {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  details summary {
+    cursor: pointer;
+    font-weight: 500;
+    padding: 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <main class="abm-users">
-  <h2>Gestión de Usuarios</h2>
+  <h2>Manager de Usuarios</h2>
   
   {% if error %}
     <div class="msg error">{{ error }}</div>
@@ -63,14 +95,39 @@
   {% endif %}
 
   <div class="add-user-form">
-    <h3>Alta de Usuario</h3>
+    <h3>Alta de Nuevo Usuario</h3>
     <form method="POST" action="/users/add">
-      <input type="text" name="username" placeholder="Nombre de usuario" required>
-      <input type="password" name="password" placeholder="Contraseña" required>
-      <label>
-        <input type="checkbox" name="is_admin" value="true"> Es Administrador
-      </label>
-      <button type="submit" style="margin-left: 1rem;">Crear</button>
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+        <div class="form-group">
+          <input type="text" name="username" placeholder="Nombre de usuario" required>
+        </div>
+        <div class="form-group">
+          <input type="password" name="password" placeholder="Contraseña" required>
+        </div>
+        <div class="form-group" style="display: flex; align-items: center;">
+          <label>
+            <input type="checkbox" name="is_admin" value="true"> Es Administrador
+          </label>
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label style="font-weight: 500;">Pestañas Permitidas (solo para no-administradores):</label>
+        <div class="tabs-grid">
+          <label><input type="checkbox" name="tabs" value="bonos"> Bonos</label>
+          <label><input type="checkbox" name="tabs" value="on"> O.N's</label>
+          <label><input type="checkbox" name="tabs" value="curva"> Curva</label>
+          <label><input type="checkbox" name="tabs" value="cartera"> Cartera</label>
+          <label><input type="checkbox" name="tabs" value="bcra"> BCRA</label>
+          <label><input type="checkbox" name="tabs" value="cashflows"> Cashflows</label>
+          <label><input type="checkbox" name="tabs" value="fci"> FCI</label>
+          <label><input type="checkbox" name="tabs" value="escenarios"> Escenarios</label>
+          <label><input type="checkbox" name="tabs" value="opciones"> Opciones</label>
+          <label><input type="checkbox" name="tabs" value="catalogo"> Catálogo</label>
+          <label><input type="checkbox" name="tabs" value="abm"> ABM Bonos</label>
+        </div>
+      </div>
+      <button type="submit">Crear Usuario</button>
     </form>
   </div>
 
@@ -81,7 +138,8 @@
         <th>ID</th>
         <th>Usuario</th>
         <th>Rol</th>
-        <th>Acciones</th>
+        <th>Accesos</th>
+        <th>Acciones Rápidas</th>
       </tr>
     </thead>
     <tbody>
@@ -89,16 +147,54 @@
       <tr>
         <td>{{ u.id }}</td>
         <td>{{ u.username }}</td>
-        <td>{% if u.is_admin %}Admin{% else %}Usuario{% endif %}</td>
+        <td>{% if u.is_admin %}Administrador{% else %}Usuario{% endif %}</td>
+        <td>
+          {% if u.is_admin %}
+            <em>Todos</em>
+          {% else %}
+            <span style="font-size: 0.85rem; color: var(--text-dim);">
+              {{ (u.allowed_tabs or []) | join(", ") }}
+            </span>
+          {% endif %}
+        </td>
         <td>
           <form method="POST" action="/users/delete/{{ u.id }}" style="display:inline;" onsubmit="return confirm('¿Seguro de eliminar al usuario {{ u.username }}?');">
-            <button type="submit" style="color: #ef4444; background: none; border: none; cursor: pointer;">Borrar</button>
+            <button type="submit" style="color: #ef4444; background: none; border: none; cursor: pointer; padding: 0;">Borrar</button>
           </form>
           <span style="margin: 0 0.5rem; color: var(--border);">|</span>
           <form method="POST" action="/users/reset-password/{{ u.id }}" style="display:inline;">
-            <input type="password" name="password" placeholder="Nueva pass" required style="width:100px; padding:0.2rem; background: var(--bg); color: var(--text); border: 1px solid var(--border);">
-            <button type="submit" style="background: none; border: none; cursor: pointer; color: var(--text);">Cambiar</button>
+            <input type="password" name="password" placeholder="Nueva pass" required style="width:90px; padding:0.2rem; background: var(--bg); color: var(--text); border: 1px solid var(--border);">
+            <button type="submit" style="background: none; border: none; cursor: pointer; color: var(--text); padding: 0; margin-left: 0.25rem;">Cambiar</button>
           </form>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="5" style="border-bottom: 2px solid var(--border); padding-bottom: 1rem;">
+          <details>
+            <summary>Editar Permisos para {{ u.username }}</summary>
+            <form method="POST" action="/users/update/{{ u.id }}" class="edit-user-form" style="margin: 0;">
+              <div style="margin-bottom: 1rem;">
+                <label>
+                  <input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %}> Es Administrador (acceso total)
+                </label>
+              </div>
+              <div class="tabs-grid">
+                {% set u_tabs = u.allowed_tabs or [] %}
+                <label><input type="checkbox" name="tabs" value="bonos" {% if "bonos" in u_tabs %}checked{% endif %}> Bonos</label>
+                <label><input type="checkbox" name="tabs" value="on" {% if "on" in u_tabs %}checked{% endif %}> O.N's</label>
+                <label><input type="checkbox" name="tabs" value="curva" {% if "curva" in u_tabs %}checked{% endif %}> Curva</label>
+                <label><input type="checkbox" name="tabs" value="cartera" {% if "cartera" in u_tabs %}checked{% endif %}> Cartera</label>
+                <label><input type="checkbox" name="tabs" value="bcra" {% if "bcra" in u_tabs %}checked{% endif %}> BCRA</label>
+                <label><input type="checkbox" name="tabs" value="cashflows" {% if "cashflows" in u_tabs %}checked{% endif %}> Cashflows</label>
+                <label><input type="checkbox" name="tabs" value="fci" {% if "fci" in u_tabs %}checked{% endif %}> FCI</label>
+                <label><input type="checkbox" name="tabs" value="escenarios" {% if "escenarios" in u_tabs %}checked{% endif %}> Escenarios</label>
+                <label><input type="checkbox" name="tabs" value="opciones" {% if "opciones" in u_tabs %}checked{% endif %}> Opciones</label>
+                <label><input type="checkbox" name="tabs" value="catalogo" {% if "catalogo" in u_tabs %}checked{% endif %}> Catálogo</label>
+                <label><input type="checkbox" name="tabs" value="abm" {% if "abm" in u_tabs %}checked{% endif %}> ABM Bonos</label>
+              </div>
+              <button type="submit" style="margin-top: 1rem;">Guardar Permisos</button>
+            </form>
+          </details>
         </td>
       </tr>
       {% endfor %}
