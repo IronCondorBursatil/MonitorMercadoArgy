@@ -102,6 +102,24 @@ class PriceHistoryStore:
                 return {}
             return dict(self._cache.get(t, {}))
 
+    def prune(self, before: date) -> int:
+        """Borra los cierres anteriores a `before` y baja el cache. Devuelve las filas
+        borradas. El read-path solo mira los ultimos ~400 dias: lo de mas atras eran
+        filas que nadie leia y que hacian crecer la RAM sin techo."""
+        with self._lock:
+            try:
+                with closing(self._connect()) as con, con:
+                    cur = con.execute("DELETE FROM price_history WHERE day < ?",
+                                      (before.isoformat(),))
+                    n = cur.rowcount or 0
+            except sqlite3.Error as e:
+                logger.warning("price_history: prune failed (%s)", e)
+                return 0
+            self._cache = None          # se recarga en el proximo read
+        if n:
+            logger.info("price_history: podadas %d filas anteriores a %s", n, before)
+        return n
+
     def _write(self, rows) -> int:
         # Filas (ticker, day, close[, volume]). `volume` opcional → None = no toca la
         # col volume (COALESCE preserva la existente; un write close-only NO la borra).
@@ -276,14 +294,12 @@ def record_live_closes(snapshot_rows: dict, store: PriceHistoryStore,
     arranque; para los no cubiertos, si el server para antes del cierre ese día queda
     en un valor intradía (impacto chico: hoy nunca es base de una ventana)."""
     closes: Dict[str, float] = {}
-    volumes: Dict[str, float] = {}
     for sym, row in (snapshot_rows or {}).items():
         c = getattr(row, "c", None)
         if c and c > 0:
             closes[sym] = float(c)
-            # `row.v` = monto operado del día (del feed). El UPSERT por (ticker,día) deja
-            # la última escritura ≈ el total operado al cierre → base del promedio.
-            v = getattr(row, "v", None)
-            if v is not None and v > 0:
-                volumes[sym] = float(v)
-    return store.record_closes(closes, on_date, volumes=volumes)
+    # NO se escribe `volume`: la columna es write-only (ningún read-path la consulta) y
+    # armar el dict de ~870 floats en CADA corte era trabajo puro para nadie. La columna
+    # se deja en el schema (invariante forward-only: no se dropea). Si algún día se
+    # quiere el promedio de volumen, se revierte JUNTO con un read-path que lo use.
+    return store.record_closes(closes, on_date)

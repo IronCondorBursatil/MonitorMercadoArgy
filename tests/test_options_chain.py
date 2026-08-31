@@ -1,6 +1,8 @@
 """Tests del builder de la chain enriquecida."""
 from __future__ import annotations
 
+from datetime import date
+
 from core.domain.options.chain import build_options, underlyings_summary, months_for
 from core.infrastructure.schemas import Data912Row
 
@@ -60,7 +62,9 @@ def test_build_uses_byma_underlying_for_unmapped_root():
                                oi=987, opt_kind="C", opt_underlying="VIST",
                                opt_expiry="2026-08-21")}
     stocks = {"VIST": _row("VIST", c=9000)}
-    items = build_options(opts, stocks, r=0.0, N=20)
+    #  explicito ANTES del vencimiento: build_options ahora descarta los
+    # contratos vencidos, y con date.today() real este fixture caducaba solo.
+    items = build_options(opts, stocks, r=0.0, N=20, today=date(2026, 8, 1))
     assert len(items) == 1
     it = items[0]
     assert it.underlying == "VIST"
@@ -100,3 +104,41 @@ def test_months_for_returns_chronological():
     months = months_for(items, "ALUA")
     # JU (junio) < AG (agosto) en orden cronológico
     assert months == ["JU", "AG"] or months == ["AG", "JU"]  # tolerante al año-roll
+
+
+def test_build_descarta_contratos_vencidos():
+    """Un contrato cuyo vencimiento YA PASO no debe entrar a la chain.
+
+    Regresion: days_to_expiry hace max(1, ...), asi que un vencido se colaba con
+    t_days=1 y salia con TNA basura (cientos/miles de %) que el scanner —ordenado
+    por TNA desc— ponia ARRIBA de las series vivas. Ademas los codigos de mes se
+    repiten cada anio, asi que la cohorte muerta se mezclaba con la viva."""
+    hoy = date(2026, 9, 1)
+    opts = {
+        "VISC8000AG": _row("VISC8000AG", c=120, px_bid=115, px_ask=125, oi=10,
+                            opt_kind="C", opt_underlying="VIST",
+                            opt_expiry="2026-08-21"),   # VENCIDA (11 dias antes)
+        "VISC8000OC": _row("VISC8000OC", c=130, px_bid=125, px_ask=135, oi=20,
+                            opt_kind="C", opt_underlying="VIST",
+                            opt_expiry="2026-10-16"),   # VIVA
+    }
+    stocks = {"VIST": _row("VIST", c=9000)}
+    items = build_options(opts, stocks, r=0.0, N=20, today=hoy)
+
+    assert [i.contract.ticker for i in items] == ["VISC8000OC"]
+    assert all(i.expiry >= hoy for i in items)
+    assert all(i.t_days > 0 for i in items)
+
+
+def test_months_for_no_devuelve_el_mes_vencido():
+    """El default del tab Opciones es months_for(...)[0]: no puede ser una serie muerta."""
+    hoy = date(2026, 9, 1)
+    opts = {
+        "VISC8000AG": _row("VISC8000AG", c=120, px_bid=115, px_ask=125, oi=10,
+                            opt_kind="C", opt_underlying="VIST", opt_expiry="2026-08-21"),
+        "VISC8000OC": _row("VISC8000OC", c=130, px_bid=125, px_ask=135, oi=20,
+                            opt_kind="C", opt_underlying="VIST", opt_expiry="2026-10-16"),
+    }
+    items = build_options(opts, {"VIST": _row("VIST", c=9000)}, r=0.0, N=20, today=hoy)
+    meses = months_for(items, "VIST")
+    assert "AG" not in meses

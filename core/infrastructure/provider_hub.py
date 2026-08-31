@@ -188,6 +188,10 @@ class ProviderHub:
                         del self._seen_at[s]
                         for settle in (SETTLE_24, SETTLE_CI):
                             self._snap.get(settle, {}).pop(s, None)
+                        # `_source` acompaña a `_snap`: si no se purga acá queda
+                        # afirmando la procedencia de un símbolo que ya no existe
+                        # (el listado del ABM lee de ahí) y crece sin techo.
+                        self._source.pop(s, None)
                     if stale:
                         logger.info("hub: purged %d stale symbols (>%dd)",
                                     len(stale), self._PURGE_MAX_DAYS)

@@ -147,6 +147,15 @@ def build_options(options_rows: dict, stocks_rows: dict,
         # código de mes (3er viernes). Un ISO inválido cae al fallback.
         expiry = _expiry_from_iso(getattr(row, "opt_expiry", None)) \
             or resolve_expiry_date(meta.month, today=today)
+        # CONTRATO VENCIDO → fuera. `days_to_expiry` hace `max(1, ...)`, o sea que
+        # disfraza el vencimiento y anula la única guarda del pipeline (rates.py
+        # exige t_days > 0). Sin esto, una cohorte vencida sobrevive en el snapshot
+        # del hub (que no purga) y sale con TNA basura (401%–8.922% medidos) que el
+        # sort default del scanner —TNA desc— pone ARRIBA de las series vivas; peor,
+        # los códigos de mes se repiten cada año, así que la cohorte muerta se mezcla
+        # con su homónima viva. Muerde tras UN solo vencimiento sin reiniciar.
+        if expiry < today:
+            continue
         t_days = days_to_expiry(expiry, today)
         T = time_to_expiry(expiry, today)
 

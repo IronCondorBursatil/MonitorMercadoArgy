@@ -224,7 +224,7 @@ async def _price_history_loop(app: FastAPI) -> None:
     del feed vivo de TODO el universo; en la 1ª corrida además hace el priming
     profundo de Data912 `/historical/bonds` (soberanos + CER viejos). Read-path
     100% local → esta task es la única que escribe el store. Diario alcanza."""
-    from datetime import date as _date
+    from datetime import date as _date, timedelta
     from core.infrastructure.price_history import (
         byma_prime_candidates, get_price_history_store, prime_from_byma_historico,
         prime_from_data912, record_live_closes,
@@ -307,6 +307,13 @@ async def _price_history_loop(app: FastAPI) -> None:
                 logger.info("catalog backup periódico: %s", bak.name)
         except Exception:  # noqa: BLE001 — el backup no debe tumbar el loop
             logger.warning("backup periódico de catalog.db falló", exc_info=True)
+        # Poda del store de precios: el read-path solo mira ~400 días, así que todo lo
+        # anterior era RAM y disco que nadie leía y que crecía sin techo (~54k filas/año).
+        try:
+            cutoff = _date.today() - timedelta(days=settings.price_history_keep_days)
+            await asyncio.to_thread(store.prune, cutoff)
+        except Exception:  # noqa: BLE001 — la poda no debe tumbar el loop
+            logger.warning("poda de price_history falló", exc_info=True)
         await asyncio.sleep(settings.price_history_sec)
 
 

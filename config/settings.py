@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     # Cierres diarios por ticker (variaciones Sem/1M/3M/YTD/1A). Se auto-mantiene
     # (priming Data912 historical + acumulación del feed vivo) — ver price_history.py.
     price_history_db: Path = db_dir / "price_history.db"
+    # Ventana que se CONSERVA en price_history. El unico read-path
+    # (`_hist_bases`) pide 400 dias y consume hasta 377; 420 deja margen para que la
+    # poda horaria nunca corte por debajo de lo que el motor va a pedir en el mismo
+    # tick. Sin poda el store crece ~54k filas/anio (~50 MB de RAM a 5 anios); con
+    # ella el techo queda estable en ~127k filas (~12 MB).
+    price_history_keep_days: int = 420
     # Histórico FCI (vcp/ccp/patrimonio por fondo) p/ flujos reales (Δccp×VCP). Se
     # auto-mantiene acumulando el corte diario de ArgentinaDatos — ver fci_history.py.
     fci_history_db: Path = db_dir / "fci_history.db"
