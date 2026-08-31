@@ -18,7 +18,9 @@
   <!-- ÍNDICES -->
   <section class="panel cat-sec" id="sec-indices">
     <div class="panel-head">ÍNDICES S&amp;P/BYMA · franja 5 ruedas →</div>
-    <div class="cat-body" hx-get="/catalogo/indices" hx-trigger="load, every 60s" hx-swap="innerHTML">
+    <div class="cat-body" hx-get="/catalogo/indices"
+         hx-trigger="load, every 60s[mrRefreshOK(this)], tabvisible[mrRefreshOK(this)] from:body"
+         hx-swap="innerHTML">
       <div class="cat-loading">Cargando índices…</div>
     </div>
   </section>
@@ -26,7 +28,9 @@
   <!-- CAUCIONES -->
   <section class="panel cat-sec" id="sec-cauciones">
     <div class="panel-head">CAUCIONES · curva de tasas por plazo</div>
-    <div class="cat-body" hx-get="/catalogo/cauciones" hx-trigger="load, every 120s" hx-swap="innerHTML">
+    <div class="cat-body" hx-get="/catalogo/cauciones"
+         hx-trigger="load, every 120s[mrRefreshOK(this)], tabvisible[mrRefreshOK(this)] from:body"
+         hx-swap="innerHTML">
       <div class="cat-loading">Cargando cauciones…</div>
     </div>
   </section>

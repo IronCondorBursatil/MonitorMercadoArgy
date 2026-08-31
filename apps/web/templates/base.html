@@ -25,6 +25,25 @@
       h.setAttribute("data-theme", t);
       localStorage.setItem("theme", t);
     }
+    // --- Refrescar SOLO lo que se está mirando ---------------------------------
+    // Filtro de los hx-trigger periódicos (`sse:refresh`, `every Ns`, `tabvisible`).
+    // Corta pedidos de datos que nadie va a ver, en dos casos:
+    //   (a) la PESTAÑA del navegador está en segundo plano  → document.hidden
+    //   (b) el panel está cerrado con la X (display:none)   → sin caja de layout
+    // El `load` inicial NUNCA se filtra (si no, un panel podría no cargar nunca):
+    // sólo se gatean los refrescos REPETIDOS. htmx exige que el filtro devuelva
+    // exactamente `true` para dejar pasar el trigger (maybeFilterEvent).
+    window.mrRefreshOK = function (el) {
+      if (document.hidden) return false;
+      if (!el || typeof el.getClientRects !== "function") return true;
+      return el.getClientRects().length > 0;   // display:none ⇒ 0 rects
+    };
+    // Al volver a la pestaña: refrescar YA (sin esperar al próximo ciclo/SSE).
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden && window.htmx) {
+        htmx.trigger(document.body, "tabvisible");
+      }
+    });
     // --- Helper a11y para modales/drawers: focus-trap + restaurar foco + Esc ---
     // Agnóstico de markup (recibe el panel + callbacks); lo usan el drawer CER, el
     // #modal del detalle y el modal del gráfico de /on (on.js). Pila de niveles: Esc
@@ -110,7 +129,9 @@
       <h1>MONITOR · Renta Fija AR</h1>
       {# Indicador de frescura (O1): poll a /health/badge cada 15s → verde/ámbar/rojo
          según el estado del refresh loop. Presente en todas las páginas. #}
-      <span class="meta-wrap" hx-get="/health/badge" hx-trigger="load, every 15s" hx-swap="innerHTML">
+      <span class="meta-wrap" hx-get="/health/badge"
+            hx-trigger="load, every 15s[mrRefreshOK(this)], tabvisible[mrRefreshOK(this)] from:body"
+            hx-swap="innerHTML">
         <span class="meta"><span class="live"></span>{% if last_refresh %}act {{ last_refresh.strftime("%H:%M:%S") }}{% else %}en vivo{% endif %}</span>
       </span>
       <nav>
@@ -150,7 +171,8 @@
     {# Strip de cotizaciones (dólares + reservas + riesgo país). Autocargable por
        HTMX → presente en todas las páginas sin tocar cada router. #}
     <div class="header-strip" hx-get="/header/cards"
-         hx-trigger="load, every 60s" hx-swap="innerHTML">
+         hx-trigger="load, every 60s[mrRefreshOK(this)], tabvisible[mrRefreshOK(this)] from:body"
+         hx-swap="innerHTML">
       <span class="hstrip-loading">Cargando cotizaciones…</span>
     </div>
   </header>

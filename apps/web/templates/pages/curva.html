@@ -54,6 +54,11 @@
   }
   document.getElementById("curva-grupo").addEventListener("change", loadCurva);
   loadCurva();
-  setInterval(loadCurva, 30000);
+  // Igual que los hx-trigger filtrados (ver mrRefreshOK en base.html): con la pestaña
+  // en segundo plano no se pide la curva; al volver se refresca enseguida.
+  setInterval(function () { if (!document.hidden) loadCurva(); }, 30000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) loadCurva();
+  });
 </script>
 {% endblock %}

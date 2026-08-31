@@ -20,7 +20,10 @@
 {# SSE (§7.4): el server pushea `refresh` cada ciclo del loop (~7s) → los paneles
    recargan event-driven. El `every 60s` es solo fallback lento si la conexión SSE
    se cae (htmx-sse ya reconecta solo); antes era `every 15s` y duplicaba el push
-   del SSE → ~200 req/min por cliente de HTML idéntico, agotando el pool con 3-4. #}
+   del SSE → ~200 req/min por cliente de HTML idéntico, agotando el pool con 3-4.
+   El filtro `[mrRefreshOK(this)]` (base.html) corta el refresco cuando la pestaña
+   está en segundo plano o el panel está cerrado con la X: no se piden filas que
+   nadie va a mirar. `tabvisible` re-sincroniza al volver a la pestaña. #}
 <div class="grid-stack" data-col="{{ COL }}" data-cell="{{ CELL }}" data-margin="{{ MARGIN }}"
      hx-ext="sse" sse-connect="/stream">
   {% for p in panels %}
@@ -79,8 +82,8 @@
           <tbody id="tbody-{{ p.id }}"
                  hx-get="/panels/{{ p.id }}/rows"
                  {% if p.settle_filter %}hx-vals='js:{settle: panelSettle("{{ p.id }}")}'
-                 hx-trigger="load, sse:refresh, every 60s, settlechange"
-                 {% else %}hx-trigger="load, sse:refresh, every 60s"{% endif %}
+                 hx-trigger="load, sse:refresh[mrRefreshOK(this)], every 60s[mrRefreshOK(this)], tabvisible[mrRefreshOK(this)] from:body, settlechange"
+                 {% else %}hx-trigger="load, sse:refresh[mrRefreshOK(this)], every 60s[mrRefreshOK(this)], tabvisible[mrRefreshOK(this)] from:body"{% endif %}
                  hx-swap="innerHTML">
             {% with rows=p.rows, ncols=p.columns|length %}
               {% include "fragments/panel_rows.html" %}

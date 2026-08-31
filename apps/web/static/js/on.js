@@ -1567,6 +1567,10 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
   // `force` saltea el throttle (para el refresco al volver a la pestaña).
   var _onCooldown = false;
   function onLiveRefresh(force) {
+    // Pestaña en segundo plano → no re-fetchear /on/data ni re-renderizar: nadie lo
+    // mira (mismo criterio que mrRefreshOK en base.html). Al volver, el
+    // visibilitychange de abajo llama con force=true y re-sincroniza al instante.
+    if (document.hidden) return;
     if (_onCooldown && !force) return;
     _onCooldown = true;
     setTimeout(function () { _onCooldown = false; }, 10000);
