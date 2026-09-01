@@ -10,23 +10,23 @@ Arcor S.A.I.C.,Alimentos y Bebidas,AAA(arg),Estable
 Camuzzi Gas Pampeana S.A.,Petróleo y Gas,AA-(arg),Positiva
 Capex S.A.,Petróleo y Gas,AA(arg),Estable
 Celulosa Argentina S.A.,Celulosa y Papel,D(arg),N/A
-Central Puerto S.A.,Generación Eléctrica,AA+(arg),Estable
-Central Térmica Roca S.A.,Generación Eléctrica,D(arg),N/A
-Compañía de Transporte de Energía Eléctrica en Alta Tensión Transener S.A.,Electricidad,AA(arg),Estable
+Central Puerto S.A.,Generación Eléctrica,AAA(arg),Estable
+Central Térmica Roca S.A.,Generación Eléctrica,BB-(arg),Estable
+Compañía de Transporte de Energía Eléctrica en Alta Tensión Transener S.A.,Electricidad,AA+(arg),Estable
 Compañía General de Combustibles S.A. (CGC),Petróleo y Gas,AA-(arg),Estable
 Compañía Mega S.A.,Petróleo y Gas,AAA(arg),Estable
 Consultatio S.A.,Bienes Raíces,AA(arg),Estable
 Cresud S.A.C.I.F. y A.,Bienes Raíces,AAA(arg),Estable
-Crown Point Energía S.A.,Petróleo y Gas,BBB(arg),Estable
-Ct Barragan S.A.,Generación Eléctrica,AA+(arg),Estable
+Crown Point Energía S.A.,Petróleo y Gas,BBB+(arg),Estable
+Ct Barragan S.A.,Generación Eléctrica,AAA(arg),Estable
 Disal S.A.,Consumo Masivo,A(arg),Estable
-Empresa Distribuidora de Electricidad de Mendoza S.A. (EDEMSA),Electricidad,A+(arg),Estable
-Empresa Distribuidora de Electricidad de Salta S.A. (EDESA),Electricidad,A+(arg),Estable
-Empresa Distribuidora y Comercializadora Norte S.A. (EDENOR),Electricidad,A+(arg),Estable
-Empresa Provincial de Energía de Córdoba (EPEC),Servicios Públicos,AA-(arg),Estable
+Empresa Distribuidora de Electricidad de Mendoza S.A. (EDEMSA),Electricidad,AA-(arg),Estable
+Empresa Distribuidora de Electricidad de Salta S.A. (EDESA),Electricidad,AA-(arg),Estable
+Empresa Distribuidora y Comercializadora Norte S.A. (EDENOR),Electricidad,AA-(arg),RW Positivo
+Empresa Provincial de Energía de Córdoba (EPEC),Servicios Públicos,AA(arg),Estable
 Estremar S.A.U.,Agroindustria,A-(arg),Estable
 Futuros y Opciones.com S.A.,Agroindustria,AA-(arg),Estable
-Generación Mediterránea S.A.,Generación Eléctrica,D(arg),N/A
+Generación Mediterránea S.A.,Generación Eléctrica,BB-(arg),Estable
 GeoPark Argentina S.A.,Petróleo y Gas,AA+(arg),Estable
 Havanna Holding S.A.,Alimentos y Bebidas,A+(arg),Estable
 Havanna S.A.,Alimentos y Bebidas,A+(arg),Estable
@@ -34,15 +34,15 @@ Hijos de Salvador Muñoz S.A.,Agroindustria,A(arg),Estable
 Invap S.E.,Bienes de Capital,A(arg),Estable
 Inversora Juramento S.A.,Alimentos y Bebidas,A-(arg),Estable
 IRSA Inversiones y Representaciones S.A.,Bienes Raíces,AAA(arg),Estable
-Laboratorios Richmond S.A.C.I.F.,Empresas Farmacéuticas,A(arg),Estable
+Laboratorios Richmond S.A.C.I.F.,Empresas Farmacéuticas,A-(arg),Estable
 Ledesma S.A.A.I.,Alimentos y Bebidas,AA-(arg),Estable
-LIPSA S.R.L.,Agroindustria,BBB-(arg),RW Negativo
+LIPSA S.R.L.,Agroindustria,BBB(arg),Estable
 Loma Negra C.I.A.S.A.,Ingeniería y Construcción,AAA(arg),Estable
 Los Grobo Agropecuaria S.A.,Agroindustria,D(arg),N/A
 Luz de Tres Picos S.A.,Generación Eléctrica,AA(arg),Estable
-Meranol S.A.C.I.,Productos Químicos,A-(arg),Positiva
+Meranol S.A.C.I.,Productos Químicos,A(arg),Estable
 Mercado Libre S.R.L.,Tecnología,AAA(arg),Estable
-Metalfor S.A.,Bienes de Capital,BB+(arg),Estable
+Metalfor S.A.,Bienes de Capital,CC(arg),N/A
 Milicic S.A.,Ingeniería y Construcción,A+(arg),Estable
 Minas Argentinas S.A.,Metales y Minería,A+(arg),Estable
 Minera Exar S.A.,Metales y Minería,AA(arg),Estable
@@ -50,7 +50,7 @@ Molinos Agro S.A.,Agroindustria,AA(arg),Estable
 Molinos Río de la Plata S.A.,Alimentos y Bebidas,AA(arg),Estable
 Morixe Hermanos S.A.C.I.,Alimentos y Bebidas,A(arg),Estable
 MSU Energy S.A.,Generación Eléctrica,AA-(arg),Estable
-MSU Green Energy S.A.U.,Generación Eléctrica,A+(arg),Estable
+MSU Green Energy S.A.U.,Generación Eléctrica,AA-(arg),Estable
 MSU S.A.,Agroindustria,A+(arg),Estable
 Naturgy BAN S.A.,Servicios Públicos,AA-(arg),Positiva
 Oleoductos del Valle S.A. (Oldelval),Petróleo y Gas,AAA(arg),Estable
@@ -62,14 +62,14 @@ Plaza Logística S.R.L.,Bienes Raíces,AA(arg),Estable
 Pluspetrol S.A.,Petróleo y Gas,AAA(arg),Estable
 Profertil S.A.,Agroindustria,AAA(arg),Estable
 RDA Renting S.A.,Bienes Raíces,A(arg),Estable
-Rizobacter Argentina S.A.,Agroindustria,CC(arg),N/A
+Rizobacter Argentina S.A.,Agroindustria,B(arg),Estable
 Roch S.A.,Petróleo y Gas,C(arg),N/A
 S.A. San Miguel A.G.I.C.I. y F. (SAMI),Alimentos y Bebidas,BBB-(arg),Estable
 Sidersa S.A.,Metales y Minería,A+(arg),Estable
 Sociedad Anónima Importadora y Exportadora de la Patagonia (SAIEP),Consumo Masivo,A(arg),Estable
 Tango Energy Argentina S.A. (Ex Petrolera Aconcagua Energía S.A.),Petróleo y Gas,BBB(arg),Estable
 Tecpetrol S.A.,Petróleo y Gas,AAA(arg),Estable
-Telecom Argentina S.A.,Telecomunicaciones,AA+(arg),Positiva
+Telecom Argentina S.A.,Telecomunicaciones,AAA(arg),Estable
 Transportadora de Gas del Norte S.A. (TGN),Petróleo y Gas,AA-(arg),Positiva
 Vista Energy Argentina S.A.U.,Petróleo y Gas,AAA(arg),Estable
 YPF Energía Eléctrica S.A. (YPF Luz),Generación Eléctrica,AAA(arg),Estable
