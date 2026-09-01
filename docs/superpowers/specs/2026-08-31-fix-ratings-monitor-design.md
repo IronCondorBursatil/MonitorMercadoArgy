@@ -29,7 +29,7 @@ actualizar `AS_OF` a mano), que queda como semilla/bootstrap y fallback.
         │  1×/día, httpx + TLS por host, pausa entre páginas
         ▼
 core/infrastructure/fix_ratings.py      fetch_listado() + parse_listado(html) puro
-        │  guard de sanidad: corte < ~60% del último bueno → se DESCARTA entero
+        │  guard de sanidad: corte < 60% del último bueno → se DESCARTA entero
         ▼
 core/infrastructure/ratings_history.py  store SQLite: fix_snapshot + fix_changes
         │  record_corte(): idempotente por día; diffea contra el corte anterior
@@ -71,7 +71,10 @@ apps/web/on_src/unified.js → on.js      ▲ (up) / ▼ (down) / ⚑ (solo pers
   El primer corte de la historia no genera cambios. Una entidad que desaparece del
   listado NO genera cambio (puede ser retiro de calificación o hueco del scrape).
 - `latest_entries()` — filas del último corte, en la forma que consume el matcher.
-- `recent_changes(days=7)` — cambios de la ventana, para el join del panel.
+- `recent_changes(days=7)` — cambios de la ventana, para el join del panel. La
+  ventana se mide contra `fix_changes.fecha` (el corte en que LO DETECTAMOS), no
+  contra la fecha que declara FIX: esa puede ser anterior al primer corte y el
+  badge nunca se vería.
 - DB fuera del working tree, mismo patrón que `fci_history.py` (engine propio,
   reconfigurable para tests).
 
@@ -86,7 +89,7 @@ apps/web/on_src/unified.js → on.js      ▲ (up) / ▼ (down) / ⚑ (solo pers
 
 ### 4. `apps/web/app.py` (modificado)
 
-- `_ratings_loop`: al arrancar y luego cada ~6h pregunta al store si ya está el
+- `_ratings_loop`: al arrancar y luego cada 6h pregunta al store si ya está el
   corte de hoy; si no, `fetch_listado()` vía `to_thread` + `record_corte()`.
   Respetar `MONITOR_DISABLE_LOOPS`. En fallo: log + reintento al tick siguiente;
   el panel sigue con el último corte y su `ratings_as_of` viejo a la vista.
@@ -103,7 +106,7 @@ apps/web/on_src/unified.js → on.js      ▲ (up) / ▼ (down) / ⚑ (solo pers
 ## Manejo de errores
 
 - **Scrape parcial** (timeout a mitad de paginación, HTML cambiado): si el corte
-  trae < ~60% de las filas del último corte bueno, se descarta entero y se loguea.
+  trae < 60% de las filas del último corte bueno, se descarta entero y se loguea.
   Peor un día sin corte que falsos cambios masivos.
 - **Sitio caído / bloqueo**: el loop loguea y reintenta al tick siguiente. El panel
   nunca se queda sin dato: sirve el último corte, y `ratings_as_of` muestra la
@@ -134,4 +137,6 @@ por emisión, otras calificadoras (Moody's Local, S&P). Todo montable después s
   parser ruidoso + guard de sanidad + CSV como fallback permanente + 1 request-set
   por día (cortés).
 - **Orden de la escala nacional**: para clasificar up/down hace falta el orden
-  AAA > AA+ > … > D (con notches). Vive en un solo lugar, testeado.
+  AAA > AA+ > … > D (con notches). Vive en `ratings.py`, junto a `_grade()` que
+  ya parsea la letra base, y lo consume `ratings_history` al diffear. Un solo
+  lugar, testeado.
