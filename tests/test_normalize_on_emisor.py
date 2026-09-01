@@ -2,7 +2,7 @@
 
 import pytest
 
-from scripts.normalize_on_emisor import canonico, raiz
+from scripts.normalize_on_emisor import ALIAS, canonico, raiz
 
 
 @pytest.mark.parametrize("a,b", [
@@ -39,3 +39,71 @@ def test_es_idempotente():
     c = canonico(grupo)
     assert canonico({c}) == c
     assert raiz(c) == raiz("YPF")
+
+
+# --------------------------------------------------------------------------- #
+# C3: la forma societaria abreviada con puntos ("S.R.L.", "S.A.C.I.F.") tiene que
+# caer igual que la escrita corrida ("SRL", "SACIF"). Antes se borraban los puntos
+# POR ESPACIOS antes de recortar la sigla, asi que solo "S.A." quedaba limpio y el
+# resto sobrevivia descosido ("S R L") partiendo al emisor en dos.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("a,b", [
+    ("Plaza Logistica S.R.L.", "Plaza Logistica SRL"),
+    ("Arcor S.A.I.C.", "ARCOR"),
+    ("Generacion Mediterranea S.A.C.I.F.", "GENERACION MEDITERRANEA"),
+    ("Petroquimica Comodoro Rivadavia S.A.I.C.F.", "PETROQUIMICA COMODORO RIVADAVIA"),
+    ("Rizobacter Argentina S.A.U.", "RIZOBACTER ARGENTINA"),
+    ("Newsan S.A.", "NEWSAN"),
+])
+def test_la_forma_societaria_con_puntos_se_recorta_igual_que_sin_puntos(a, b):
+    assert raiz(a) == raiz(b)
+
+
+def test_la_sigla_no_se_come_parte_del_nombre():
+    """Recortar la forma societaria no puede amputar una palabra del emisor:
+    'NEWSAN' NO es 'NEW' + 'SAN', y 'SAMSUNG' no termina en 'SA'."""
+    assert raiz("NEWSAN") == "NEWSAN"
+    assert raiz("SAMSUNG") == "SAMSUNG"
+
+
+# --------------------------------------------------------------------------- #
+# C4: ALIAS es la valvula de escape para la marca comercial que la raiz NO puede
+# unificar sola (el backfill BYMA inyecto razones sociales largas junto a los
+# nombres cortos preexistentes). El lookup tiene que funcionar tambien con las
+# variantes sufijadas ("EDENOR - Clase 9", "IRSA S.A.").
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("a,b", [
+    ("EDENOR", "Empresa Distribuidora y Comercializadora Norte S.A."),
+    ("EDEMSA", "Empresa Distribuidora de Electricidad de Mendoza S.A."),
+    ("IRSA", "IRSA INVERSIONES Y REPRESENTACIONES S.A."),
+    ("MASTELLONE", "Mastellone Hermanos S.A."),
+    ("PAN AMERICAN ENERGY", "PAN AMERICAN ENERGY, S.L. SUCURSAL ARGENTINA"),
+    ("VISTA ENERGY", "VISTA ENERGY ARGENTINA S.A.U."),
+    ("YPF LUZ", "YPF Energía Eléctrica S.A."),
+])
+def test_alias_unifica_marca_comercial_con_razon_social(a, b):
+    assert raiz(a) == raiz(b)
+
+
+@pytest.mark.parametrize("variante", [
+    "EDENOR - Clase 9",     # sufijo de serie
+    "Edenor S.A.",          # forma societaria + minusculas
+    "EDENOR",
+])
+def test_el_alias_matchea_variantes_sufijadas_no_solo_el_string_exacto(variante):
+    """El lookup viejo era `ALIAS.get(sn.upper())` sobre el nombre COMPLETO: con
+    cualquier sufijo fallaba y el emisor volvia a partirse."""
+    assert raiz(variante) == raiz("Empresa Distribuidora y Comercializadora Norte S.A.")
+
+
+def test_el_canonico_del_grupo_aliasado_es_la_razon_social():
+    """La marca comercial corta pierde contra la razon social larga (mas completa)."""
+    assert canonico({"EDENOR", "Empresa Distribuidora y Comercializadora Norte S.A."}) \
+        == "Empresa Distribuidora y Comercializadora Norte S.A."
+
+
+def test_el_alias_es_idempotente():
+    """raiz(raiz_destino) == raiz(marca): sin esto, correr el script dos veces
+    renombraria en ping-pong."""
+    for marca, razon in ALIAS.items():
+        assert raiz(razon) == raiz(marca)

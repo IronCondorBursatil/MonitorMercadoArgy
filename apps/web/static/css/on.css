@@ -572,8 +572,10 @@ td.uni-grp3 { padding-left: 10px; text-align: center; }
 .uni-cl { color: var(--text-dim); }
 /* ISIN: 12 caracteres alfanumericos -> monoespaciado y algo mas chico para que
    la columna no empuje al resto de la grilla. */
-.uni-isin { color: var(--text-dim); font-family: ui-monospace, Consolas, monospace;
-            font-size: 10.5px; letter-spacing: -.2px; white-space: nowrap; }
+/* La celda ISIN va en un td.num: la mono (var(--font-mono)) y el nowrap ya vienen de
+   `table.uni td.num` / `table.uni td` y se heredan acá. Solo ajustamos lo propio del
+   ISIN: atenuado y más chico para que 12 caracteres no compitan con las métricas. */
+.uni-isin { color: var(--text-dim); font-size: 10.5px; letter-spacing: -.2px; }
 
 /* barra de TIR prom (en la celda TIR de los grupos) */
 .uni-barwrap { display: inline-block; width: 46px; height: 7px; border-radius: 4px;

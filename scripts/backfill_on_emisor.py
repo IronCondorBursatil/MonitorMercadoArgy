@@ -10,10 +10,12 @@ DE DONDE SALE: la tabla `byma_catalog` (Universo BYMA, ~4.7k especies, columna
 por las patas MEP/CABLE — la ficha suele estar cargada en una sola de las tres.
 
 Idempotente: solo toca filas cuyo `short_name` este vacio o sea igual al ticker.
-Nunca pisa un nombre ya cargado a mano desde el ABM. Snapshot pre-op.
+Nunca pisa un nombre ya cargado a mano desde el ABM. Snapshot pre-op VERIFICADO
+(`op_guards.guard_write`): si el server esta vivo o el backup fallo, no escribe.
 
     py -3.12 scripts/backfill_on_emisor.py --dry-run
     py -3.12 scripts/backfill_on_emisor.py
+    py -3.12 scripts/backfill_on_emisor.py --force   # saltea los guards
 """
 from __future__ import annotations
 
@@ -26,11 +28,10 @@ sys.path.insert(0, str(ROOT))
 
 from sqlalchemy import select  # noqa: E402
 
-from config.settings import settings  # noqa: E402
 from core.domain.on_classification import classify_sector  # noqa: E402
-from core.infrastructure.db.backup import backup_db  # noqa: E402
 from core.infrastructure.db.engine import SessionLocal  # noqa: E402
 from core.infrastructure.db.models import BymaCatalogORM, InstrumentORM  # noqa: E402
+from scripts.op_guards import guard_write  # noqa: E402
 
 SHEET = "Obligaciones_Negociables"
 
@@ -50,7 +51,13 @@ def _needs_fix(short_name: str | None, ticker: str) -> bool:
     return not sn or sn == ticker
 
 
-def main(dry: bool) -> int:
+def main(dry: bool, force: bool = False) -> int:
+    # Preflight ANTES de leer nada: si no se puede escribir con red de seguridad,
+    # mejor abortar sin haber recorrido el catalogo. El dry-run no escribe, asi
+    # que corre igual con el monitor arriba (es su uso normal: previsualizar).
+    if not dry and (rc := guard_write("pre-on-emisor", force=force)):
+        return rc
+
     with SessionLocal() as s:
         ons = s.scalars(select(InstrumentORM).where(InstrumentORM.sheet == SHEET)).all()
 
@@ -77,8 +84,6 @@ def main(dry: bool) -> int:
             print("  sin ficha en el universo:", [o.ticker for o, _ in sin_resolver])
 
         if not dry:
-            backup_db(settings.catalog_db, settings.backup_dir,
-                      keep=settings.backup_keep, tag="pre-on-emisor")
             for o, emi in resueltos:
                 o.short_name = emi
             s.commit()
@@ -108,4 +113,4 @@ def main(dry: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main("--dry-run" in sys.argv))
+    raise SystemExit(main("--dry-run" in sys.argv, force="--force" in sys.argv))

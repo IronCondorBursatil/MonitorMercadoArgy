@@ -47,9 +47,17 @@ SECTOR_MAP: dict[str, SectorMeta] = {s.key: s for s in SECTORS}
 
 # etiqueta del sector -> keywords (en MAYÚSCULA, sin acentos). Orden = prioridad.
 SECTOR_KEYWORDS: list[tuple[str, list[str]]] = [
+    # Financieras CAUTIVAS de fabricantes (Scania Credit, CNH Industrial Capital,
+    # John Deere Credit Cia. Financiera): el emisor de la ON es la financiera, NO la
+    # fábrica — lo que se compra es riesgo de crédito prendario/leasing, así que van
+    # todas en este bucket. "JOHN DEERE" vivía en Industrial y era código muerto
+    # (este bucket corre primero y "FINANCIERA" ya matcheaba la razón social BYMA
+    # "John Deere Credit Cia. Financiera S.A."); "CNH" también estaba en Industrial y
+    # rompía la simetría con Scania.
     ("Servicios Financieros", ["BANCO", "GALICIA", "MACRO", "COMAFI", "SUPERVIELLE",
                                "HIPOTECARIO", "BBVA", "SANTANDER", "TARJETA NARANJA",
-                               "MERCADO PAGO", "SCANIA", "CREDITO", "FINANCIERA",
+                               "MERCADO PAGO", "SCANIA", "CNH INDUSTRIAL CAPITAL",
+                               "CREDITO", "FINANCIERA",
                                "COMPANIA FINANCIERA", "TARJETA", "GRUPO ST"]),
     ("Utilities (Luz / Gas)", ["EDENOR", "EDESUR", "EDEMSA", "EDELAP", "EDESA",
                                "TRANSENER", "METROGAS", "CAMUZZI", "NATURGY",
@@ -62,7 +70,10 @@ SECTOR_KEYWORDS: list[tuple[str, list[str]]] = [
                           # el broker de granos FyO (no es una financiera).
                           "RIZOBACTER", "PROFERTIL", "HAVANNA", "JURAMENTO",
                           "FUTUROS Y OPCIONES", "VENTURINO"]),
-    ("Industrial / Maquinaria", ["JOHN DEERE", "CNH", "MIRGOR", "ALUAR", "LOMA NEGRA",
+    # Fabricantes propiamente dichos. Las financieras cautivas de maquinaria (John
+    # Deere Credit, CNH Industrial Capital, Scania Credit) NO van acá: ver el bucket
+    # de Servicios Financieros.
+    ("Industrial / Maquinaria", ["MIRGOR", "ALUAR", "LOMA NEGRA",
                                  "SIDERAR", "TERNIUM", "FCA", "TOYOTA", "VOLKSWAGEN",
                                  "GENERAL MOTORS",
                                  # siderurgica (planta integrada San Nicolas, RIGI)

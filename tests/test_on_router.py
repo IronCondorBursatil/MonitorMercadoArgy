@@ -41,10 +41,11 @@ class _StubState:
 
 def _on(ticker, emisor, *, price=100.0, tir=0.07, md=2.0, vtec=100.0, parity=0.95,
         ley=None, itype="HARD DOLLAR", change=1.23, volume=2_000_000.0, days=400, clase=None,
-        sector=None):
+        sector=None, isin=None):
     inst = Instrument(ticker=ticker, short_name=emisor, instrument_type=itype,
                       maturity_date=date.today() + timedelta(days=days),
                       ley_aplicable=ley, serie_clase=clase, sector_override=sector,
+                      isin=isin,
                       cashflows=[Cashflow(date.today() + timedelta(days=days), 100.0, 0.0)])
     snap = MarketSnapshot(instrument=inst, price=price, last_update=date.today(),
                           change_pct=change, volume=volume)
@@ -432,8 +433,13 @@ def test_on_tipo_facet_defaults_to_hard_dollar_only():
 
 
 def test_on_data_expone_el_isin():
-    """La columna ISIN del panel se alimenta de /on/data; sin la clave sale vacia."""
-    data = _fetch(_StubState([_on("YMCXD", "YPF S.A.")]))
-    bonds = data["bonds"]
-    assert bonds, "no hay bonos en el dataset"
-    assert all("isin" in b for b in bonds), "falta la clave isin en algun bono"
+    """La columna ISIN del panel se alimenta de /on/data. Se asertan el VALOR y el
+    caso vacío: con el stub sin ISIN (todo None) el test pasaba aunque on_service
+    hardcodeara `"isin": None`, así que no probaba nada."""
+    data = _fetch(_StubState([
+        _on("YMCXD", "YPF S.A.", isin="USP989MJBV29"),
+        _on("YM34O", "YPF S.A."),   # catálogo sin ISIN → None, no rompe la columna
+    ]))
+    by = {b["ticker"]: b for b in data["bonds"]}
+    assert by["YMCXD"]["isin"] == "USP989MJBV29"   # sale el del catálogo, no un fijo
+    assert "isin" in by["YM34O"] and by["YM34O"]["isin"] is None

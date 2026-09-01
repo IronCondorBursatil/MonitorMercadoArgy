@@ -15,6 +15,8 @@ window.ON_SECTORS = [
   { key: "Infraestructura / Construcción",   short: "Infra",      color: "#C9A227", icon: "🏗️" },
   { key: "Real Estate",                      short: "Real Estate",color: "#D85FA0", icon: "🏢" },
   { key: "Telecomunicaciones",               short: "Telco",      color: "#0E9C8A", icon: "📡" },
+  { key: "Salud / Farma",                     short: "Salud",      color: "#E0566E", icon: "💊" },
+  { key: "Minería",                          short: "Minería",    color: "#8D6E63", icon: "⛏️" },
   { key: "Otros",                            short: "Otros",      color: "#8993B8", icon: "•" },
 ];
 window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s]));
@@ -1569,10 +1571,6 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
   // `force` saltea el throttle (para el refresco al volver a la pestaña).
   var _onCooldown = false;
   function onLiveRefresh(force) {
-    // Pestaña en segundo plano → no re-fetchear /on/data ni re-renderizar: nadie lo
-    // mira (mismo criterio que mrRefreshOK en base.html). Al volver, el
-    // visibilitychange de abajo llama con force=true y re-sincroniza al instante.
-    if (document.hidden) return;
     if (_onCooldown && !force) return;
     _onCooldown = true;
     setTimeout(function () { _onCooldown = false; }, 10000);
@@ -1591,5 +1589,18 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
   }
   document.addEventListener("visibilitychange", function () { if (!document.hidden) onFocusRefresh(); });
   window.addEventListener("focus", onFocusRefresh);
+
+  /* Guard de visibilidad del refresco vivo (solo aplica en la página /on).
+     El loop vivo (SSE + polling de /on/data) NO está en este mock: lo inyecta
+     scripts/build_on_static.py al portearlo a static/js/on.js. Por eso el guard vive
+     acá y no allá: on.js es un artefacto generado y cualquier edición a mano se pierde
+     en el próximo build. Con la pestaña oculta no re-fetcheamos ni re-renderizamos
+     (nadie lo mira; mismo criterio que mrRefreshOK en base.html) — al volver, el
+     visibilitychange del loop llama con force=true y re-sincroniza al instante.
+     En el mock standalone onLiveRefresh no existe y esto queda en no-op. */
+  if (typeof onLiveRefresh === "function") {
+    var _onLiveRefreshRaw = onLiveRefresh;
+    onLiveRefresh = function (force) { if (document.hidden) return; _onLiveRefreshRaw(force); };
+  }
 
 })();

@@ -56,6 +56,28 @@ _SHEET_BY_GRUPO = {
 }
 
 
+ORIGEN = "IAMC 2026-08-28 + ficha BYMA"
+
+
+def merge_raw_fields(actual: dict | None, ley_aplicable: str | None) -> dict:
+    """Mezcla lo que escribe ESTE script sobre el `raw_fields` que ya tenga la fila.
+
+    POR QUÉ MERGE Y NO ASIGNACIÓN: `raw_fields` es un blob compartido por varios
+    productores — `serie_clase` (scripts de clases), `cupon anual %` (semilla Excel)
+    y `sector_override` (ABM) viven ahí. Asignarlo entero borraba todo eso en cada
+    re-corrida del ingest, sin aviso y sin forma de recuperarlo salvo backup.
+
+    `ley_aplicable` solo se pisa si el spec la trae: el motor elige MEP (ley AR) vs
+    CCL (Extranjera) con ese campo, así que sobrescribirlo con None cambiaría el
+    pricing de la pata pesos de las ON hard-dollar. Devuelve un dict NUEVO (así el
+    ORM detecta el cambio del JSON y no se muta el del caller)."""
+    rf = dict(actual or {})
+    rf["origen"] = ORIGEN
+    if ley_aplicable:
+        rf["ley_aplicable"] = ley_aplicable
+    return rf
+
+
 def _load_specs() -> dict:
     with open(SPEC_FILE, encoding="utf-8") as f:
         data = json.load(f)
@@ -99,6 +121,8 @@ def main(dry_run: bool = False) -> int:
         print("\nNada que cargar.")
         return 1
 
+    from sqlalchemy.orm.attributes import flag_modified
+
     from config.settings import settings
     from core.infrastructure.db.backup import backup_db
     from core.infrastructure.db.catalog_repository import init_db
@@ -141,8 +165,10 @@ def main(dry_run: bool = False) -> int:
             orm.cer_spread = spec.get("cer_spread")
             orm.floor_rate_monthly = spec.get("floor_rate_monthly")
             orm.category = spec.get("category") or ("Provinciales" if sheet == "Provinciales" else None)
-            orm.raw_fields = {"origen": "IAMC 2026-08-28 + ficha BYMA",
-                              "ley_aplicable": spec.get("ley_aplicable")}
+            # MERGE (no asignación): ver merge_raw_fields — el blob lo comparten las
+            # clases de las ON, el cupón de la semilla y el sector_override del ABM.
+            orm.raw_fields = merge_raw_fields(orm.raw_fields, spec.get("ley_aplicable"))
+            flag_modified(orm, "raw_fields")
             # Cashflows: replace-all del bono (delete + insert), como hace el ABM.
             orm.cashflows = [
                 CashflowORM(ticker=tk, fecha_pago=c.date,

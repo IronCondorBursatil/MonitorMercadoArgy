@@ -1718,6 +1718,19 @@
   wireTabsAndControls();
   refresh();
 
+  /* Guard de visibilidad del refresco vivo (solo aplica en la página /on).
+     El loop vivo (SSE + polling de /on/data) NO está en este mock: lo inyecta
+     scripts/build_on_static.py al portearlo a static/js/on.js. Por eso el guard vive
+     acá y no allá: on.js es un artefacto generado y cualquier edición a mano se pierde
+     en el próximo build. Con la pestaña oculta no re-fetcheamos ni re-renderizamos
+     (nadie lo mira; mismo criterio que mrRefreshOK en base.html) — al volver, el
+     visibilitychange del loop llama con force=true y re-sincroniza al instante.
+     En el mock standalone onLiveRefresh no existe y esto queda en no-op. */
+  if (typeof onLiveRefresh === "function") {
+    var _onLiveRefreshRaw = onLiveRefresh;
+    onLiveRefresh = function (force) { if (document.hidden) return; _onLiveRefreshRaw(force); };
+  }
+
 })();
 </script>
 </body>
