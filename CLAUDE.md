@@ -49,6 +49,9 @@ core/infrastructure/
   _http.py             http_get_json SYNC (httpx pooled) — read-path de los 5 providers sync (FX/indices/REM/CAFCI/argentinadatos + histórico), corren en to_thread fuera del event loop
   repositories.py indices_provider.py fx_provider.py futures_provider.py rem_provider.py cafci_provider.py
   price_history.py     store SQLite auto-mantenido de cierres diarios (rendimientos Sem/1M/3M/YTD/1A): priming Data912 /historical/bonds + acumulación del feed vivo; read-path local (merge con el CSV legacy)
+  fix_ratings.py       scraper + parser puro del listado FIX SCR (grid Yii2/Kartik, SSR). per-page topea en 50; la paginación corta por filas CRUDAS (una fila descartada NO significa página incompleta). Política por entidad: Emisor > Endeudamiento LP → 125 emisores
+  ratings_history.py   store SQLite (fuera del working tree) del corte diario de FIX + diff up/down/watch. Guard: descarta el corte con <60% del MAYOR de los últimos 30 (contra el previo a secas se ratchetea). Diffea contra el ÚLTIMO ESTADO CONOCIDO de cada entidad, no contra el corte anterior (un hueco de un día se tragaba el cambio)
+  ratings.py           matcher determinista por emisor (NO fuzzy) + MERGE store-sobre-CSV: `data/calificaciones.csv` es SEMILLA y retiene los emisores que FIX dejó de publicar (Agrality, Metalfor, Mastellone). `as_of()` = fecha del corte vivo
   fci_history.py       store SQLite (fuera del working tree) de vcp/ccp/patrimonio por fondo (ArgentinaDatos), acumulado a diario por el loop → flujo neto real Δccp×VCP (`net_flow_series`). cafci_provider._parse_payload conserva los campos ricos de CAFCI (honorarios/horizonte/duration/region/tickers/min/objetivo)
   repositories.build_instrument()   parser de fila → Instrument, COMPARTIDO por el loader Excel y el ABM SQLite
 apps/web/
@@ -67,7 +70,9 @@ run.py scripts/ tests/ data/ config/
 `run.py`→uvicorn→`app.py`. El **lifespan** arranca las tasks: `_refresh_loop` (cada 5s:
 `await hub.refresh_all()` trae Data912 async con breaker+pool, luego el motor corre
 `GenerateMonitorReport.execute` vía `to_thread` leyendo el snapshot del hub → `AppState`),
-`_bei_loop` (`compute_bei_tables`) y `_price_history_loop` (mantiene el store de cierres
+`_bei_loop` (`compute_bei_tables`), `_ratings_loop` (1 corte por día de FIX SCR: si ya
+está el de hoy no re-scrapea, y tras un corte nuevo invalida el cache de `ratings`) y
+`_price_history_loop` (mantiene el store de cierres
 diarios para los rendimientos: priming Data912 + acumulación del feed; **además acumula el corte
 diario de ArgentinaDatos en `fci_history` para los flujos reales del panel FCI**). Cada panel es un `<tbody hx-get="/panels/{id}/rows">`
 que renderiza un fragmento SSR desde `AppState`; el auto-refresh es **event-driven por SSE**
