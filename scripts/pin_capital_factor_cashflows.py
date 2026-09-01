@@ -12,7 +12,7 @@ eliminar el campo). Backup pre-op + restore automático si CUALQUIER métrica
 (TIR/V.Téc/MD) cambia. Es seguro porque los cashflows quedan byte-idénticos.
 
     py -3.12 scripts/pin_capital_factor_cashflows.py          # aplica (con backup+verify)
-    py -3.12 scripts/pin_capital_factor_cashflows.py --dry    # solo muestra, no escribe
+    py -3.12 scripts/pin_capital_factor_cashflows.py --dry-run  # solo muestra, no escribe
 """
 from __future__ import annotations
 
@@ -128,4 +128,6 @@ def main(dry: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry="--dry" in sys.argv))
+    # `--dry` se mantiene como alias del viejo nombre; `--dry-run` es el del resto
+    # de los scripts, y antes caía en la rama que ESCRIBE.
+    raise SystemExit(main(dry=bool({"--dry", "--dry-run"} & set(sys.argv))))

@@ -130,6 +130,33 @@ def _extra_kwargs(mod):
     return {"ruta": mod.DEFAULT} if "ruta" in params else {}
 
 
+def test_ingest_iamc_aborta_si_el_guard_dice_que_no(monkeypatch):
+    """`ingest_iamc_2026_08` no entra en la lista parametrizada porque su `main`
+    toma `dry_run=` (no `dry=`) y abre la sesion con `SessionLocal.begin()`.
+
+    Es el script que el pase de guards habia SALTEADO: tenia el backup inline con
+    el retorno descartado (imprimia "backup pre-op: None" y daba de alta igual),
+    sin `server_running` ni `--force`. El preflight va ANTES de validar los specs,
+    asi que con el guard en rojo ni siquiera lee el JSON de la fuente.
+    """
+    import scripts.ingest_iamc_2026_08 as mod
+
+    monkeypatch.setattr(mod, "guard_write", lambda tag, force=False: 3)
+    monkeypatch.setattr(mod, "_load_specs",
+                        lambda: pytest.fail("no deberia leer specs: el guard aborto antes"))
+    assert mod.main(dry_run=False) == 3
+
+
+def test_ingest_iamc_dry_run_no_pasa_por_el_guard(monkeypatch):
+    """El dry-run se saltea el preflight a proposito (no escribe): es el uso normal
+    para previsualizar con el monitor arriba."""
+    import scripts.ingest_iamc_2026_08 as mod
+
+    monkeypatch.setattr(mod, "guard_write",
+                        lambda tag, force=False: pytest.fail("el dry-run no debe guardear"))
+    assert mod.main(dry_run=True) == 0
+
+
 def test_el_shim_ypf_hereda_el_guard(monkeypatch):
     """El shim no repite el preflight: si el motor aborta, el shim devuelve eso."""
     import scripts.ingest_on_clases as ic

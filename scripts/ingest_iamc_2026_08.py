@@ -11,10 +11,12 @@ Deuda SUBSOBERANA: entra con tipos propios ("PROVINCIAL HARD DOLLAR", …) — N
 de las ONs corporativas. Los predicados del motor matchean por substring (→ se precian igual
 que una ON hard-dollar) pero los paneles filtran por igualdad exacta (→ panel propio).
 
-DB-only, no destructivo (append/update por ticker). Snapshot pre-op. Idempotente.
+DB-only, no destructivo (append/update por ticker). Idempotente. Snapshot pre-op
+VERIFICADO (`op_guards.guard_write`): si el server está vivo o el backup falló, no escribe.
 
     py -3.12 scripts/ingest_iamc_2026_08.py --dry-run   # valida y muestra, no escribe
     py -3.12 scripts/ingest_iamc_2026_08.py             # alta + verificación
+    py -3.12 scripts/ingest_iamc_2026_08.py --force     # saltea los guards
 """
 
 from __future__ import annotations
@@ -26,6 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
+
+from scripts.op_guards import guard_write  # noqa: E402
 
 # Specs versionados en el repo (antes scratch/, gitignoreado -> no llegaban al server).
 SPEC_FILE = str(ROOT / "data" / "iamc" / "specs_2026_08_28.json")
@@ -85,7 +89,14 @@ def _load_specs() -> dict:
             if not t.startswith("_") and isinstance(sp, dict)}
 
 
-def main(dry_run: bool = False) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
+    # Preflight ANTES de validar nada: el alta REEMPLAZA el cronograma completo de
+    # cada bono (delete + insert de cashflows), así que sin red de seguridad —o con
+    # el monitor vivo, que seguiría sirviendo el catálogo cacheado— no corre. El
+    # dry-run no escribe, así que se saltea el guard a propósito.
+    if not dry_run and (rc := guard_write("pre-iamc-2026-08", force=force)):
+        return rc
+
     from _iamc_validate import REF, build_instrument, validar
 
     specs = _load_specs()
@@ -123,15 +134,9 @@ def main(dry_run: bool = False) -> int:
 
     from sqlalchemy.orm.attributes import flag_modified
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
     from core.infrastructure.db.catalog_repository import init_db
     from core.infrastructure.db.engine import SessionLocal
     from core.infrastructure.db.models import CashflowORM, InstrumentORM
-
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-iamc-2026-08")
-    print(f"\nbackup pre-op: {snap}")
 
     init_db()
     creados, actualizados = [], []
@@ -194,4 +199,5 @@ def main(dry_run: bool = False) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))
