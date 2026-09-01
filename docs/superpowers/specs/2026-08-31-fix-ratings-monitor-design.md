@@ -80,8 +80,12 @@ apps/web/on_src/unified.js → on.js      ▲ (up) / ▼ (down) / ⚑ (solo pers
 
 ### 3. `core/infrastructure/ratings.py` (modificado)
 
-- `_entries()`: intenta `ratings_history.latest_entries()`; si el store está vacío
-  o no disponible, cae al CSV actual (semilla). El **matcher no cambia**.
+- `_entries()`: **merge por emisor**, no fallback por fuente. Se parte del CSV y el
+  store PISA emisor por emisor. Motivo (verificado contra el sitio): 2 emisores del
+  CSV —Agrality y Metalfor— ya NO figuran en el listado de FIX (calificación retirada),
+  así que un fallback "store si hay corte, si no CSV" los borraría del panel al primer
+  corte. Con merge, el store aporta 125 emisores frescos y el CSV retiene los que FIX
+  dejó de publicar. El **matcher no cambia**.
 - `AS_OF` constante → `as_of() -> str` dinámico: fecha del último corte del store,
   o el `AS_OF` del CSV si no hay store. `on_service` deja de importar la constante.
 - El cache (`lru_cache`) pasa a invalidarse por corte (key = fecha del corte), no
@@ -102,6 +106,34 @@ apps/web/on_src/unified.js → on.js      ▲ (up) / ▼ (down) / ⚑ (solo pers
 - JS: badge junto al rating (▲ verde / ▼ rojo / ⚑ neutro) con tooltip
   `"<to> ← <from> · <fecha>"`. Editar `on_src/unified.js` y regenerar el bundle
   con `build_on_static.py` (el test espejo existente vigila la divergencia).
+
+## Hallazgos del scouting (verificados en vivo, 2026-08-31)
+
+El sitio es **Yii2 + Kartik GridView**, server-side rendered. No hay API JSON.
+
+- **URL**: `https://www.fixscr.com/calificaciones` (GET).
+- **Params**: `CalificacionesWebSearch[paises_id]=230` (Argentina),
+  `CalificacionesWebSearch[section_id]=1` (Finanzas Corporativas) / `=2` (Entidades
+  Financieras), `per-page=50`, `page=N`.
+- **`per-page` topea en 50**: con 100 o mas el sitio responde **HTTP 500**.
+- **Encoding: UTF-8 real** (PAIS viaja como los bytes C3 8D). Decodificar UTF-8, no latin-1.
+- **Fila**: `<tr data-key=...>` con 10 `<td>` en este orden:
+  `[0]` entidad, `[1]` fecha ISO (`2026-08-06`), `[2]` pais, `[3]` area,
+  `[4]` sector, `[5]` tipo de calificacion, `[6]` corto plazo, `[7]` **largo plazo**,
+  `[8]` perspectiva, `[9]` estado.
+- **Fin de paginacion**: pasada la ultima pagina el sitio **repite la ultima** (no da
+  404 ni vacio). Cortar cuando la primera entidad se repite o vienen menos de 50 filas.
+- **Volumen**: 638 filas en **14 requests** (Corporativas 406 en 9 pags, Financieras 232 en 5).
+  Barato para 1x/dia.
+- **Vocabulario de perspectiva** (normalizar al del CSV): `Perspectiva Estable|Positiva|Negativa`
+  se le saca el prefijo `Perspectiva `; `N.C` pasa a `N/A`; `RW Positivo`/`RW Negativo`
+  ya coinciden.
+- **Vocabulario de estado**: `Confirma`, `Sube`, `Baja`, `Asigna`, `Preliminar`, `Nueva`.
+  `Sube`/`Baja` es la accion que declara FIX: sirve para **cross-check** del diff propio,
+  no lo reemplaza (el estado describe la ultima accion, no el delta contra NUESTRO corte).
+- **Politica de fila por entidad**: hay 142 entidades pero solo **73** tienen fila
+  tipo `Emisor`. Se toma la mejor fila por entidad: `Emisor` > `Endeudamiento de Largo
+  Plazo`, lo que da **125 emisores** (vs 75 del CSV). Filtrar solo `Emisor` perderia 52.
 
 ## Manejo de errores
 
