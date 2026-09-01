@@ -8,7 +8,7 @@ setlocal
 cd /d "%~dp0"
 
 echo.
-echo == Monitor Balanz - Instalacion de dependencias ==
+echo == Monitor - Instalacion de dependencias ==
 echo.
 
 REM --- Verificar Python 3.12 ---

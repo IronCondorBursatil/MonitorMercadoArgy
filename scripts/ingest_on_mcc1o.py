@@ -32,7 +32,7 @@ FIELDS = {
     "base calculo": "ACT/365", "tipo amortizacion": "bullet",
 }
 
-# Balanz (Calculadora, dirty 104.50, T+1 -> 17/06/2026)
+# la referencia (Calculadora, dirty 104.50, T+1 -> 17/06/2026)
 VERIFY_PRICE = 104.50
 REF = {"tir": 7.05, "tna_nom": 6.93, "md": 2.38, "vt": 102.14,
        "accrued": 2.14, "clean": 102.357, "vr": 100.0, "parity": 102.31}
@@ -81,7 +81,7 @@ def main(dry_run: bool) -> int:
     print(f"{'engine':6} {_fmt(got['tir']):>7} {_fmt(got['tna_nom']):>7} {_fmt(got['md']):>6} "
           f"{_fmt(got['vt']):>8} {_fmt(got['accrued']):>6} {_fmt(got['clean'],3):>9} "
           f"{_fmt(got['vr']):>7} {_fmt(got['parity']):>8}")
-    print(f"{'Balanz':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
+    print(f"{'Ref':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
           f"{REF['vt']:>8} {REF['accrued']:>6} {REF['clean']:>9.3f} {REF['vr']:>7} {REF['parity']:>8}")
     diffs = []
     for k, tol in (("tir", 0.4), ("md", 0.06), ("vt", 0.06), ("accrued", 0.06),
@@ -90,7 +90,7 @@ def main(dry_run: bool) -> int:
         if g is None or abs(g - REF[k]) > tol:
             diffs.append(f"{k} {_fmt(g, 3)} != {REF[k]} (d={_fmt((g or 0) - REF[k], 3)})")
     print()
-    print("OK MCC1O reconcilia con Balanz." if not diffs
+    print("OK MCC1O reconcilia con la referencia." if not diffs
           else "DIVERGE: " + "; ".join(diffs))
     print("Reinicia el server para verla en el panel ON.")
     return 0 if not diffs else 1

@@ -1,4 +1,4 @@
-"""Alta de 4 ONs hard-dollar de IRSA (verificadas contra la calculadora de Balanz,
+"""Alta de 4 ONs hard-dollar de IRSA (verificadas contra la calculadora de referencia,
    pestaña "Condiciones de Emisión"):
 
     IRCJO  IRSA 2027 u$s 7%      (AR0961375257)  regular bullet  → synth
@@ -17,7 +17,7 @@ Por qué IRCNO/IRCOO con cashflows explícitos:
   - Tienen 1er cupón LARGO (emisión 23/10/2024 → 1er cupón 23/07/2025, ~9m) y cupón
     final CORTO/stub (23/07 → 23/10, ~3m). `synth_cashflows` day-weightea ACT/365 OK,
     pero su lógica "long last coupon" FUSIONA el stub final con el vencimiento (paga 1
-    cupón en vez de 2) — es el caso YM42 de `tests/test_balanz_golden.py`, que por eso
+    cupón en vez de 2) — es el caso YM42 de `tests/test_golden_referencia.py`, que por eso
     también usa cashflows explícitos. Los regulares (IRCJO/IRCLO) sí los sintetiza bien.
 
 Idempotente (`save_instrument` actualiza si ya existe). Snapshot pre-op incondicional.

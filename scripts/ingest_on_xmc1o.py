@@ -6,7 +6,7 @@
 
 CASHFLOW EXPLÍCITO (no sintetizable): el synth quedó reducido a bullet/ZC (commit
 85e5180 — `TestAmortizingIsExplicitNow`), así que un amortizing se carga con el
-cashflow publicado. Montos per 100 VN, autoritativos (pestaña CashFlow de Balanz):
+cashflow publicado. Montos per 100 VN, autoritativos (pestaña CashFlow de la fuente):
 
     fecha        renta   amort   (obs)            VR
     11/11/2024   0.00    0.00    ancla emisión    100
@@ -44,7 +44,7 @@ FIELDS = {
     "base calculo": "ACT/365", "tipo amortizacion": "amortizing",
 }
 
-# Cashflow publicado (Balanz), per 100 VN. La 1ª fila (11/11/2024, renta 0) es el ancla
+# Cashflow publicado por la fuente, per 100 VN. La 1ª fila (11/11/2024, renta 0) es el ancla
 # del período corriente — NO un pago. Las dos últimas amortizan 50% c/u.
 CASHFLOWS = [
     {"date": "2024-11-11", "interest": 0.00, "amortization": 0.00},
@@ -56,12 +56,12 @@ CASHFLOWS = [
     {"date": "2027-11-11", "interest": 2.02, "amortization": 50.00},
 ]
 
-# Ground-truth de la calculadora de Balanz (pestaña Calculadora, T+1 → 17/06/2026,
+# Ground-truth de la calculadora de referencia (pestaña Calculadora, T+1 → 17/06/2026,
 # precio dirty 103.35, sobre la pata …D en USD).
 VERIFY_PRICE = 103.35
 REF = {"tir": 5.76, "tna_nom": 5.68, "md": 1.08, "vt": 100.81,
        "accrued": 0.81, "clean": 102.539, "vr": 100.0, "parity": 102.52}
-SETTLE = date(2026, 6, 17)   # T+1 hábil del 16/06/2026 (= fecha de liquidación de Balanz)
+SETTLE = date(2026, 6, 17)   # T+1 hábil del 16/06/2026 (= fecha de liquidación de la referencia)
 
 
 def _fmt(v, nd=2):
@@ -94,7 +94,7 @@ def main(dry_run: bool) -> int:
     save = save_instrument(SHEET, FIELDS, cashflows=CASHFLOWS)
     print(f"{save['action']}: {', '.join(save['tickers'])}  [{pre}]  ({save.get('cashflows')} cashflows)\n")
 
-    # Verificación contra Balanz sobre la pata …D (USD, sin FX), dirty 103.35, T+1.
+    # Verificación contra la referencia sobre la pata …D (USD, sin FX), dirty 103.35, T+1.
     r = verify("XMC1D", price=VERIFY_PRICE, price_mode="dirty")
     if not r or r.get("error"):
         print(f"ERROR verify: {r.get('error') if r else 'sin resultado'}")
@@ -105,11 +105,11 @@ def main(dry_run: bool) -> int:
            "vr": r.get("residual_nominal"), "parity": (r.get("parity") or 0) * 100}
     hdr = (f"{'':6} {'TIR%':>7} {'TNAn%':>7} {'MD':>6} {'VT':>8} {'accr':>6} "
            f"{'clean':>9} {'VR':>7} {'parity%':>8}")
-    print("VERIFICACION  (engine -> Balanz)\n" + hdr)
+    print("VERIFICACION  (engine -> referencia)\n" + hdr)
     print(f"{'engine':6} {_fmt(got['tir']):>7} {_fmt(got['tna_nom']):>7} {_fmt(got['md']):>6} "
           f"{_fmt(got['vt']):>8} {_fmt(got['accrued']):>6} {_fmt(got['clean'],3):>9} "
           f"{_fmt(got['vr']):>7} {_fmt(got['parity']):>8}")
-    print(f"{'Balanz':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
+    print(f"{'Ref':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
           f"{REF['vt']:>8} {REF['accrued']:>6} {REF['clean']:>9.3f} {REF['vr']:>7} {REF['parity']:>8}")
     diffs = []
     for k, tol in (("tir", 0.4), ("md", 0.06), ("vt", 0.06), ("accrued", 0.06),
@@ -117,7 +117,7 @@ def main(dry_run: bool) -> int:
         g = got[k]
         if g is None or abs(g - REF[k]) > tol:
             diffs.append(f"{k} {_fmt(g, 3)}≠{REF[k]} (Δ{_fmt((g or 0)-REF[k],3)})")
-    print("\n" + ("✓ XMC1O reconcilia con Balanz." if not diffs
+    print("\n" + ("✓ XMC1O reconcilia con la referencia." if not diffs
                   else "⚠ diverge: " + "; ".join(diffs)))
     print("Reiniciá el server (o esperá el reload del repo) para verla en el panel ON.")
     return 0 if not diffs else 1

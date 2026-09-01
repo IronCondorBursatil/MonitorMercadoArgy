@@ -5,7 +5,7 @@
     amortiza 25%x4 en los 4 ultimos cupones (nov2027/may2028/nov2028/may2029)
 
 CASHFLOW EXPLICITO: el synth solo hace bullet/ZC (commit 85e5180); amortizing -> explicito.
-Montos per 100 VN, autoritativos (pestaña CashFlow de Balanz).
+Montos per 100 VN, autoritativos (pestaña CashFlow de la fuente).
 Interes sobre saldo declinante (ACT/365):
   - periodos plenos (VR 100): 4.03 (184d) / 3.97 (181d)
   - 1er amort nov2027: int 4.03 sobre VR 100 -> VR 75
@@ -13,7 +13,7 @@ Interes sobre saldo declinante (ACT/365):
   - nov2028: int 2.02 sobre VR 50 -> VR 25
   - may2029: int 0.99 sobre VR 25 -> VR 0 (vto)
 
-Nota ley: Balanz muestra Ley ARG / Paga en Cable. Se registra con ley_aplicable="Argentina"
+Nota ley: La referencia muestra Ley ARG / Paga en Cable. Se registra con ley_aplicable="Argentina"
 per instruccion del usuario (la pata O usa MEP para pricing); ajustar si se prefiere CCL.
 
 DB-only (save_instrument append, NO destructivo). Snapshot pre-op. Idempotente.
@@ -43,7 +43,7 @@ FIELDS = {
     "base calculo": "ACT/365", "tipo amortizacion": "amortizing",
 }
 
-# Cashflow publicado (Balanz), per 100 VN. Ancla 03/05/2024 = fecha de emision.
+# Cashflow publicado por la fuente, per 100 VN. Ancla 03/05/2024 = fecha de emision.
 # Interes sobre saldo declinante; amort 25% en los 4 ultimos cupones.
 CASHFLOWS = [
     {"date": "2024-05-03", "interest": 0.00, "amortization": 0.00},  # ancla
@@ -59,7 +59,7 @@ CASHFLOWS = [
     {"date": "2029-05-03", "interest": 0.99, "amortization": 25.00}, # 181d x VR25;  -> VR 0 (vto)
 ]
 
-# Ground-truth Balanz (Calculadora, dirty 106.20, T+1 -> 17/06/2026, sobre pata D).
+# Ground-truth la referencia (Calculadora, dirty 106.20, T+1 -> 17/06/2026, sobre pata D).
 VERIFY_PRICE = 106.20
 SETTLE = date(2026, 6, 17)
 REF = {"tir": 5.44, "tna_nom": 5.36, "md": 1.93, "vt": 100.99,
@@ -109,7 +109,7 @@ def main(dry_run: bool) -> int:
     print(f"{'engine':6} {_fmt(got['tir']):>7} {_fmt(got['tna_nom']):>7} {_fmt(got['md']):>6} "
           f"{_fmt(got['vt']):>8} {_fmt(got['accrued']):>6} {_fmt(got['clean'],3):>9} "
           f"{_fmt(got['vr']):>7} {_fmt(got['parity']):>8}")
-    print(f"{'Balanz':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
+    print(f"{'Ref':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
           f"{REF['vt']:>8} {REF['accrued']:>6} {REF['clean']:>9.3f} {REF['vr']:>7} {REF['parity']:>8}")
     diffs = []
     for k, tol in (("tir", 0.4), ("md", 0.06), ("vt", 0.06), ("accrued", 0.06),
@@ -118,7 +118,7 @@ def main(dry_run: bool) -> int:
         if g is None or abs(g - REF[k]) > tol:
             diffs.append(f"{k} {_fmt(g, 3)} != {REF[k]} (d={_fmt((g or 0) - REF[k], 3)})")
     print()
-    print("OK VSCPO reconcilia con Balanz." if not diffs
+    print("OK VSCPO reconcilia con la referencia." if not diffs
           else "DIVERGE: " + "; ".join(diffs))
     print("Reinicia el server para verla en el panel ON.")
     return 0 if not diffs else 1

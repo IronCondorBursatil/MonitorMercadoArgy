@@ -1,13 +1,13 @@
-"""Anclas golden contra la calculadora de Balanz (verdad de mercado).
+"""Anclas golden contra la calculadora de referencia (verdad de mercado).
 
-Estas ONs hard-dollar fueron verificadas a mano contra Balanz en la sesión de
+Estas ONs hard-dollar fueron verificadas a mano contra la referencia en la sesión de
 alta. Son la prueba red→green del refactor de día-count: con el motor viejo
-(descuento a 365.25) CICA daba 7.57%, Balanz 7.56%; al descontar con la
-convención declarada (ACT/365) el motor matchea Balanz.
+(descuento a 365.25) CICA daba 7.57%, la referencia 7.56%; al descontar con la
+convención declarada (ACT/365) el motor matchea la referencia.
 
 Se construyen vía `synth_cashflows` (mismo camino que la ABM) — deterministas,
 sin depender de la DB ni del CSV. Las referencias (precio, settle, TIR, clean,
-VT, accrued, MD) son las que muestra la calculadora de Balanz.
+VT, accrued, MD) son las que muestra la calculadora de referencia.
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ from core.domain.pricing.context import PricingContext
 _STRAT = VanillaStrategy()
 
 
-def test_clisa_stub_final_period_matches_balanz():
+def test_clisa_stub_final_period_matches_referencia():
     """CLISA 2031 (reestructurada, Ley NY/Extranjera): cupón step-up + amortización
     custom + **período final STUB** (vto 12/10/2031 pero el período regular cerraba
-    el 10/12/2031). No es sintetizable → cashflows explícitos. Balanz @ precio 39.42
+    el 10/12/2031). No es sintetizable → cashflows explícitos. La referencia @ precio 39.42
     dirty, settle 01/06/2026, 30/360: TIR 17.03%, MD 4.03, VT 56.92, accrued 1.06.
     Valida la extensión de stub (`metrics.discount_year_fractions`): SIN ella la TIR
     daría 17.47% (descuento a tiempo real del stub corto)."""
@@ -56,16 +56,16 @@ def test_clisa_stub_final_period_matches_balanz():
     assert tir < 0.172, "el stub final debe extenderse (sino daría 17.47%)"
     assert md == pytest.approx(4.03, abs=2e-2)
     assert vt == pytest.approx(56.92, abs=1e-2)
-    assert ai == pytest.approx(1.06, abs=6e-3)   # 1.064 → Balanz muestra 1.06 (redondeo 2 dec)
+    assert ai == pytest.approx(1.06, abs=6e-3)   # 1.064 → La referencia muestra 1.06 (redondeo 2 dec)
     assert (dirty - ai) == pytest.approx(38.359, abs=1e-2)
 
 
-def test_tlcpo_telecom_clase24_amortizing_30_360_matches_balanz():
+def test_tlcpo_telecom_clase24_amortizing_30_360_matches_referencia():
     """Telecom Argentina Clase 24 (USP9028NCA74, ticker …D=TLCPD): 9.25% 30/360
-    semestral, amortiza 50%+50% (28/05/2032 + 28/05/2033). Balanz @ dirty 111.20,
+    semestral, amortiza 50%+50% (28/05/2032 + 28/05/2033). La referencia @ dirty 111.20,
     settle 10/06/2026: TIR 7.24%, clean 110.892, VT 100.31, accrued 0.31, MD 4.90,
     paridad 110.86%, current yield 8.34%. Es 30/360: con ACT/365 daría accrued ~0.33,
-    clean 110.87 y paridad 110.83 (NO matchearía Balanz)."""
+    clean 110.87 y paridad 110.83 (NO matchearía la referencia)."""
     from core.domain.on_cashflows import amort_schedule, build_on_cashflows
     sched = amort_schedule(date(2032, 5, 28), date(2033, 5, 28), capital_freq=1, cuotas=2)
     cfs = build_on_cashflows(emission=date(2025, 5, 28), maturity=date(2033, 5, 28),
@@ -144,8 +144,8 @@ def _build(cupon, freq, base, emis, vto, itype="HARD DOLLAR"):
     return inst, cfs
 
 
-# (ticker, cupon, freq, base, emis, vto, settle, dirty, balanz_tir,
-#  balanz_clean, balanz_vt, balanz_accrued, balanz_md)
+# (ticker, cupon, freq, base, emis, vto, settle, dirty, ref_tir,
+#  ref_clean, ref_vt, ref_accrued, ref_md)
 _ANCHORS = [
     ("CICA", 8.0, 2, "ACT/365", date(2025, 12, 3), date(2028, 6, 3),
      date(2026, 6, 1), 105.0, 0.0756, 101.0548, 103.945, 3.9452, 1.76),
@@ -167,7 +167,7 @@ _ANCHORS = [
      date(2026, 6, 10), 100.85, 0.0771, 100.5870, 100.26, 0.2630, 1.36),
     # Pluspetrol Clase 4 (PLC4, USP7924AAA62, ley NY): 8.5% sem 30/360 bullet, cupón
     # programado SÁBADO 30/05 → accrued 30/360 desde la fecha PROGRAMADA (10 días, NO 9
-    # del día hábil) = 0.2361; Balanz muestra 0.24. @ dirty 109.15, settle 10/06/2026.
+    # del día hábil) = 0.2361; La referencia muestra 0.24. @ dirty 109.15, settle 10/06/2026.
     ("PLC4", 8.5, 2, "30/360", date(2025, 5, 30), date(2032, 5, 30),
      date(2026, 6, 10), 109.15, 0.0677, 108.9139, 100.2361, 0.2361, 4.69),
     # Pan American Energy Clase 35 (PN35, AR0623274765, ley ARG): 7% sem ACT/365 bullet,
@@ -196,40 +196,40 @@ def anchor(request):
     return {
         "tk": tk, "inst": inst, "cfs": cfs, "settle": settle, "dirty": dirty,
         "tir": tir, "ctx": ctx,
-        "balanz": dict(tir=btir, clean=bclean, vt=bvt, accrued=bacc, md=bmd),
+        "ref": dict(tir=btir, clean=bclean, vt=bvt, accrued=bacc, md=bmd),
     }
 
 
-def test_tir_matches_balanz_within_1bp(anchor):
-    # 1.5bp: cubre el redondeo de 2 decimales de Balanz + micro-diferencias de
+def test_tir_matches_referencia_within_1bp(anchor):
+    # 1.5bp: cubre el redondeo de 2 decimales de la referencia + micro-diferencias de
     # método. Suficientemente ajustado para detectar el bug viejo de ~1bp+.
-    assert anchor["tir"] == pytest.approx(anchor["balanz"]["tir"], abs=1.5e-4), anchor["tk"]
+    assert anchor["tir"] == pytest.approx(anchor["ref"]["tir"], abs=1.5e-4), anchor["tk"]
 
 
-def test_clean_price_matches_balanz(anchor):
+def test_clean_price_matches_referencia(anchor):
     ai = metrics.accrued_interest(anchor["inst"], anchor["settle"])
     clean = anchor["dirty"] - ai
-    assert clean == pytest.approx(anchor["balanz"]["clean"], abs=1e-3), anchor["tk"]
+    assert clean == pytest.approx(anchor["ref"]["clean"], abs=1e-3), anchor["tk"]
 
 
-def test_accrued_matches_balanz(anchor):
+def test_accrued_matches_referencia(anchor):
     ai = metrics.accrued_interest(anchor["inst"], anchor["settle"])
-    assert ai == pytest.approx(anchor["balanz"]["accrued"], abs=2e-3), anchor["tk"]
+    assert ai == pytest.approx(anchor["ref"]["accrued"], abs=2e-3), anchor["tk"]
 
 
-def test_technical_value_matches_balanz(anchor):
+def test_technical_value_matches_referencia(anchor):
     ai = metrics.accrued_interest(anchor["inst"], anchor["settle"])
     vt = metrics.residual_nominal(anchor["inst"], anchor["settle"]) + ai
-    assert vt == pytest.approx(anchor["balanz"]["vt"], abs=1e-2), anchor["tk"]
+    assert vt == pytest.approx(anchor["ref"]["vt"], abs=1e-2), anchor["tk"]
 
 
-def test_modified_duration_matches_balanz(anchor):
+def test_modified_duration_matches_referencia(anchor):
     md = _STRAT.duration(anchor["inst"], anchor["tir"], anchor["ctx"])
-    assert md == pytest.approx(anchor["balanz"]["md"], abs=1e-2), anchor["tk"]
+    assert md == pytest.approx(anchor["ref"]["md"], abs=1e-2), anchor["tk"]
 
 
 def test_cica_is_756_not_757_regression():
-    """Prueba puntual del fix: CICA con ACT/365 da 7.56% (Balanz), NO el 7.57%
+    """Prueba puntual del fix: CICA con ACT/365 da 7.56% (la referencia), NO el 7.57%
     que daba el motor viejo al descontar a 365.25. Si esto vuelve a 7.57, el
     descuento volvió a ignorar la convención declarada."""
     inst, _ = _build(8.0, 2, "ACT/365", date(2025, 12, 3), date(2028, 6, 3))
@@ -247,7 +247,7 @@ def test_cica_at_36525_would_give_757():
 
 
 # --------------------------------------------------------------------------- #
-# Golden de cashflows sintetizados (BACH 30/360, BF37 ACT/365) vs Balanz
+# Golden de cashflows sintetizados (BACH 30/360, BF37 ACT/365) vs la referencia
 # --------------------------------------------------------------------------- #
 
 def test_bach_cashflows_all_4_pct_30_360():

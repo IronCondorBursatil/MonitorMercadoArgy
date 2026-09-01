@@ -2,7 +2,7 @@
 
 Cuando el cupón anterior cae en fin de semana/feriado, se paga el día hábil
 siguiente (convención following) y los días corridos se cuentan desde esa fecha
-real — como hace Balanz. Caso testigo: Cresud XLIV (CS44) — cupón programado
+real — como hace la referencia. Caso testigo: Cresud XLIV (CS44) — cupón programado
 17/01/2026 (sábado) pagado el 19/01/2026 → 133 días al settle 01/06/2026 (no 135).
 Solo afecta accrued/V.Téc/clean/paridad; NO la TIR ni el precio.
 """
@@ -40,7 +40,7 @@ def test_accrued_counts_from_business_day_payment_date():
     assert abs(acc - 2.219) > 0.02
 
 
-def test_vt_and_parity_match_balanz_with_bday_accrued():
+def test_vt_and_parity_match_referencia_with_bday_accrued():
     """Con el accrued corregido, V.Téc = 102.19 y paridad = 101.19% (precio 103.4)."""
     inst = _cs44()
     acc = metrics.accrued_interest(inst, SETTLE)

@@ -4,7 +4,7 @@ Los tests que prizan los instrumentos reales del master (test_pricing_equivalenc
 usaban `date.today()` como settlement. A medida que los instrumentos vencen, sus
 flujos se vacían y la comparación pierde sentido → la red de seguridad **se degrada
 sola con el paso del tiempo**. Acá la fijamos a la fecha de captura de los golden de
-Balanz (2026-06-10), cuando todo el universo está vivo.
+la referencia (2026-06-10), cuando todo el universo está vivo.
 
 La equivalencia (motor nuevo == motor legacy congelado) sigue siendo válida con
 fecha fija: ambos motores ven la MISMA fecha, así que el test sigue detectando

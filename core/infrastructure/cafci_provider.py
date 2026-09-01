@@ -215,7 +215,7 @@ class CAFCIProvider:
         def _fetch_cat(item):
             tipo_renta, url = item
             try:
-                resp = httpx.get(url, timeout=10.0, headers={"User-Agent": "balanz-monitor/1.0"})
+                resp = httpx.get(url, timeout=10.0, headers={"User-Agent": "monitor-renta-fija/1.0"})
                 resp.raise_for_status()
                 rows = resp.json()
                 if not isinstance(rows, list):

@@ -63,11 +63,11 @@ _VALID_LEGS = frozenset({"TF", "TAM", "CER"})
 
 
 def _nominal_tna(instrument, tea):
-    """TNA "Tir Nominal" alineada al informe IAMC/Balanz, seleccionada por tipo:
+    """TNA "Tir Nominal" alineada al informe IAMC, seleccionada por tipo:
     - bonos CON cupón (hard-dollar/ON/soberanos/tasa fija): m = frecuencia de pago
       (semestral → 2) vía `tea_to_tna_freq` — la convención del informe.
     - TAMAR/DUAL y capitalizables peso (LECAP/BONCAP/LECER): m = 12 (mensual), que
-      es lo que Balanz/IAMC rotula como 'Tasa Nominal' para esos.
+      es lo que IAMC rotula como 'Tasa Nominal' para esos.
     (El `tea_to_tna` base-365 que se mostraba antes sub-representaba el nominal del
     cupón → daba la 'Tir Nominal' sistemáticamente baja vs el informe.)"""
     if tea is None:
@@ -260,13 +260,13 @@ def _cashflows_all(instrument: Instrument, ref_date: date,
         VR arranca en el outstanding actual, no en 100).
       - is_past: True si la fecha ya pasó.
       - is_next: True si es el próximo cupón con interés (= cupón corriente,
-        el que se marca en negrita en el modelo Balanz/IAMC).
+        el que se marca en negrita en el modelo IAMC).
 
     Para bonos TAMAR-family (PURO/DUAL/DUAL_CER_TAMAR) sin cashflows en Excel
     (el payback es dinámico, depende de TAMAR futura), sintetiza 2 filas:
     anchor en emisión (VR=100, sin pago) + maturity (VR=0, amort=payoff
     proyectado). Permite que el popup muestre algo equivalente al modelo
-    Balanz/IAMC para estos bonos.
+    IAMC para estos bonos.
     """
     out: List[Dict[str, Any]] = []
     cfs = sorted(instrument.cashflows or [], key=lambda c: c.date)
@@ -405,7 +405,7 @@ def _live_metrics(
     # Fechas del cupón corriente. Para zero-coupon (LECAP/LECER/BONCER ZC) y
     # TAMAR bullets el bond no tiene cupón con interés explícito > 0, así que
     # _period_bounds devuelve None. Fallback: el "período corriente" arranca en
-    # emission y termina en maturity (matchea la convención del modelo Balanz
+    # emission y termina en maturity (matchea la convención del modelo de referencia
     # para bullets — "Último cupón = emisión, Próximo = vto").
     bounds = FinancialEngine._period_bounds(inst, ref_date)
     if bounds:

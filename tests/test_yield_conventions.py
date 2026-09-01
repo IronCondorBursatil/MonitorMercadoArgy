@@ -1,4 +1,4 @@
-"""Convenciones de display de rendimiento alineadas al informe IAMC/Balanz.
+"""Convenciones de display de rendimiento alineadas al informe IAMC.
 
 Cubre las 3 mejoras detectadas al cargar las ONs hard-dollar (jun-2026), todas
 DISPLAY-only (no tocan TIR efectiva / VT / MD / accrued money):
@@ -27,7 +27,7 @@ def _bond(cashflows, *, emis, vto, freq=2, itype="HARD DOLLAR", dc="ACT/365"):
 
 class TestTeaToTnaFreq:
     def test_semiannual_matches_broker_formula(self):
-        # 2 × ((1+TEA)^(1/2) − 1). TEA 5.5642% → 5.4889% (informe Balanz EMC1D 5.49).
+        # 2 × ((1+TEA)^(1/2) − 1). TEA 5.5642% → 5.4889% (informe de referencia EMC1D 5.49).
         tna = FinancialEngine.tea_to_tna_freq(0.055642, 2)
         assert abs(tna - 2 * ((1.055642) ** 0.5 - 1)) < 1e-12
         assert 0.0548 < tna < 0.0550
@@ -80,7 +80,7 @@ class TestCurrentYield:
         cy = FinancialEngine.current_yield(inst, price, ref)
         old_style = 3.28 / price  # Σ próx-12m / dirty (sólo el cupón de nov en la ventana)
         assert cy is not None
-        assert 0.063 < cy < 0.066          # ≈ 6.5% cupón / clean (informe Balanz 6.46%)
+        assert 0.063 < cy < 0.066          # ≈ 6.5% cupón / clean (informe de referencia 6.46%)
         assert cy > 1.8 * old_style
 
     def test_zero_coupon_returns_none(self):

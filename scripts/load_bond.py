@@ -150,7 +150,7 @@ class _NoQuotes:
 def verify(ticker: str, *, price: Optional[float] = None, price_mode: str = "dirty",
            tir: Optional[float] = None, settlement_lag: int = 1) -> Optional[Dict[str, Any]]:
     """Reconciliación contra ground-truth: recalcula TIR/MD/paridad del bono cargado a un
-    precio (o TIR) dado, para comparar con lo publicado en la imagen (Balanz/IAMC).
+    precio (o TIR) dado, para comparar con lo publicado en la imagen (IAMC).
     settlement_lag=1 (T+1) es la convención de la calculadora. Best-effort (usa índices/FX
     reales con fallback offline)."""
     from apps.web.bond_detail import calculate

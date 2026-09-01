@@ -3,7 +3,7 @@
 Verifica que TIR/duration/PV descuentan con la convención DECLARADA del bono
 (no el viejo 365.25 cableado):
   - ZC bullet: TIR == forma cerrada (payoff/price)^(1/yf) − 1 por convención.
-  - Gap-lock: ACT/365.25 da TIR mayor que ACT/365 (el ~1bp que separaba de Balanz).
+  - Gap-lock: ACT/365.25 da TIR mayor que ACT/365 (el ~1bp que separaba de la referencia).
   - 30/360 consistente: TIR y PV usan 30/360 (antes PV caía a 365.25 → round-trip roto).
   - Accrued por convención (30/360 vs ACT).
   - Bonos raros/extremos: ZC ultra-largo, 1-día, Feb-29, step-up, amortizing,
@@ -152,7 +152,7 @@ def test_zc_tir_matches_closed_form(conv, price, years_ahead):
 
 
 # --------------------------------------------------------------------------- #
-# Gap-lock: ACT/365.25 > ACT/365 (el ~1bp que separaba de Balanz)
+# Gap-lock: ACT/365.25 > ACT/365 (el ~1bp que separaba de la referencia)
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("price,years_ahead", [

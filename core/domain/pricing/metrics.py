@@ -20,7 +20,7 @@ _STUB_MIN_FRAC = 0.1
 _STUB_MAX_FRAC = 0.9
 # Solo se extiende si el cupón final paga ~un cupón REGULAR COMPLETO a pesar del período
 # corto (caso reestructurado tipo CLISA: 2.37 = el regular → devengado en el período
-# completo → Balanz descuenta al fin de período). Si el cupón final está PRORRATEADO al
+# completo → la referencia descuenta al fin de período). Si el cupón final está PRORRATEADO al
 # stub corto (ej. YM42: 1.73 ≈ ½ del regular 3.51), se devengó en el período corto → se
 # descuenta a la fecha real (NO se extiende).
 _STUB_FULL_COUPON_FRAC = 0.9
@@ -64,7 +64,7 @@ def discount_year_fractions(instrument, ref_date: date) -> tuple:
     la convención del bono — EXCEPTO que un **período final stub** (vto que cae bien
     antes del fin del período regular) se extiende al fin de período regular.
 
-    Es la convención ISMA/Balanz para bonos reestructurados con vto a mitad de período
+    Es la convención ISMA para bonos reestructurados con vto a mitad de período
     (ej. CLISA 2031: último cupón el 12/10/2031 pero el período regular cerraba el
     10/12/2031 → se descuenta al 10/12). Para bonos REGULARES (sin stub) devuelve la
     year_fraction real → idéntico a antes, no cambia ninguna TIR ya verificada.
@@ -96,7 +96,7 @@ def discount_year_fractions(instrument, ref_date: date) -> tuple:
 
 def _following_business_day(d: date) -> date:
     """Corre `d` al día hábil siguiente (convención *following*) si cae en finde/
-    feriado — la fecha de PAGO real del cupón. Balanz cuenta los intereses corridos
+    feriado — la fecha de PAGO real del cupón. La referencia cuenta los intereses corridos
     desde ahí (ej. cupón sáb 17/01/2026 → pagado lun 19/01 → días desde el 19).
     Import function-local del holiday_engine; tope de 10 días por seguridad."""
     from core.holiday_engine import es_habil
@@ -113,14 +113,14 @@ def accrued_interest(instrument, ref_date: date) -> float:
     0 para zero-coupon / capitalizables (LECER, LECAP, BONCER ZC, PURO, DUAL).
 
     Day-count:
-    - 30/360: usa days_30_360 para period_days y elapsed (convención BYMA/Balanz).
+    - 30/360: usa days_30_360 para period_days y elapsed (convención BYMA).
     - ACT/365 con cupón pasado disponible: deriva la tasa diaria del cupón anterior
       (robusto ante "long last coupon" donde el next_cf.interest cubre menos días
       que el period_days real).
     - ACT/365 sin cupón pasado (primer período): proratea next_cf sobre period_days.
 
     Los días corridos se cuentan desde la fecha de PAGO real del cupón anterior (día
-    hábil *following* de la fecha programada) — Balanz acumula desde ahí. La tasa
+    hábil *following* de la fecha programada) — la referencia acumula desde ahí. La tasa
     diaria se deriva del período PROGRAMADO (= tasa anual/365), no del corrido."""
     bounds = period_bounds(instrument, ref_date)
     if not bounds:
@@ -130,7 +130,7 @@ def accrued_interest(instrument, ref_date: date) -> float:
     if instrument.is_30_360:
         # 30/360 ignora findes/feriados (meses de 30 días): los días corridos se cuentan
         # desde la fecha PROGRAMADA del cupón anterior, SIN correr a día hábil — así lo
-        # hace Balanz (cupón sáb 30/05 → 10 días al 10/06, no 9). El corrimiento a día
+        # hace la referencia (cupón sáb 30/05 → 10 días al 10/06, no 9). El corrimiento a día
         # hábil aplica SOLO a las convenciones ACT (abajo; ver CS44).
         from core.domain.cashflow_synth import days_30_360 as _d30360
         period_days = _d30360(period_start, next_cf.date)
@@ -140,7 +140,7 @@ def accrued_interest(instrument, ref_date: date) -> float:
         return next_cf.interest * min(elapsed_dc, period_days) / period_days
 
     # ACT/*: los días corren desde la fecha de PAGO real (día hábil *following*) del
-    # cupón anterior — Balanz acumula desde ahí (ej. cupón sáb 17/01 → pagado lun 19/01).
+    # cupón anterior — la referencia acumula desde ahí (ej. cupón sáb 17/01 → pagado lun 19/01).
     eff_start = _following_business_day(period_start)
     elapsed = (ref_date - eff_start).days
     if elapsed <= 0:
@@ -200,7 +200,7 @@ def residual_nominal(instrument, ref_date: date) -> float:
 def current_yield(instrument, price_dirty: float, ref_date: date) -> Optional[float]:
     """Current yield (decimal) = cupón anual nominal (por 100 de VR vivo) / precio CLEAN.
 
-    Convención IAMC/Balanz. El cupón anual se recupera del próximo cupón vigente
+    Convención IAMC. El cupón anual se recupera del próximo cupón vigente
     normalizando por la fracción de año de su período (`interest / dcf`) → es la tasa
     de cupón × residual, exacta aun con semestres de 181/184 días, con un solo cupón
     en el año, o con stub long-last. Denominador CLEAN (dirty − corridos), no dirty.

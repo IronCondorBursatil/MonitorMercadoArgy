@@ -1,7 +1,7 @@
 """Tests del `FinancialEngine` (XIRR, conversions TEA↔TEM↔TNA, MD).
 
 Foco en regresión: TIR de un LECAP con cashflow sintético debe matchear lo
-que vimos en Balanz para S29Y6 (TNA 21.09%).
+que vimos en la referencia para S29Y6 (TNA 21.09%).
 """
 
 from datetime import date
@@ -38,13 +38,13 @@ class TestXIRR:
         tir = FinancialEngine.xirr([-100.0, 95.0], [today, one_year])
         assert -0.052 < tir < -0.050
 
-    def test_s29y6_tir_matches_balanz(self):
+    def test_s29y6_tir_matches_referencia(self):
         """S29Y6 LECAP: price=131.21 hoy, payoff=132.04 al vto en 11 días.
-        TIR esperada ≈ TNA 21.09% (Balanz oficial)."""
+        TIR esperada ≈ TNA 21.09% (la referencia oficial)."""
         today = date(2026, 5, 18)
         vto = date(2026, 5, 29)  # 11 días
         tir = FinancialEngine.xirr([-131.21, 132.04], [today, vto])
-        # TIR como TEA (act/365.25 compound). TNA Balanz = 21.09%.
+        # TIR como TEA (act/365.25 compound). TNA la referencia = 21.09%.
         # Conversion: TEA = (1 + TNA × days/365)^(365/days) - 1 con days=11
         # 21.09% TNA × 11/365 = 0.6357% en 11 días
         # TEA = 1.006357^(365/11) - 1 ≈ 0.2342 = 23.42%

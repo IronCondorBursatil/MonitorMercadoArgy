@@ -1,4 +1,4 @@
-# Monitor de Bonos · Balanz — dependencias de runtime.
+# Monitor de Bonos — dependencias de runtime.
 # Python 3.12 del sistema, SIN venv en el proyecto. El runtime es el Python de
 # Programs (py -3.12). El antiguo "Store Python" ya no existe. Instalar con:
 #   py -3.12 -m pip install -r requirements.txt

@@ -6,10 +6,10 @@
 CASHFLOW EXPLÍCITO (no sintetizable): cupón STEP-UP sobre saldo declinante
 (3 / 3 / 3 / 5 / 6 / 7 / 7 %) + amortización 20/20/60 en los 3 últimos años. El synth
 de un solo `cupon anual %` no reproduce el step-up → se carga el cashflow publicado
-(pestaña CashFlow de Balanz, montos per 100 VN, autoritativos):
+(pestaña CashFlow de la fuente, montos per 100 VN, autoritativos):
 
     fecha        renta   amort   (obs)
-    25/08/2025    0.00    0.00    ancla del 1er período (Balanz "Último cupón")
+    25/08/2025    0.00    0.00    ancla del 1er período (referencia "Último cupón")
     25/08/2026    3.00    0.00    renta
     25/08/2027    3.00    0.00    renta
     25/08/2028    3.01    0.00    renta (3% × 366/365, 2028 bisiesto)
@@ -19,7 +19,7 @@ de un solo `cupon anual %` no reproduce el step-up → se carga el cashflow publ
     25/08/2032    4.21   60.00    renta + amort  (7% × 60 × 366/365, vto)
 
 La fila ancla 25/08/2025 (renta 0) fija el inicio del período corriente en esa fecha
-(= "Último cupón" de Balanz) → intereses corridos = 3 × 296/365 = 2.43 al settle T+1
+(= "Último cupón" de la referencia) → intereses corridos = 3 × 296/365 = 2.43 al settle T+1
 (17/06/2026), V.Téc = 100 + 2.43 = 102.43. Reconciliado además contra el PPV publicado
 (5.13 = vida promedio ponderada de TODOS los flujos) → el schedule queda triple-validado.
 
@@ -51,7 +51,7 @@ FIELDS = {
     "denom_base": "1.00", "denom_incremento": "1.00", "valor_nominal": "1.00",
 }
 
-# Cashflow publicado (Balanz), per 100 VN. La 1ª fila (25/08/2025, renta 0) es el ancla
+# Cashflow publicado por la fuente, per 100 VN. La 1ª fila (25/08/2025, renta 0) es el ancla
 # del período corriente — NO un pago.
 CASHFLOWS = [
     {"date": "2025-08-25", "interest": 0.00, "amortization": 0.00},
@@ -64,10 +64,10 @@ CASHFLOWS = [
     {"date": "2032-08-25", "interest": 4.21, "amortization": 60.00},
 ]
 
-# Ground-truth de la calculadora de Balanz (pestaña Calculadora, T+1 → 17/06/2026; sin
+# Ground-truth de la calculadora de referencia (pestaña Calculadora, T+1 → 17/06/2026; sin
 # precio cargado → solo las medidas precio-independientes + PPV/term).
 REF = {"vt": 102.43, "accrued": 2.43, "vr": 100.0, "ppv": 5.13, "ttm": 6.19, "dias": 296}
-SETTLE = date(2026, 6, 17)   # T+1 hábil del 16/06/2026 (= fecha de liquidación de Balanz)
+SETTLE = date(2026, 6, 17)   # T+1 hábil del 16/06/2026 (= fecha de liquidación de la referencia)
 
 
 def _fmt(v, nd=2):
@@ -98,7 +98,7 @@ def main(dry_run: bool) -> int:
         print(f"     {x['date']}  int={x['interest']:6.2f}  amort={x['amortization']:6.2f}{tag}")
     res_amort = sum(x["amortization"] for x in fut)
     ppv = _ppv(CASHFLOWS, SETTLE)
-    print(f"   Σ amort futura (residual) = {res_amort:.2f}  ·  PPV calc = {_fmt(ppv)}  (Balanz {REF['ppv']})")
+    print(f"   Σ amort futura (residual) = {res_amort:.2f}  ·  PPV calc = {_fmt(ppv)}  (referencia {REF['ppv']})")
     print()
     if dry_run:
         print("== DRY RUN (no escribe) ==")
@@ -117,7 +117,7 @@ def main(dry_run: bool) -> int:
     print(f"{save['action']}: {', '.join(save['tickers'])}  [{pre}]  ({save.get('cashflows')} cashflows)\n")
 
     # Verificación: VT / accrued / VR son PRECIO-INDEPENDIENTES → comparan directo contra
-    # Balanz (le pasamos dirty=VT solo para fijar un precio; no es un precio de mercado).
+    # la referencia (le pasamos dirty=VT solo para fijar un precio; no es un precio de mercado).
     r = verify("PECND", price=REF["vt"], price_mode="dirty")
     if not r or r.get("error"):
         print(f"ERROR verify: {r.get('error') if r else 'sin resultado'}")
@@ -127,7 +127,7 @@ def main(dry_run: bool) -> int:
            "ppv": ppv}
     print(f"{'':8} {'V.Téc':>8} {'accrued':>8} {'VR':>7} {'PPV':>6}")
     print(f"{'engine':8} {_fmt(got['vt']):>8} {_fmt(got['accrued']):>8} {_fmt(got['vr']):>7} {_fmt(got['ppv']):>6}")
-    print(f"{'Balanz':8} {REF['vt']:>8} {REF['accrued']:>8} {REF['vr']:>7} {REF['ppv']:>6}")
+    print(f"{'Ref':8} {REF['vt']:>8} {REF['accrued']:>8} {REF['vr']:>7} {REF['ppv']:>6}")
     diffs = []
     for k, tol in (("vt", 0.05), ("accrued", 0.05), ("vr", 0.05), ("ppv", 0.1)):
         g = got[k]
@@ -137,7 +137,7 @@ def main(dry_run: bool) -> int:
     tir = (r.get("tir") or 0) * 100
     print(f"\n   (info @dirty {REF['vt']}: TIR {_fmt(tir)}%  MD {_fmt(r.get('duration'))}  "
           f"clean {_fmt(r.get('price_clean'))})")
-    print("\n" + ("✓ PECNO reconcilia con Balanz (V.Téc/accrued/VR/PPV)." if not diffs
+    print("\n" + ("✓ PECNO reconcilia con la referencia (V.Téc/accrued/VR/PPV)." if not diffs
                   else "⚠ diverge: " + "; ".join(diffs)))
     print("Reiniciá el server (o esperá el reload del repo) para verla en el panel ON.")
     return 0 if not diffs else 1

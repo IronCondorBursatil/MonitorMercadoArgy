@@ -8,7 +8,7 @@ CASHFLOW EXPLICITO — no sintetizable por tres razones combinadas:
   2. Amortizacion en fecha FUERA de grilla: 13/05/2027 (50%, renta 0) — antes del vto
   3. Vto 13/06/2027: 50% amort + 0.74 renta (1 trimestre sobre VR 50)
 
-Montos per 100 VN, autoritativos (pestana CashFlow de Balanz). Base 30/360 trimestral:
+Montos per 100 VN, autoritativos (pestana CashFlow de la fuente). Base 30/360 trimestral:
   cupon regular = 100 x 5.9% / 4 = 1.475 ~ 1.48
   cupon largo   = 100 x 5.9% x 9/12 = 4.425 ~ 4.43
   cupon vto     = 50  x 5.9% / 4 = 0.7375 ~ 0.74
@@ -40,7 +40,7 @@ FIELDS = {
     "base calculo": "30/360", "tipo amortizacion": "amortizing",
 }
 
-# Cashflow publicado (Balanz), per 100 VN.
+# Cashflow publicado por la fuente, per 100 VN.
 # Ancla: 13/06/2024 (emision). 1er cupon largo cubre 9 meses (3 trimestres).
 # Amort 50% en 13/05/2027 (no es fecha de cupon, renta=0) + 50% al vto 13/06/2027.
 CASHFLOWS = [
@@ -58,7 +58,7 @@ CASHFLOWS = [
     {"date": "2027-06-13", "interest": 0.74, "amortization": 50.00},  # vto: 50%amort + 1 trim sobre VR50
 ]
 
-# Ground-truth Balanz (Calculadora, dirty 102, T+1 -> 17/06/2026, pata D).
+# Ground-truth la referencia (Calculadora, dirty 102, T+1 -> 17/06/2026, pata D).
 VERIFY_PRICE = 102.0
 SETTLE = date(2026, 6, 17)
 REF = {"tir": 3.35, "tna_nom": 3.31, "md": 0.92, "vt": 100.07,
@@ -109,7 +109,7 @@ def main(dry_run: bool) -> int:
     print(f"{'engine':6} {_fmt(got['tir']):>7} {_fmt(got['tna_nom']):>7} {_fmt(got['md']):>6} "
           f"{_fmt(got['vt']):>8} {_fmt(got['accrued']):>6} {_fmt(got['clean'],3):>9} "
           f"{_fmt(got['vr']):>7} {_fmt(got['parity']):>8}")
-    print(f"{'Balanz':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
+    print(f"{'Ref':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
           f"{REF['vt']:>8} {REF['accrued']:>6} {REF['clean']:>9.3f} {REF['vr']:>7} {REF['parity']:>8}")
     diffs = []
     for k, tol in (("tir", 0.4), ("md", 0.06), ("vt", 0.06), ("accrued", 0.06),
@@ -118,7 +118,7 @@ def main(dry_run: bool) -> int:
         if g is None or abs(g - REF[k]) > tol:
             diffs.append(f"{k} {_fmt(g, 3)} != {REF[k]} (d={_fmt((g or 0) - REF[k], 3)})")
     print()
-    print("OK YFCIO reconcilia con Balanz." if not diffs
+    print("OK YFCIO reconcilia con la referencia." if not diffs
           else "DIVERGE: " + "; ".join(diffs))
     print("Reinicia el server para verla en el panel ON.")
     return 0 if not diffs else 1

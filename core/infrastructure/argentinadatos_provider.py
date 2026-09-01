@@ -62,7 +62,7 @@ class ArgentinaDatosProvider:
                 resp = httpx.get(
                     _LETRAS_URL,
                     timeout=10.0,
-                    headers={"User-Agent": "balanz-monitor/1.0"},
+                    headers={"User-Agent": "monitor-renta-fija/1.0"},
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -86,7 +86,7 @@ class ArgentinaDatosProvider:
             resp = httpx.get(
                 _RIESGO_PAIS_HIST_URL,
                 timeout=15.0,
-                headers={"User-Agent": "balanz-monitor/1.0"},
+                headers={"User-Agent": "monitor-renta-fija/1.0"},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -109,7 +109,7 @@ class ArgentinaDatosProvider:
                 resp = httpx.get(
                     _RIESGO_PAIS_URL,
                     timeout=10.0,
-                    headers={"User-Agent": "balanz-monitor/1.0"},
+                    headers={"User-Agent": "monitor-renta-fija/1.0"},
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -153,7 +153,7 @@ class ArgentinaDatosProvider:
                 resp = httpx.get(
                     _DOLARES_HIST_URL,
                     timeout=20.0,
-                    headers={"User-Agent": "balanz-monitor/1.0"},
+                    headers={"User-Agent": "monitor-renta-fija/1.0"},
                 )
                 resp.raise_for_status()
                 data = resp.json()

@@ -30,7 +30,7 @@ class Data912MarketDataProvider(IMarketDataProvider):
         "corp":   "https://data912.com/live/arg_corp",
         "stocks": "https://data912.com/live/arg_stocks",
     }
-    UA = "balanz-monitor/1.0"
+    UA = "monitor-renta-fija/1.0"
 
     # Per-ticker daily OHLC. Series only changes at end-of-day so the cache
     # can be hours-long without affecting freshness. Upstream rate-limit is

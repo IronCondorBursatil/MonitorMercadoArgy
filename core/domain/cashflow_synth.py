@@ -138,7 +138,7 @@ def _synth_lecap_boncap(row: Mapping[str, Any], vto: date) -> List[Cashflow]:
     Convención AR: el plazo en meses usa day-count 30/360 (NO actual/360).
     Para S29Y6 (emis 2025-05-30, vto 2026-05-29): días corridos = 364 →
     months = 12.13 da payoff sobre-estimado; con 30/360 → 359 días → 11.97
-    meses → payoff 132.05 (matchea Balanz).
+    meses → payoff 132.05 (matchea la referencia).
     """
     tem = _safe_float(row.get("tem_licit"), default=0.0)
     emision = _get_date(row, ("fecha_emision", "fecha emision"))

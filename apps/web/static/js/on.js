@@ -763,7 +763,7 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
     renderActiveTab();
     document.getElementById("footer-note").textContent =
       "Datos: " + (ON.DATA.generated || "—") + " · " + filteredList().length + " resultados · " + state.ccy +
-      " · vista: " + state.activeTab + " · O.N's Monitor Balanz";
+      " · vista: " + state.activeTab + " · O.N's Monitor";
   }
 
   /* ============================================================

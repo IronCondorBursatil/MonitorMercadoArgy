@@ -60,7 +60,7 @@ apps/web/
   routers/             panels (12 paneles + /bond detalle), bonds, cartera, bcra, cashflows, escenarios, curva, fci (página + /fci/data JSON), abm, stream (SSE)
   fci_service.py       junta CAFCI enriquecido + AUM + macro (lens A3500/CER) + flujos (fci_history) → dataset memoizado de /fci/data
   templates/           base.html + pages/* + fragments/* (Jinja + HTMX)
-  static/css/app.css   diseño Balanz (light/dark) · static/css/fci.css · static/vendor/gridstack · static/js/fci.js (app cliente del panel FCI: 5 vistas + detalle, Chart.js)
+  static/css/app.css   diseño propio (light/dark) · static/css/fci.css · static/vendor/gridstack · static/js/fci.js (app cliente del panel FCI: 5 vistas + detalle, Chart.js)
   bond_detail.py instruments_abm.py cartera_store.py   (reusados por los routers)
 run.py scripts/ tests/ data/ config/
 ```

@@ -444,11 +444,11 @@ Todos de severidad baja, agrupados porque comparten origen:
 **Qué pasa:** el proyecto trata CLAUDE.md como contrato vinculante (dice literalmente que sus instrucciones ganan sobre las skills), pero documenta una app **sin autenticación**. Quien lo lea —vos en tres meses, o el próximo agente— va a montar el próximo router sin protección.
 
 Además `agents.md` declara vigentes **dos convenciones que el código ya no implementa**:
-- `agents.md:243-244` dice "rail TAMAR **diario**: `(1 + (TAMAR_d + spread)/365)`". El código capitaliza **mensualmente** (`conventions.py:23-31`, `_TAMAR_K = 365/32`; `tamar.py:145-149`, `max(tem_tamar, floor_rate_monthly)` y `payoff = 100*(1+tem_max)**n_months`). El docstring de `tamar.py` dice que ESA es la fórmula oficial BONTE TAMAR validada contra Balanz para TTJ26 → **manda el código**.
+- `agents.md:243-244` dice "rail TAMAR **diario**: `(1 + (TAMAR_d + spread)/365)`". El código capitaliza **mensualmente** (`conventions.py:23-31`, `_TAMAR_K = 365/32`; `tamar.py:145-149`, `max(tem_tamar, floor_rate_monthly)` y `payoff = 100*(1+tem_max)**n_months`). El docstring de `tamar.py` dice que ESA es la fórmula oficial BONTE TAMAR validada contra la referencia para TTJ26 → **manda el código**.
 - `agents.md:371-373` dice "**T+0** para LECAP/BONCAP/LECER". El código ignora el tipo: `conventions.py:104-107` → `lag = 1` con el comentario "la convención actual es lag=1 para todos" (el motor legacy congelado hace lo mismo, o sea el cambio es anterior al refactor).
 - Menor: `agents.md:245` dice "CER se proyecta linealmente"; `tamar.project_cer_at` es explícitamente **compuesta**.
 
-**Por qué importa acá:** reescribir el rail TAMAR en base diaria rompe la calibración Balanz de TTJ26; aplicar T+0 a LECAP mueve el descuento un día hábil (≈0,08% a 2,5% mensual) y rompe `test_pricing_equivalence`. Es la trampa más cara del repo porque el doc *parece* autoritativo.
+**Por qué importa acá:** reescribir el rail TAMAR en base diaria rompe la calibración de referencia de TTJ26; aplicar T+0 a LECAP mueve el descuento un día hábil (≈0,08% a 2,5% mensual) y rompe `test_pricing_equivalence`. Es la trampa más cara del repo porque el doc *parece* autoritativo.
 
 **Arreglo (minutos):** actualizar las tres líneas de `agents.md` a lo que hace el código (referenciando `conventions.py` y `tamar.py` como fuente) o marcarlas como **HISTÓRICAS**, igual que ya se hizo con la sección web. Y agregar a CLAUDE.md un bloque de auth/permisos y uno de despliegue.
 
@@ -478,7 +478,7 @@ Además `agents.md` declara vigentes **dos convenciones que el código ya no imp
 
 No es cortesía: estas cosas son las que hacen que los hallazgos de arriba sean *arreglables* en vez de un rewrite.
 
-**El núcleo de pricing tiene una red real y bien pensada.** `test_pricing_equivalence.py` compara el motor nuevo contra el original **congelado** (`tests/_legacy_engine.py`) sobre todos los instrumentos — cuando lo corrí en aislamiento pasó los 5 tests. Es la clase de invariante que la mayoría de los proyectos declara y nadie implementa. Sumado a los golden tests contra Balanz, cubre las convenciones raras que son donde se pierde plata: LECAP 30/360, MD BYMA con `m=freq`, TAMAR con `m=12`, pares NT8/2024.
+**El núcleo de pricing tiene una red real y bien pensada.** `test_pricing_equivalence.py` compara el motor nuevo contra el original **congelado** (`tests/_legacy_engine.py`) sobre todos los instrumentos — cuando lo corrí en aislamiento pasó los 5 tests. Es la clase de invariante que la mayoría de los proyectos declara y nadie implementa. Sumado a los golden tests contra la referencia, cubre las convenciones raras que son donde se pierde plata: LECAP 30/360, MD BYMA con `m=freq`, TAMAR con `m=12`, pares NT8/2024.
 
 **La arquitectura de pricing post-reingeniería está limpia de verdad.** La tabla predicado→strategy de `registry.py` mató la escalera if/elif, `PricingContext` es inmutable, `VanillaStrategy` + `super()` fallback evita la duplicación entre CER/DL/TAMAR/Dual, y `FinancialEngine` preserva firmas como fachada delgada. Eso es lo que permite que el fix del doble lag (ítem 17) sea una palabra en vez de una cirugía.
 

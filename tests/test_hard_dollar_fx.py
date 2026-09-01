@@ -112,7 +112,7 @@ def test_usd_legs_are_not_fx_converted():
         snap = MarketSnapshot(instrument=leg, price=USD_PRICE)
         tir1 = FinancialEngine.calculate_tir(snap, idx, FxStub(), settle_date=SETTLE)
         tir2 = FinancialEngine.calculate_tir(snap, idx, FxStubAltRates(), settle_date=SETTLE)
-        assert tir1 is not None and 0.05 < tir1 < 0.15   # ~9.93% (matchea Balanz)
+        assert tir1 is not None and 0.05 < tir1 < 0.15   # ~9.93% (matchea la referencia)
         assert tir1 == pytest.approx(tir2, abs=1e-12)     # FX no influye en …D/…C
 
 
@@ -155,7 +155,7 @@ def test_dollar_linked_still_uses_official_not_mep_ccl():
 
 
 # Letras del Tesoro DOLAR_LINKED soberanas (zero-coupon, bullet 100 al vto).
-# (ticker, isin, vto, precio_pesos_dirty, usd_implícito, tir_efectiva) — refs Balanz
+# (ticker, isin, vto, precio_pesos_dirty, usd_implícito, tir_efectiva) — refs de la calculadora
 # @ FX mayorista 1446.1064, settle 10/06/2026.
 _DL_SOBERANOS = [
     ("D31M7", "AR0637963668", date(2027, 3, 31), 140200.0, 96.95, 0.0392),
@@ -165,9 +165,9 @@ _DL_SOBERANOS = [
 
 @pytest.mark.parametrize("tk,isin,vto,peso,usd,tir_ref", _DL_SOBERANOS,
                          ids=[a[0] for a in _DL_SOBERANOS])
-def test_dollar_linked_soberano_matches_balanz(tk, isin, vto, peso, usd, tir_ref):
+def test_dollar_linked_soberano_matches_referencia(tk, isin, vto, peso, usd, tir_ref):
     """Con el FX de la foto (mayorista 1446.1064) y el precio pesos dirty, settle
-    10/06/2026 → USD = pesos/FX, TIR efectiva = Balanz. Confirma además que es
+    10/06/2026 → USD = pesos/FX, TIR efectiva = la de referencia. Confirma además que es
     FX-dependiente (pata pesos /oficial, no USD directa)."""
     from core.domain.pricing.context import PricingContext
     from core.domain.pricing.strategies import DolarLinkedStrategy

@@ -1,4 +1,4 @@
-"""Alta de 4 ONs hard-dollar (verificadas contra la calculadora de Balanz, T+1 al
+"""Alta de 4 ONs hard-dollar (verificadas contra la calculadora de referencia, T+1 al
 2026-06-16, con el feriado/hábil del repo):
 
     AEC2O  AES Argentina Gen. Clase 2   9.500%  USP1000CAE41  amort 25%×4    → explícito
@@ -15,7 +15,7 @@ Por qué explícitos los 3 amortizers (política del repo: synth SOLO para bulle
   30/08 ↔ 28/02 de AEC2O (Feb→28) y agrega un stub espurio. Por eso dates explícitas.
 
 BACAO es bullet con UN flujo futuro (04/11/2026 = cupón 3.3215 + amort 100) → synth ABM
-con base 30/360 (cupón flat 6.643%/2 = 3.3215, matchea Balanz).
+con base 30/360 (cupón flat 6.643%/2 = 3.3215, matchea la referencia).
 
 DB-only (save_instrument append, NO destructivo) — igual que las ~69 ONs cargadas a mano;
 NO toca la CSV semilla ni on_catalog.ingest (destructivo). Snapshot pre-op incondicional.
@@ -178,9 +178,9 @@ def main(dry_run: bool) -> int:
         print(f"{res['action']:8} {', '.join(res['tickers'])}  ({b['short']})")
     print()
 
-    # --- Verificación contra Balanz (leg …D, USD, dirty, T+1) ---
+    # --- Verificación contra la referencia (leg …D, USD, dirty, T+1) ---
     hdr = f"{'ticker':6} {'TIR%':>7} {'TNAn%':>7} {'MD':>6} {'VT':>8} {'accr':>6} {'clean':>9} {'VR':>7} {'parity%':>8}"
-    print("VERIFICACIÓN  (engine → Balanz)\n" + hdr)
+    print("VERIFICACIÓN  (engine → referencia)\n" + hdr)
     ok = True
     for b in BONDS:
         d_ticker = b["tickers"][1]
@@ -213,7 +213,7 @@ def main(dry_run: bool) -> int:
             print(f"       ⚠ DIVERGE: {'; '.join(diffs)}")
         print()
 
-    print("✓ las 4 ONs reconcilian con Balanz." if ok else
+    print("✓ las 4 ONs reconcilian con la referencia." if ok else
           "⚠ alguna métrica diverge — revisar arriba.")
     print("\nReiniciá el server (o esperá el reload del repo) para verlas en el panel ON.")
     return 0 if ok else 1

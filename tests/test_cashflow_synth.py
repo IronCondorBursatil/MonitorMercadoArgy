@@ -1,7 +1,7 @@
 """Tests del módulo `core.domain.cashflow_synth`.
 
 El bug histórico que motivó estos tests: S29Y6 (LECAP) tenía TNA 33.88% en
-el panel cuando Balanz oficial mostraba 21.09%. La causa era usar
+el panel cuando la referencia oficial mostraba 21.09%. La causa era usar
 `(vto - emision).days / 30` (días corridos) en vez de la convención AR
 30/360. Estos tests previenen la regresión.
 """
@@ -27,7 +27,7 @@ class TestDays30360:
 
     def test_s29y6_specific_case(self):
         # S29Y6: emisión 2025-05-30, vto 2026-05-29. Convención 30/360
-        # da 359 → meses = 11.97 → payoff 132.04 (matchea Balanz).
+        # da 359 → meses = 11.97 → payoff 132.04 (matchea la referencia).
         assert days_30_360(date(2025, 5, 30), date(2026, 5, 29)) == 359
 
     def test_isda_end_of_month_rule(self):
@@ -44,7 +44,7 @@ class TestDays30360:
 # --------------------------------------------------------------------------- #
 
 class TestLecapSynth:
-    def test_s29y6_payoff_matches_balanz(self):
+    def test_s29y6_payoff_matches_referencia(self):
         """Ground truth: TEM 2.35%, emis 2025-05-30, vto 2026-05-29 →
         payoff esperado 132.0438 (NO 132.57 que daba el bug de días/30)."""
         row = {
@@ -59,13 +59,13 @@ class TestLecapSynth:
         assert cfs[0].date == date(2026, 5, 29)
         assert cfs[0].interest == 0.0
         assert abs(cfs[0].amortization - 132.0438) < 0.001, (
-            f"Payoff {cfs[0].amortization:.4f} doesn't match Balanz reference 132.04 "
+            f"Payoff {cfs[0].amortization:.4f} doesn't match la referencia reference 132.04 "
             "— ¿regresó el bug de días/30?"
         )
 
     def test_s15s6_empty_base_defaults_to_30_360(self):
         """S15S6 (LECAP, TEM 1.99%, emis 2026-05-29, vto 2026-09-15) con base VACÍA →
-        usa 30/360 (default) → payoff 107.21 (matchea Balanz). Cubre el alta sin base."""
+        usa 30/360 (default) → payoff 107.21 (matchea la referencia). Cubre el alta sin base."""
         row = {
             "clase": "LECAP",
             "tem_licit": 0.0199,

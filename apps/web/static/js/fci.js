@@ -1,5 +1,5 @@
 /* Panel FCI — app cliente (vanilla). Lee /fci/data (dataset armado en server desde
-   CAFCI + ArgentinaDatos + fci_history + lente A3500/CER). Theme Balanz vía app.css. */
+   CAFCI + ArgentinaDatos + fci_history + lente A3500/CER). Theme propio vía app.css. */
 (function () {
 "use strict";
 

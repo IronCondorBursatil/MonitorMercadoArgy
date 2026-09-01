@@ -1,7 +1,7 @@
 """Motor de payoff TAMAR (fórmula oficial BONTE TAMAR) y proyección de CER.
 
 Extraído de `services.py` SIN cambios de fórmula. Validado contra calculadora
-Balanz/IAMC para TTJ26 (precio 158.20 → V.Téc 146.39, payback 164.32,
+IAMC para TTJ26 (precio 158.20 → V.Téc 146.39, payback 164.32,
 TIR_EA 39.06%).
 
 Capitalización MENSUAL con day-count 30/360:

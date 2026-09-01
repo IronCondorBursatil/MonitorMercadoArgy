@@ -186,7 +186,7 @@ def fetch_ard_fci_rows(max_workers: int = 5) -> List[dict]:
     def _one(item):
         tipo, url = item
         try:
-            resp = httpx.get(url, timeout=15.0, headers={"User-Agent": "balanz-monitor/1.0"})
+            resp = httpx.get(url, timeout=15.0, headers={"User-Agent": "monitor-renta-fija/1.0"})
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:  # noqa: BLE001 — best-effort por categoría

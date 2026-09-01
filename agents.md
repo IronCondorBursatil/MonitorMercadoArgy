@@ -240,7 +240,7 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
 
 ### Bonos TAMAR (PURO, DUAL, DUAL_CER_TAMAR)
 
-- **`spread`**: anual decimal sobre TAMAR (ej. 0.05 = TAMAR + 5%). ⚠️ **DESACTUALIZADO** (el código manda): el rail NO es diario `(1+(TAMAR_d+spread)/365)`. El BONTE TAMAR capitaliza **mensualmente** — `conventions.py:23-31` (`_TAMAR_K = 365/32`, `tamar_tem`) y `tamar.py:145-149` (`payoff = 100·(1+tem_max)^n_months`, validado contra Balanz para TTJ26). Ver el docstring de `tamar.py`.
+- **`spread`**: anual decimal sobre TAMAR (ej. 0.05 = TAMAR + 5%). ⚠️ **DESACTUALIZADO** (el código manda): el rail NO es diario `(1+(TAMAR_d+spread)/365)`. El BONTE TAMAR capitaliza **mensualmente** — `conventions.py:23-31` (`_TAMAR_K = 365/32`, `tamar_tem`) y `tamar.py:145-149` (`payoff = 100·(1+tem_max)^n_months`, validado contra la referencia para TTJ26). Ver el docstring de `tamar.py`.
 - **`tasa_fija_mensual`** (solo DUAL): floor **mensual** decimal. Bond paga `max(tem_tamar, floor_mensual)` por mes (no diario).
 - **`cer_base` + `cer_spread`** (solo DUAL_CER_TAMAR, serie TXMJ*): rail CER independiente. Payoff a vto = max(rail_TAMAR, CER_ratio × (1+cer_spread)^years). ⚠️ Para futuros lejanos el CER se proyecta **compuesto**, NO linealmente — `tamar.project_cer_at` (la línea vieja decía "linealmente").
 - **MD bullet** TAMAR/DUAL usa **m=12** (capitalización mensual) → `MD = years / (1+TEA)^(1/12)`. DL usa m=1.
@@ -261,7 +261,7 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
   `core/infrastructure/on_catalog.py`, ingesta idempotente a SQLite) usan `ACT/365` ("real/365", base
   de intereses del calculador del broker). Las ON de bancos cargadas por ABM varían: ej. **BACH = 30/360**,
   **BF37/BPCV/BYCV/CACB/CICA = ACT/365**. El motor descuenta con la convención declarada de cada una
-  (ver Day-count). Validadas contra Balanz (`tests/test_balanz_golden.py`).
+  (ver Day-count). Validadas contra la referencia (`tests/test_golden_referencia.py`).
 - **Serie/Clase + Ley Aplicable** (v7.2): el CSV tiene columnas `serie_clase` (ej. "Clase XXXI",
   del listado IAMC/BYMA) y `ley` (`Argentina` / `Extranjera`). `on_catalog` las lee → `serie_clase`
   se agrega al `short_name` para display (`"EMISOR - Clase X"`) y ambas van a `raw_fields`. El form
@@ -271,7 +271,7 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
 
 ### Bonos LECAP / BONCAP capitalizables
 
-- Generador sintético usa `tem_licit` + `fecha_emision` + day-count **30/360** (`days_30_360`) para computar `payoff = 100 × (1+tem)^months`. Para S29Y6: con 30/360 → 359 días → 11.97 meses → payoff 132.05 (matchea Balanz). Con `base calculo = "Act/..."` usa days/30 en su lugar.
+- Generador sintético usa `tem_licit` + `fecha_emision` + day-count **30/360** (`days_30_360`) para computar `payoff = 100 × (1+tem)^months`. Para S29Y6: con 30/360 → 359 días → 11.97 meses → payoff 132.05 (matchea la referencia). Con `base calculo = "Act/..."` usa days/30 en su lugar.
 - V.Téc(t) = `100 × (payoff/100)^(elapsed/total)` (interpolación geométrica desde emisión).
 - TIR es TEA pura; TNA y TEM se derivan en base 365 (act/365):
   - `TEM = (1+TEA)^(30/365) − 1`
@@ -294,7 +294,7 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
 - **Respetar lo declarado**: todos los sitios de descuento (`pricing/base.py`, `pricing/metrics.py`,
   `pricing/strategies.py`, `services.calculate_theoretical_price`) descuentan con
   `inst.year_fraction_to(date, ref)`. Para `30/360` y `ACT/365.25` el resultado es **bit-idéntico** al
-  motor viejo (sólo cambian los `ACT/365`: ONs hard-dollar + Dólar-Linked, que ahora matchean Balanz —
+  motor viejo (sólo cambian los `ACT/365`: ONs hard-dollar + Dólar-Linked, que ahora matchean la referencia —
   ej. CICA 7.56%, antes 7.57%).
 - **Solver Brent** (`core/domain/xirr.py`): `xirr(flows, dates, day_count=None)`. brentq con
   auto-bracketing geométrico (encuentra yields >1000% que el bracket fijo `[-0.999,10]` perdía); Newton
@@ -306,7 +306,7 @@ La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base"
   schedule es cronológico por definición) → el hot-path de pricing ya no re-sortea defensivamente.
 - **Tests**: `test_daycount.py` (identidades + bordes bisiestos/fin-de-mes/ACT-ACT), `test_xirr_solver.py`
   (robustez del solver + recuperación de yield), `test_daycount_pricing.py` (descuento por convención +
-  gap-lock ACT/365 vs 365.25), `test_balanz_golden.py` (anclas exactas vs Balanz), `test_pricing_invariants.py`
+  gap-lock ACT/365 vs 365.25), `test_golden_referencia.py` (anclas exactas vs la referencia), `test_pricing_invariants.py`
   (round-trip / monotonicidad / cotas, property-based con `hypothesis`).
 
 ### Soberanos: 3 especies por moneda (ARS / MEP / CABLE) + pricing de la pata ARS
@@ -571,10 +571,10 @@ verde** (+715 tests nuevos). Detalle de la convención en **"Day-count / convenc
 
 | Tipo | Item | Detalle |
 |---|---|---|
-| **Fix** | **Day-count por instrumento** | El descuento respeta el `day_count` declarado vía `core/domain/daycount.py::year_fraction` (nuevo: `DayCount` enum + `parse_day_count` + ACT/ACT ISDA). Antes todo lo no-30/360 caía a 365.25 ignorando el campo → ONs `ACT/365` con error de ~1bp. Ahora matchean Balanz (CICA 7.56% vs 7.57%). `30/360` y `365.25` quedan bit-idénticos. Espejado en `_legacy_engine.py` → `test_pricing_equivalence` verde. |
+| **Fix** | **Day-count por instrumento** | El descuento respeta el `day_count` declarado vía `core/domain/daycount.py::year_fraction` (nuevo: `DayCount` enum + `parse_day_count` + ACT/ACT ISDA). Antes todo lo no-30/360 caía a 365.25 ignorando el campo → ONs `ACT/365` con error de ~1bp. Ahora matchean la referencia (CICA 7.56% vs 7.57%). `30/360` y `365.25` quedan bit-idénticos. Espejado en `_legacy_engine.py` → `test_pricing_equivalence` verde. |
 | Engine | **Solver Brent robusto** | `xirr.py` → brentq con auto-bracketing geométrico (yields >1000% que el bracket fijo perdía), Newton como pre-paso, `_npv` overflow-safe + guards en `duration`/`vanilla_pv`. Fixea el crash histórico de **CUAP** (TIR degenerada → `OverflowError`). Firma `xirr(flows, dates, day_count=)`. |
 | Engine | **Invariante cashflows cronológicos** | `Instrument` ordena cashflows en un `field_validator` → el pricing no re-sortea (DRY + claridad). |
-| Tests | **+715 tests** | `test_daycount`, `test_xirr_solver`, `test_daycount_pricing` (gap-lock ACT/365), `test_balanz_golden` (anclas Balanz CICA/CACB/BPCV…), `test_pricing_invariants` (property-based, `hypothesis` → nueva dep dev). |
+| Tests | **+715 tests** | `test_daycount`, `test_xirr_solver`, `test_daycount_pricing` (gap-lock ACT/365), `test_golden_referencia` (anclas la referencia CICA/CACB/BPCV…), `test_pricing_invariants` (property-based, `hypothesis` → nueva dep dev). |
 | Audit | **Limpieza + bugs** | Greeks: valuación CRR duplicada (`p_r`=`p0`) → reuso. Dead code en `async_http`. `circuit_breaker` `assert`→`raise` explícito. DRY de códigos HTTP transitorios → `_http_constants.py`. **Bug CER** (`cer_return_scenarios`): el tramo lockeado usaba el fallback del escenario en vez del de REM. `futures_provider._is_market_hours` → tz-aware (ZoneInfo BA). `provider_hub` re-raise de `asyncio.CancelledError`. `tamar.project_cer_at` docstring (compuesta, no lineal). |
 | Feature | **short_call / short_put** | Expuestos en `PRESET_NAMES` de opciones (los builders ya existían; faltaba listarlos en el dropdown). |
 | Perf | **Días hábiles date-native** | `holiday_engine` expone `es_habil(date)` y `settlement_byma_date(date, lag)` — O(1) (weekday + lookup en frozenset), **sin** el round-trip `date→str→pd.Timestamp→date`. `cer_reference_date`, `settlement_for` y las ramas CER de `technical_value` (base/strategies) ahora son date-native (~7× por llamada; `is_habil(str)`/`settlement_byma(str)` quedan como wrappers de compat). |
@@ -595,7 +595,7 @@ Trabajo sobre la web **FastAPI + HTMX** (arquitectura actual en `CLAUDE.md`; las
 | Feature | **Filtro de moneda en BONARES** | Botones **ARS / MEP / CABLE** en el header del panel; **toggle independiente** (cada uno prende/apaga su moneda); default MEP. CSS-driven (`data-flt` en el panel, `data-ccy` en la fila), sobrevive a los swaps de HTMX del tbody. |
 | Feature | **Toolbar por panel** | Botones `Gráfico` · `Config` · `✕`. **Gráfico** (solo paneles con MD/TIR) = popup Chart.js (CDN): dispersión TIR×MD, Bonares vs Globales en colores, curva log por grupo, ticker arriba/abajo de cada punto. **Config** = mostrar/ocultar columnas (clases `hcol-N`). **✕** = cerrar panel. `routers/panels.py::panel_chart` + `fragments/panel_chart.html`. |
 | Feature | **CONFIG global + layout default** | Menú en el nav (al lado de ABM): toggle independiente de paneles visibles + restaurar los cerrados. **"Guardar layout como default"** persiste el arreglo (posiciones + ocultos + columnas) server-side: `POST /panels/layout` → `dashboard_layout.json` en `%LOCALAPPDATA%\monitor`. Prioridad al cargar: **localStorage personal > default del server > auto-layout**. |
-| UI | **Grid: auto-fit + resize fino + scrollbars** | Paneles auto-ajustan el alto a su contenido (sin scrollbar vertical; ajuste relativo medido en JS). Resize libre de grano fino (grid 200 col × cellHeight 5px). Scrollbars finos temáticos (navy/Balanz, light/dark). Layout en localStorage `grid-layout-v3`. |
+| UI | **Grid: auto-fit + resize fino + scrollbars** | Paneles auto-ajustan el alto a su contenido (sin scrollbar vertical; ajuste relativo medido en JS). Resize libre de grano fino (grid 200 col × cellHeight 5px). Scrollbars finos temáticos (navy/la referencia, light/dark). Layout en localStorage `grid-layout-v3`. |
 
 ### CHANGELOG v6.5
 

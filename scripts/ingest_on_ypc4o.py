@@ -12,7 +12,7 @@ synth ancla la grilla a `fecha_emision` y avanza de a 6m; con 12/11 caería en e
 y, peor, el último cupón (12/05/2028) < vto activaría el "long last coupon" fusionándolo
 con el vto → se PERDERÍA un cupón. Usando el dated-date real 02/11/1998 la grilla cae
 en 60 cupones exactos terminando en el vto (02/11/2028), bullet limpio. La pequeña
-divergencia vs Balanz (cupones flat 5.00 vs 4.94/5.03/4.97 por el ajuste de día hábil
+divergencia vs la referencia (cupones flat 5.00 vs 4.94/5.03/4.97 por el ajuste de día hábil
 del calculador) es la aproximación normal del synth para un bullet.
 
 DB-only (save_instrument append, NO destructivo). Snapshot pre-op. Idempotente.
@@ -41,7 +41,7 @@ FIELDS = {
     "base calculo": "30/360", "tipo amortizacion": "bullet",
 }
 
-# Balanz (simular inversión, dirty 100, T+1 → 16/06/2026)
+# la referencia (simular inversión, dirty 100, T+1 → 16/06/2026)
 REF = {"tir": 10.81, "tna_nom": 10.53, "md": 1.95, "vt": 101.1667,
        "clean": 98.83, "vr": 100.0}
 VERIFY_PRICE = 100.0
@@ -86,14 +86,14 @@ def main(dry_run: bool) -> int:
     print(f"{'':6} {'TIR%':>7} {'TNAn%':>7} {'MD':>6} {'VT':>9} {'clean':>8} {'VR':>7}")
     print(f"{'engine':6} {_fmt(got['tir']):>7} {_fmt(got['tna_nom']):>7} {_fmt(got['md']):>6} "
           f"{_fmt(got['vt'],4):>9} {_fmt(got['clean']):>8} {_fmt(got['vr']):>7}")
-    print(f"{'Balanz':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
+    print(f"{'Ref':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
           f"{REF['vt']:>9.4f} {REF['clean']:>8} {REF['vr']:>7}")
     diffs = []
     for k, tol in (("tir", 0.25), ("md", 0.05), ("vt", 0.1), ("clean", 0.1), ("vr", 0.05)):
         g = got[k]
         if g is None or abs(g - REF[k]) > tol:
             diffs.append(f"{k} {_fmt(g,4)}≠{REF[k]} (tol {tol})")
-    print("\n" + ("✓ YPC4O reconcilia con Balanz." if not diffs
+    print("\n" + ("✓ YPC4O reconcilia con la referencia." if not diffs
                   else "⚠ diverge: " + "; ".join(diffs)))
     print("Reiniciá el server (o esperá el reload del repo) para verla en el panel ON.")
     return 0 if not diffs else 1

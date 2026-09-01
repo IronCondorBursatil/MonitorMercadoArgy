@@ -177,7 +177,7 @@ class GenerateMonitorReport:
             metrics = InstrumentMetrics(snapshot=snapshot)
             # settle_date: T+0 (CI) o T+1/default (24hs) → el descuento de TIR/MD usa
             # la MISMA liquidación que el precio. settle_lag mueve el ref CER de la V.Téc
-            # al mismo plazo (ref de accrued = hoy en ambos, calibración Balanz intacta).
+            # al mismo plazo (ref de accrued = hoy en ambos, calibración de referencia intacta).
             metrics.tir = FinancialEngine.calculate_tir(
                 pricing_snap, indices_provider=indices, fx_provider=fx, settle_date=settle_date)
             metrics.technical_value = FinancialEngine.calculate_technical_value(

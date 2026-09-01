@@ -1,11 +1,11 @@
-"""Alta de 4 ONs hard-dollar (verificadas contra la calculadora de Balanz, T+1 → 16/06/2026):
+"""Alta de 4 ONs hard-dollar (verificadas contra la calculadora de referencia, T+1 → 16/06/2026):
 
     RC1CO  ARCOR Clase 1        7.600%  USP04559BE29  amort 33/33/34 (2031-33) → explícito
     RAC7O  RAGHSA Clase 7       8.500%  USP79849AF54  bullet                   → synth
     RAC5O  RAGHSA Clase 5       8.250%  USP79849AE89  bullet                   → synth
     C138O  CGC Clase 38 (Adic.) 11.875% USP3063DAD41  bullet                   → synth
 
-Nota ISIN RAC5O: la calculadora de Balanz mostraba US750645AG86, pero el ISIN
+Nota ISIN RAC5O: la calculadora de referencia mostraba US750645AG86, pero el ISIN
 autoritativo es el de BYMADATA (byma_catalog) = USP79849AE89.
 
 RC1CO es amortizing (33%+33%+34% en los 3 julios finales 2031/2032/2033) → cashflow
@@ -161,7 +161,7 @@ def main(dry_run: bool) -> int:
 
     hdr = (f"{'ticker':6} {'TIR%':>7} {'TNAn%':>7} {'MD':>6} {'VT':>8} {'accr':>6} "
            f"{'clean':>9} {'VR':>7} {'parity%':>8}")
-    print("VERIFICACIÓN  (engine → Balanz)\n" + hdr)
+    print("VERIFICACIÓN  (engine → referencia)\n" + hdr)
     ok = True
     for b in BONDS:
         d_ticker = b["tickers"][1]
@@ -191,7 +191,7 @@ def main(dry_run: bool) -> int:
             print(f"       ⚠ {'; '.join(diffs)}")
         print()
 
-    print("✓ las 4 ONs reconcilian con Balanz." if ok else
+    print("✓ las 4 ONs reconcilian con la referencia." if ok else
           "⚠ revisar divergencias arriba (ver nota RC1CO: 1er cupón corrido a día hábil).")
     print("\nReiniciá el server (o esperá el reload del repo) para verlas en el panel ON.")
     return 0 if ok else 1

@@ -49,7 +49,7 @@ def _is_30_360(instrument) -> bool:
 # por overflow en CUAP.
 from core.domain.xirr import _xirr_from_years  # noqa: E402
 # Espejo: mismas year-fractions de descuento que producción, incl. extensión del
-# stub final (convención ISMA/Balanz). Sin esto, los bonos con período final corto
+# stub final (convención ISMA). Sin esto, los bonos con período final corto
 # (ej. AO28D) divergirían entre new y legacy.
 from core.domain.pricing import metrics as _metrics  # noqa: E402
 
@@ -96,7 +96,7 @@ def _project_cer_at(target_date: date, indices_provider) -> Optional[float]:
 # Pago a vencimiento = VNO × (1 + TEM_max)^N_meses
 # Para DUAL: TEM_max = max(TAMAR_TEM, fixed_TEM_mensual)
 # Para DUAL_CER_TAMAR: max(rail TAMAR monthly, rail CER ratio × (1+spread)^years)
-# Validado contra calculadora Balanz/IAMC para TTJ26 a precio 158.20 (V.Téc
+# Validado contra calculadora IAMC para TTJ26 a precio 158.20 (V.Téc
 # 146.39, payback 164.32, TIR_EA 39.06%).
 # --------------------------------------------------------------------------- #
 
@@ -221,7 +221,7 @@ def _tamar_dual_payoff_at(
     Para DUAL_CER_TAMAR adicionalmente computa el rail CER y devuelve max.
 
     Nota: el doc oficial dice "promedio aritmético simple"; la calculadora
-    Balanz/IAMC en la práctica fixea TAMAR mes a mes, lo que da resultados
+    IAMC en la práctica fixea TAMAR mes a mes, lo que da resultados
     distintos. La diferencia se cubre permitiendo al usuario sobrescribir el
     `tamar_forecast` (campo "TAMAR proyectado" en la calculadora del popup).
     """
@@ -330,7 +330,7 @@ class FinancialEngine:
         """Valor Técnico (Valor Par) = residual nominal + accrued interest.
 
         Universal formula matching the BYMA/IAMC calculator convention used
-        by Balanz/Rava: at any reference date, the technical value of the bond
+        by las calculadoras de mercado: at any reference date, the technical value of the bond
         per-100-VN equals the still-outstanding principal plus the linearly-
         accrued portion of the next coupon.
 
@@ -563,7 +563,7 @@ class FinancialEngine:
     def calculate_duration(snapshot: MarketSnapshot, tir: float,
                            settle_date: Optional[date] = None) -> Optional[float]:
         """Modified Duration following the BYMA/IAMC convention used by local
-        bond calculators (Balanz, IAMC, Rava): MD = Macaulay / (1+TEA)^(1/m),
+        bond calculators (IAMC, Rava): MD = Macaulay / (1+TEA)^(1/m),
         where m is the bond's annual payment frequency.
 
         For zero-coupon / bullet bonds (single flow), m=1 and the formula
@@ -946,7 +946,7 @@ class FinancialEngine:
 
         Convención preferida para TAMAR/DUAL y otros bonos con capitalización
         mensual — el TNA base 365 (`tea_to_tna`) sub-representa la tasa
-        efectiva del cupón mensual. Modelo Balanz/IAMC lo muestra como
+        efectiva del cupón mensual. Modelo IAMC lo muestra como
         'Tasa Nominal' en bonos TAMAR.
         """
         if tea is None or tea <= -1.0:

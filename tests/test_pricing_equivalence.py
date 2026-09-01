@@ -170,7 +170,7 @@ def test_metrics_equivalence(instruments):
     for inst in instruments:
         # `days_coupon` y `current_yield` se sacaron a propósito: son métricas de
         # DISPLAY (no invariantes de pricing) y se realinearon a la convención del
-        # informe IAMC/Balanz divergiendo del legacy congelado — days desde el día
+        # informe IAMC divergiendo del legacy congelado — days desde el día
         # hábil de pago, y current_yield = cupón anual / clean (ver
         # tests/test_yield_conventions.py). El harness sigue protegiendo TIR/PV/MD/
         # payoff/accrued/residual, que NO cambian.

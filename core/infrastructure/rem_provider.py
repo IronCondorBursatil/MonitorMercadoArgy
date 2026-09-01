@@ -127,7 +127,7 @@ class REMProvider:
             # Fallback: ArgentinaDatos /v1/finanzas/rem/ultimo
             if not rows:
                 try:
-                    resp = httpx.get(_ARD_REM_URL, timeout=10.0, headers={"User-Agent": "balanz-monitor/1.0"})
+                    resp = httpx.get(_ARD_REM_URL, timeout=10.0, headers={"User-Agent": "monitor-renta-fija/1.0"})
                     resp.raise_for_status()
                     raw = resp.json()
                     if isinstance(raw, list):

@@ -11,7 +11,7 @@ el último cupón en 27/01/2026 (150 días de accrued = 3.08) en vez de 27/04/20
 
 Caso irregular (stubs primero/último) → cashflows EXPLÍCITOS (política del repo:
 synth sólo bullet/ZC). Cupón ACT/365 = 7.5 × días_período / 365. Reconcilia EXACTO
-con la calculadora de Balanz (leg …D, dirty 106, T+1 → 26/06/2026):
+con la calculadora de referencia (leg …D, dirty 106, T+1 → 26/06/2026):
     TIR 6.09 · TNA nom 6.00 · MD 3.09 · V.Téc 101.23 · accrued 1.23 · clean 104.77 · CY 7.16
 
 Corrección quirúrgica vía `save_cashflows` (sólo reemplaza los flujos; la fila —
@@ -64,7 +64,7 @@ def build_cashflows() -> List[Dict[str, object]]:
     return out
 
 
-# Balanz (leg …D, dirty 106, T+1 → 26/06/2026)
+# la referencia (leg …D, dirty 106, T+1 → 26/06/2026)
 VERIFY_PRICE = 106.0
 REF = {"tir": 6.09, "tna_nom": 6.00, "md": 3.09, "vt": 101.23,
        "accrued": 1.23, "clean": 104.77, "vr": 100.0, "parity": 104.71}
@@ -111,7 +111,7 @@ def main(dry_run: bool) -> int:
     print(f"{'engine':6} {_fmt(got['tir']):>7} {_fmt(got['tna_nom']):>7} {_fmt(got['md']):>6} "
           f"{_fmt(got['vt']):>8} {_fmt(got['accrued']):>6} {_fmt(got['clean'],4):>9} "
           f"{_fmt(got['vr']):>7} {_fmt(got['parity']):>8}")
-    print(f"{'Balanz':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
+    print(f"{'Ref':6} {REF['tir']:>7} {REF['tna_nom']:>7} {REF['md']:>6} "
           f"{REF['vt']:>8} {REF['accrued']:>6} {REF['clean']:>9.4f} {REF['vr']:>7} {REF['parity']:>8}")
     diffs = []
     for k, tol in (("tir", 0.1), ("tna_nom", 0.1), ("md", 0.03), ("vt", 0.06),
@@ -119,7 +119,7 @@ def main(dry_run: bool) -> int:
         g = got[k]
         if g is None or abs(g - REF[k]) > tol:
             diffs.append(f"{k} {_fmt(g,4)}≠{REF[k]} (tol {tol})")
-    print("\n" + ("✓ PLC2 reconcilia con Balanz (TIR 6.09%)." if not diffs
+    print("\n" + ("✓ PLC2 reconcilia con la referencia (TIR 6.09%)." if not diffs
                   else "⚠ diverge: " + "; ".join(diffs)))
     print("Reiniciá el server (o esperá el reload del repo) para verla corregida en el panel ON.")
     return 0 if not diffs else 1

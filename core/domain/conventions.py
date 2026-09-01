@@ -69,7 +69,7 @@ def tea_to_tna(tea: Optional[float]) -> Optional[float]:
 def tea_to_tna_freq(tea: Optional[float], freq: int) -> Optional[float]:
     """TEA → TNA nominal a la frecuencia de pago m=freq: freq × ((1+TEA)^(1/freq) − 1).
 
-    Es la convención de "TIR Nominal" del informe IAMC/Balanz para bonos CON cupón:
+    Es la convención de "TIR Nominal" del informe IAMC para bonos CON cupón:
     la tasa nominal anual capitalizable a la frecuencia del cupón (semestral → freq=2,
     trimestral → freq=4). Distinta de `tea_to_tna` (base 365, diaria) y de
     `tea_to_tna_monthly` (m=12) — esas se reservan para peso/TAMAR/LECAP."""
