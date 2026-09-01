@@ -16,6 +16,8 @@ os.environ.setdefault("MONITOR_CATALOG_DB", os.path.join(_TEST_DB_DIR, "catalog.
 os.environ.setdefault("MONITOR_PRICE_HISTORY_DB", os.path.join(_TEST_DB_DIR, "price_history.db"))
 os.environ.setdefault("MONITOR_FCI_HISTORY_DB", os.path.join(_TEST_DB_DIR, "fci_history.db"))
 os.environ.setdefault("MONITOR_INDEX_HISTORY_DB", os.path.join(_TEST_DB_DIR, "index_history.db"))
+os.environ.setdefault("MONITOR_RATINGS_HISTORY_DB",
+                      os.path.join(_TEST_DB_DIR, "ratings_history.db"))
 # Backups (M1.2): redirigir a temp. Sin esto, el backup del lifespan (que corre al
 # bootear la app vía TestClient) escribiría en el dir REAL del usuario y, por la regla
 # "uno por día", bloquearía el backup del catálogo real ese día.

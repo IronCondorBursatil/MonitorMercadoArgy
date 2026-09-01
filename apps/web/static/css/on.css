@@ -552,6 +552,20 @@ td.uni-grp2 { padding-left: 24px; }
 .uni-rg-mid      { background: rgba(201,162,39,.18);  color: #c9a227; border-color: rgba(201,162,39,.45); }
 .uni-rg-weak     { background: rgba(237,139,54,.18);  color: #ED8B36; border-color: rgba(237,139,54,.45); }
 .uni-rg-distress { background: rgba(208,56,50,.16);   color: #e0564f; border-color: rgba(208,56,50,.45); }
+/* cambio de calificación detectado en los últimos 7 días (monitor diario FIX SCR):
+   ▲ suba · ▼ baja · ⚑ watch/perspectiva. Va pegado al pill del rating y comparte su
+   geometría, pero el color lo da la DIRECCIÓN (no el grado): un downgrade a AA sigue
+   siendo rojo. Se pinta con los tokens --pos/--neg vía color-mix para que el fondo se
+   apoye en el panel de cada tema (claro/oscuro) en vez de hardcodear dos rgba. */
+.uni-chg { display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: 11px;
+  font: 700 10px var(--font-body); vertical-align: middle; border: 1px solid transparent;
+  cursor: help; }
+.uni-chg-up    { background: color-mix(in srgb, var(--pos) 15%, var(--panel-bg));
+  color: var(--pos); border-color: color-mix(in srgb, var(--pos) 45%, var(--panel-bg)); }
+.uni-chg-down  { background: color-mix(in srgb, var(--neg) 15%, var(--panel-bg));
+  color: var(--neg); border-color: color-mix(in srgb, var(--neg) 45%, var(--panel-bg)); }
+.uni-chg-watch { background: var(--row-hover); color: var(--text-dim);
+  border-color: var(--panel-border); }
 
 /* fila título (sangría 2) — la fuente base */
 tr.uni-bond:hover > td { background: var(--row-hover); }

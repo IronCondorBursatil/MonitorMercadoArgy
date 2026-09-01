@@ -317,6 +317,91 @@ async def _price_history_loop(app: FastAPI) -> None:
         await asyncio.sleep(settings.price_history_sec)
 
 
+# Tick del monitor de calificaciones. 6h y no 24h a propósito: el corte es idempotente
+# por día (`latest_fecha`), así que un tick corto no re-scrapea — lo que compra es
+# REINTENTO: si fixscr.com está caído a la hora del arranque, el día todavía tiene
+# 3 chances más antes de perderse. No va a settings: no hay nada que tunear en runtime.
+_RATINGS_TICK_SEC = 6 * 3600
+
+
+def _invalidate_ratings_cache() -> None:
+    """Suelta el cache del read-path de calificaciones para que el corte recién grabado
+    se vea EN CALIENTE (mismo criterio que el `repo.reload()` de la ABM).
+
+    Se prefiere el hook explícito del módulo; si no lo expone, se barren los
+    `cache_clear` de sus miembros memoizados (`_entries` arma el merge CSV+store y
+    `rating_for` memoiza el matcher por emisor). El barrido genérico evita acoplar este
+    loop a QUÉ funciones cachea `ratings.py` — si mañana el cache se rekeya por fecha de
+    corte y se invalida solo, esto queda como un no-op inofensivo."""
+    from core.infrastructure import ratings
+
+    hook = getattr(ratings, "invalidate_cache", None)
+    if callable(hook):
+        hook()
+        return
+    for obj in vars(ratings).values():
+        clear = getattr(obj, "cache_clear", None)
+        if callable(clear):
+            clear()
+
+
+def _ratings_corte(store, hoy) -> dict:
+    """Un corte completo de FIX SCR (SYNC: corre en `to_thread`) — scrape → mejor fila
+    por entidad → `record_corte`. Vive fuera del loop para que las ~14 requests al sitio
+    y el write SQLite queden en UN solo hop de thread.
+
+    `mejor_fila_por_entidad` es la política del spec (Emisor > Endeudamiento de Largo
+    Plazo, sin emisiones `sf(arg)`): sin ella el store vería varias filas por entidad y
+    el diff diario marcaría cambios fantasma según cuál ganara ese día."""
+    from core.infrastructure import fix_ratings
+
+    mejores = fix_ratings.mejor_fila_por_entidad(fix_ratings.fetch_listado())
+    rows = {ent: {"rating": f.rating_lp, "perspectiva": f.perspectiva,
+                  "area": f.area, "sector": f.sector}
+            for ent, f in mejores.items()}
+    return store.record_corte(rows, hoy)
+
+
+async def _ratings_loop(app: FastAPI) -> None:
+    """Monitor diario de calificaciones FIX SCR (spec 2026-08-31): persiste el corte del
+    día y deja el diff up/down/watch que el panel ON muestra como badge por 7 días.
+
+    Corre 1× al arranque y luego cada `_RATINGS_TICK_SEC`. El chequeo de `latest_fecha`
+    ANTES de scrapear es el que hace restart-safe al proceso: `record_corte` ya es
+    idempotente por día, pero preguntarle primero al store ahorra las 14 requests contra
+    un sitio que nos deja scrapearlo por cortesía. Todo (red + SQLite) va en `to_thread`:
+    el scrape dura decenas de segundos y bloquearía el event loop —y con él el SSE de
+    todos los paneles. Un fallo se loguea y se reintenta al tick siguiente: el panel
+    sigue sirviendo el último corte bueno, con su `as_of` real a la vista."""
+    from datetime import date as _date
+
+    from core.infrastructure.ratings_history import get_ratings_history_store
+
+    store = get_ratings_history_store()
+    first = True
+    while True:
+        if not first:
+            await asyncio.sleep(_RATINGS_TICK_SEC)
+        first = False
+        try:
+            hoy = _date.today()
+            if await asyncio.to_thread(store.latest_fecha) == hoy.isoformat():
+                continue                      # corte del día ya guardado → ni una request
+            res = await asyncio.to_thread(_ratings_corte, store, hoy)
+            logger.info("FIX ratings: corte %s %s — %d filas, %d cambios%s",
+                        res.get("fecha"), res.get("status"), res.get("rows", 0),
+                        res.get("changes", 0),
+                        f" ({res['reason']})" if res.get("reason") else "")
+            if res.get("status") == "ok":
+                # Solo un corte REALMENTE grabado cambia el read-path; con noop/discarded
+                # /error tirar el cache sería releer el CSV y rearmar el matcher al pedo.
+                _invalidate_ratings_cache()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — un scrape caído no puede tumbar el lifespan
+            logger.exception("ratings loop iteration failed")
+
+
 async def _bei_loop(app: FastAPI) -> None:
     """Loop dedicado de BEI (pesado: bootstrap + NSS fits). Corre 1× al arranque
     y luego cada bei_refresh_sec. Reemplaza el daemon _bei_refresh_loop."""
@@ -410,6 +495,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(_options_loop(app)),
             asyncio.create_task(_bei_loop(app)),
             asyncio.create_task(_price_history_loop(app)),
+            asyncio.create_task(_ratings_loop(app)),
         ]
     try:
         yield

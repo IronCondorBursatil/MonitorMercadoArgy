@@ -326,6 +326,29 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
     var w = (max > 0 && v != null) ? Math.max(3, Math.min(100, v / max * 100)) : 0;
     return '<span class="uni-barwrap"><span class="uni-bar" style="width:' + w + '%;background:' + color + '"></span></span>';
   }
+
+  // ---- badge de cambio de calificación (monitor diario FIX SCR) ----
+  // El dataset trae `rating_chg = {dir,from,to,fecha,persp_from,persp_to}` SÓLO mientras
+  // el cambio está fresco (ventana de 7 días del server), así que acá no hay que filtrar
+  // por fecha: si vino, se pinta. `dir` se whitelistea antes de entrar en un nombre de
+  // clase y el texto del tooltip pasa por ON.esc (va a un atributo title).
+  var CHG_GLYPH = { up: "▲", down: "▼", watch: "⚑" };
+  function chgFecha(iso) {                     // "2026-08-28" → "28/08/2026" (año entero:
+    var p = String(iso || "").split("-");      // el tooltip no compite por ancho con la grilla)
+    return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : "";
+  }
+  function chgBadge(c) {
+    if (!c || !c.dir) return "";
+    var dir = c.dir === "up" ? "up" : (c.dir === "down" ? "down" : "watch");
+    var when = chgFecha(c.fecha);
+    // Un `watch` puede ser cambio de sola perspectiva (mismo rating): ahí el "X ← Y" de
+    // ratings no diría nada, se describe la perspectiva.
+    var txt = (c.to && c.from && c.to !== c.from)
+      ? c.to + " ← " + c.from
+      : "Perspectiva " + (c.persp_to || "—") + " ← " + (c.persp_from || "—");
+    return '<span class="uni-chg uni-chg-' + dir + '" title="' +
+      ON.esc(txt + (when ? " · " + when : "")) + '">' + CHG_GLYPH[dir] + '</span>';
+  }
   // celdas de agregado alineadas a COLS (centradas). `show` = qué métricas mostrar:
   // sector = {tir, md, vol, bar}; emisor = {vol} (sin promedio de TIR ni MD — sólo rótulo).
   function aggCells(a, max, color, show) {
@@ -382,9 +405,11 @@ window.ON_SECTOR_MAP = Object.fromEntries(window.ON_SECTORS.map(s => [s.key, s])
               (_rt.rating_persp && _rt.rating_persp !== "N/A" ? '<span class="uni-rp">' + ON.esc(_rt.rating_persp) + '</span>' : '') +
             '</span>'
           : '';
+        // ▲/▼/⚑ pegado al rating: el cambio se lee en la MISMA fila del emisor, sin abrir nada.
+        var _chg = chgBadge(_rt.rating_chg);
         h += '<tr class="uni-emisor" data-emi="' + encodeURIComponent(ek) + '" style="--sc:' + col + '">' +
           '<td class="uni-grp uni-grp2" colspan="' + (COLS.length + 1) + '"><span class="uni-caret">' + (cE ? "▶" : "▼") + '</span>' +
-          '<span class="uni-em" title="' + ON.esc(e.name) + '">' + ON.esc(e.name) + '</span><span class="uni-n">' + e.a.count + '</span>' + _cal + '</td></tr>';
+          '<span class="uni-em" title="' + ON.esc(e.name) + '">' + ON.esc(e.name) + '</span><span class="uni-n">' + e.a.count + '</span>' + _cal + _chg + '</td></tr>';
         if (cE) return;
         sortBonds(e.bonds).forEach(function (b) {
           h += '<tr class="uni-bond" data-tk="' + b.ticker + '" style="--sc:' + col + '">' +

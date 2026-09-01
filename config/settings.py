@@ -119,6 +119,9 @@ class Settings(BaseSettings):
     # Histórico FCI (vcp/ccp/patrimonio por fondo) p/ flujos reales (Δccp×VCP). Se
     # auto-mantiene acumulando el corte diario de ArgentinaDatos — ver fci_history.py.
     fci_history_db: Path = db_dir / "fci_history.db"
+    # Historial de calificaciones FIX SCR (snapshot diario + cambios up/down/watch) p/ el
+    # badge de 7 días del panel ON. Lo acumula el loop diario — ver ratings_history.py.
+    ratings_history_db: Path = db_dir / "ratings_history.db"
     # Cierres diarios de índices BYMA p/ la franja de 5 ruedas del catálogo. M/G se
     # backfillean del chart; los 16 acumulan el cierre de /index-price — ver index_history.py.
     index_history_db: Path = db_dir / "index_history.db"

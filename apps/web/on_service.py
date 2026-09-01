@@ -8,6 +8,7 @@ viene de Data912 ya en escala % (no se multiplica); `md`/`price`/`vtec`/`volume`
 """
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import date, datetime
 
@@ -17,12 +18,19 @@ from core.domain.instrument_groups import OBLIGACIONES_NEGOCIABLES
 from core.domain.on_classification import SECTORS, sector_for
 from core.domain.pricing.fx_legs import peso_leg_to_usd
 from core.domain.services import FinancialEngine
-from core.infrastructure.ratings import AS_OF as _CAL_AS_OF
+from core.infrastructure import ratings as _ratings
+from core.infrastructure import ratings_history as _rhist
 from core.infrastructure.ratings import SOURCE as _CAL_SRC
 from core.infrastructure.ratings import rating_for
 
+logger = logging.getLogger(__name__)
+
 _ON_TYPES = set(OBLIGACIONES_NEGOCIABLES)
 _FX_NOTE = "Pata pesos (…O) valuada MEP (ley AR) / CCL (ley EXT). …D=MEP, …C=CABLE."
+
+# Ventana del badge de cambio de calificación (spec): 7 días desde el corte en que lo
+# DETECTAMOS, no desde la fecha que declara FIX (esa puede ser previa al primer corte).
+_CHG_WINDOW_DAYS = 7
 
 _CACHE = {"key": None, "data": None}
 _LOCK = threading.Lock()
@@ -30,6 +38,55 @@ _LOCK = threading.Lock()
 
 def _pct100(v):
     return v * 100 if v is not None else None
+
+
+def _ratings_as_of() -> str:
+    """Corte vigente de las calificaciones (para el header del panel).
+
+    Sale de `ratings.as_of()` —la fecha del último corte del store FIX— y no de la
+    constante `AS_OF`: con el monitor diario el corte cambia solo, y una constante
+    horneada mentiría sobre la vigencia del dato (`as_of()` ya cae a la semilla cuando
+    todavía no hay ningún corte).
+    """
+    return _ratings.as_of()
+
+
+def _norm_entidad(name) -> str:
+    """Clave del join emisor↔entidad FIX: espacios colapsados y sin distinguir mayúsculas.
+
+    El join se hace contra el emisor CANÓNICO que devuelve `rating_for` (el nombre del
+    listado), así que en el caso normal coincide carácter a carácter con la entidad del
+    store. La normalización sólo absorbe el ruido de tipeo del CSV semilla (doble espacio,
+    capitalización distinta) — no es un segundo matcher: si el nombre no es el mismo, no
+    hay badge, que es preferible a colgarle a un emisor el cambio de otro."""
+    return " ".join(str(name or "").split()).casefold()
+
+
+def _recent_rating_changes() -> dict:
+    """`{entidad normalizada: cambio}` de la última semana, UNA consulta por dataset.
+
+    Se resuelve acá (y no por fila) porque el panel tiene ~200 filas y el store es SQLite
+    en disco. Si el store falla, el panel se sirve sin badges: un badge es un extra, no
+    puede tumbar la tabla."""
+    try:
+        chg = _rhist.get_ratings_history_store().recent_changes(days=_CHG_WINDOW_DAYS)
+    except Exception as e:                                    # noqa: BLE001
+        logger.warning("on_service: sin cambios de calificación (%s)", e)
+        return {}
+    return {_norm_entidad(ent): c for ent, c in (chg or {}).items()}
+
+
+def _rating_chg(chg) -> dict | None:
+    """Vista de front del cambio: `{dir, from, to, fecha}` + las perspectivas.
+
+    Contrato explícito en vez de pasar el dict del store: éste trae `area` (que el panel
+    no usa) y podría crecer. Las perspectivas viajan porque el tooltip del caso `watch`
+    (mismo rating, cambió la perspectiva) no tiene otra cosa que mostrar."""
+    if not chg:
+        return None
+    return {"dir": chg.get("dir"), "from": chg.get("from"), "to": chg.get("to"),
+            "fecha": chg.get("fecha"),
+            "persp_from": chg.get("persp_from"), "persp_to": chg.get("persp_to")}
 
 
 
@@ -74,6 +131,7 @@ def _current_coupon(inst, today):
 
 def _build_on_dataset(state, fx=None) -> dict:
     today = date.today()
+    chgs = _recent_rating_changes()
     bonds = []
     for m in state.metrics():
         snap = m.snapshot
@@ -97,6 +155,10 @@ def _build_on_dataset(state, fx=None) -> dict:
         cy = FinancialEngine.current_yield(inst, price_usd, today) if price_usd else None
         convex = FinancialEngine.convexity(inst, m.tir, today) if m.tir is not None else None
         cal = rating_for(inst.short_name)   # calificación FIX SCR del emisor (o None)
+        # Cambio reciente: se busca por el emisor CANÓNICO del match, no por short_name —
+        # el catálogo dice "YPF SA" y FIX "YPF S.A.". Reusar el matcher (una sola regla de
+        # identidad de emisor) evita un segundo criterio que se desincronice del primero.
+        chg = chgs.get(_norm_entidad(cal["emisor"])) if cal else None
         bonds.append({
             "ticker": inst.ticker,
             "ccy": ccy,
@@ -127,6 +189,8 @@ def _build_on_dataset(state, fx=None) -> dict:
             "rating": cal["rating"] if cal else None,            # calificación largo plazo (FIX SCR)
             "rating_persp": cal["perspectiva"] if cal else None,  # perspectiva / rating watch
             "rating_grade": cal["grade"] if cal else None,        # categoría para colorear el badge
+            # cambio de calificación detectado en los últimos 7 días (badge ▲/▼/⚑), o None
+            "rating_chg": _rating_chg(chg),
         })
 
     # Resúmenes por sector sobre la pata MEP (instrumento canónico, 1 por ON).
@@ -160,7 +224,7 @@ def _build_on_dataset(state, fx=None) -> dict:
             "n_legs": len(bonds),
             "ccys": ["ARS", "MEP", "CABLE"],
             "fx_note": _FX_NOTE,
-            "ratings_as_of": _CAL_AS_OF,    # corte del listado de calificaciones (FIX SCR)
+            "ratings_as_of": _ratings_as_of(),   # corte vigente del listado FIX SCR
             "ratings_source": _CAL_SRC,
         },
     }
