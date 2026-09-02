@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -158,6 +159,13 @@ class Settings(BaseSettings):
     # tengas TLS (certbot/CF) — con Secure la cookie no se filtra en una request HTTP.
     cookie_secure: bool = False
 
+    # Zona horaria del PROCESO. El droplet corre en Etc/UTC y la app usa `datetime.now()`
+    # / `date.today()` naive por todos lados, así que sin esto (a) el header muestra
+    # 11:09 en vez de 08:09, y (b) —más grave— entre las 21:00 y las 24:00 de Buenos
+    # Aires el "hoy" del dominio (settlement BYMA, cashflows, cierre del price history)
+    # ya es el día siguiente. La aplica `apply_timezone()` al importar este módulo.
+    timezone: str = "America/Argentina/Buenos_Aires"
+
     host: str = "0.0.0.0"
     port: int = 8000
     refresh_sec: int = 5
@@ -194,6 +202,33 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def apply_timezone() -> None:
+    """Fija la zona horaria del proceso a `settings.timezone`.
+
+    Se llama al importar este módulo a propósito: TODO entry point (run.py, uvicorn
+    importando `apps.web.app`, los scripts de `scripts/`, pytest) importa `settings`
+    antes de tocar una fecha, y `datetime.now()`/`date.today()` leen la TZ del proceso
+    vía libc. Hacerlo sólo en run.py dejaría afuera a los scripts y al arranque directo
+    por uvicorn — que es justamente como corre el droplet.
+
+    **No-op en Windows**, y NO por comodidad: el CRT de MSVC sólo entiende el formato
+    POSIX (`ART3`), no un nombre IANA, y ante un `TZ` que no puede parsear se planta en
+    **UTC**. Exportar la variable ahí adelantaba 3hs la hora local de la máquina de
+    desarrollo (verificado: 11:25 en vez de 08:25) — justo el bug que esto arregla, pero
+    al revés. Windows ya corre en hora argentina por configuración del SO, así que
+    dejarlo intacto es lo correcto; `time.tzset` es la sonda de "esto es Unix".
+    """
+    tz = (settings.timezone or "").strip()
+    tzset = getattr(time, "tzset", None)
+    if not tz or tzset is None:
+        return
+    os.environ["TZ"] = tz
+    tzset()
+
+
+apply_timezone()
 
 # --------------------------------------------------------------------------- #
 # Logging centralizado

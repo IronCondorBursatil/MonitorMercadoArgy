@@ -150,6 +150,21 @@ paths de DB por campo (`MONITOR_CATALOG_DB`, `MONITOR_BACKUP_DIR`, etc.) fuera d
   defecto** (anti-MITM); solo saltea los hosts con cadena rota (endpoints BYMA
   addin/open — verificado en vivo). Override `MONITOR_TLS_NO_VERIFY_HOSTS`. NO volver a
   poner `verify=False` global.
+- **Supervisión de los loops** (`apps/web/supervisor.py`): los 5 loops del lifespan van
+  envueltos en `supervise()`, que los **reinicia** si terminan por lo que sea (excepción,
+  retorno o *cancelación espuria*) con backoff 1s→60s, y reporta el motivo por
+  `record_error`. Motivo: `asyncio.create_task` es fire-and-forget — el 2026-09-01
+  `_refresh_loop` murió mudo a las 12:45 (`except CancelledError: raise`) y la app sirvió
+  el mismo snapshot ~22hs, con los otros 5 loops vivos. El lifespan setea `app.state.stopping`
+  **antes** de cancelar: así el supervisor distingue el shutdown real de una caída.
+  `_startup_reconcile` NO se supervisa (corre 1× y terminar es su contrato).
+- **Zona horaria** (`settings.timezone`, default `America/Argentina/Buenos_Aires`):
+  `apply_timezone()` corre al importar `config/settings.py` y fija la TZ del proceso
+  (`TZ` + `time.tzset()`). El droplet corre en Etc/UTC y la app usa `datetime.now()`/
+  `date.today()` naive: sin esto el header mostraba UTC y, peor, entre las 21:00 y las
+  24:00 ART el "hoy" del dominio (settlement, cashflows) ya era el día siguiente.
+  **No-op en Windows a propósito**: el CRT de MSVC no parsea nombres IANA y cae a UTC
+  (adelantaba 3hs la hora local en desarrollo); allá la TZ del SO ya es la correcta.
 - **Observabilidad**: si el refresh loop falla, `AppState.record_error` lo registra y el
   header lo muestra (badge `/health/badge` verde/ámbar/rojo) + `/api/health` da
   `status`/`is_stale`/`last_error`. La app sigue sirviendo el último snapshot bueno.

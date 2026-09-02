@@ -39,6 +39,7 @@ from apps.web.routers import (
     on, options, panels, source, stream,
 )
 from apps.web.state import AppState
+from apps.web.supervisor import supervise
 from config.settings import settings
 from core.domain.instrument_groups import (
     BOPREALES, CER, DOLAR_LINKED, DUAL_TAMAR, OBLIGACIONES_NEGOCIABLES,
@@ -488,18 +489,37 @@ async def lifespan(app: FastAPI):
     # con indices reales en background y contaminan los caches de módulo
     # (p.ej. el avg TAMAR), rompiendo la aislación del test de equivalencia.
     tasks = []
+    # `stopping` distingue el shutdown de una caída: el supervisor lo mira para saber
+    # si una CancelledError es legítima (apagando) o espuria (hay que reiniciar).
+    stopping = asyncio.Event()
+    app.state.stopping = stopping
     if not os.environ.get("MONITOR_DISABLE_LOOPS"):
-        tasks = [
-            asyncio.create_task(_startup_reconcile(app)),
-            asyncio.create_task(_refresh_loop(app)),
-            asyncio.create_task(_options_loop(app)),
-            asyncio.create_task(_bei_loop(app)),
-            asyncio.create_task(_price_history_loop(app)),
-            asyncio.create_task(_ratings_loop(app)),
+        async def _on_crash(name: str, reason: str) -> None:
+            # Que la caída deje rastro visible (badge del header + /api/health): el
+            # incidente del 2026-09-01 duró 22hs justamente por ser mudo.
+            await app.state.app_state.record_error(
+                f"loop {name} cayó ({reason}) — reiniciando")
+
+        # `_startup_reconcile` NO se supervisa: corre una vez y terminar es su contrato.
+        # Los otros cinco son `while True` — si terminan, es una caída (ver supervisor.py).
+        tasks = [asyncio.create_task(_startup_reconcile(app))]
+        tasks += [
+            asyncio.create_task(
+                supervise(name, lambda fn=fn: fn(app), stopping=stopping,
+                          on_crash=_on_crash),
+                name=f"loop:{name}")
+            for name, fn in (
+                ("refresh", _refresh_loop),
+                ("options", _options_loop),
+                ("bei", _bei_loop),
+                ("price_history", _price_history_loop),
+                ("ratings", _ratings_loop),
+            )
         ]
     try:
         yield
     finally:
+        stopping.set()   # ANTES de cancelar: le dice al supervisor que no reinicie
         for task in tasks:
             task.cancel()
             try:
