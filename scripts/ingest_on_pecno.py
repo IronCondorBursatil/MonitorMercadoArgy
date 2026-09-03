@@ -38,6 +38,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.op_guards import guard_write  # noqa: E402
+
 SHEET = "Obligaciones_Negociables"
 
 FIELDS = {
@@ -89,7 +91,7 @@ def _ppv(cfs, settle):
     return num / den if den else None
 
 
-def main(dry_run: bool) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
     fut = [x for x in CASHFLOWS if x["date"] > SETTLE.isoformat()]
     print("== PECNO  Petrolera Aconcagua Energía Clase XXII  ISIN AR0199819753  [explícito] ==")
     print(f"   {len(CASHFLOWS)} flujos; futuros (>settle {SETTLE}):")
@@ -104,14 +106,11 @@ def main(dry_run: bool) -> int:
         print("== DRY RUN (no escribe) ==")
         return 0
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
     from apps.web.instruments_abm import save_instrument, get_instrument
     from scripts.load_bond import verify
 
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-pecno")
-    print(f"backup pre-op: {snap}")
+    if (rc := guard_write("pre-pecno", force=force)):
+        return rc
     pre = "ya existía" if get_instrument("PECNO") else "nuevo"
     save = save_instrument(SHEET, FIELDS, cashflows=CASHFLOWS)
     print(f"{save['action']}: {', '.join(save['tickers'])}  [{pre}]  ({save.get('cashflows')} cashflows)\n")
@@ -144,4 +143,5 @@ def main(dry_run: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))

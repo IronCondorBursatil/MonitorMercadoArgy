@@ -23,6 +23,7 @@ import httpx
 
 from config.settings import settings
 
+from core.infrastructure._tls import should_verify
 from core.infrastructure.async_http import ResilientClient
 from core.infrastructure.byma.field_map import SETTLE_24, SETTLE_CI, byma_row_to_quote, settle_of
 from core.infrastructure.circuit_breaker import CircuitOpenError
@@ -248,7 +249,14 @@ class BymaRealtimeSource:
             basic = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
             # Login infrecuente (token dura ~24h) → cliente httpx propio; el host
             # del token (www.bymadata.com.ar) no está geo-bloqueado.
-            async with httpx.AsyncClient(verify=False, timeout=15.0) as h:
+            # TLS: por acá viajan usuario y contraseña del usuario (grant_type=
+            # password) + el Basic del client, así que la verificación va por la
+            # política única del repo (_tls.should_verify) en vez de un
+            # `verify=False` hardcodeado. Hoy www.bymadata.com.ar NO está en la
+            # allowlist de cadena-rota → verifica (chequeado en vivo con trust
+            # store certifi-only: el handshake completa y el server responde).
+            async with httpx.AsyncClient(verify=should_verify(self.TOKEN_URL),
+                                         timeout=15.0) as h:
                 r = await h.post(
                     self.TOKEN_URL,
                     data={"grant_type": "password", "username": self.username,

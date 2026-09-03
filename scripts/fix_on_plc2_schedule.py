@@ -31,6 +31,8 @@ from typing import Dict, List
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.op_guards import guard_write  # noqa: E402
+
 try:  # consola Windows cp1252 → forzar UTF-8 para los glifos (Σ, ✓, ·)
     sys.stdout.reconfigure(encoding="utf-8")
 except (AttributeError, ValueError):
@@ -74,7 +76,7 @@ def _fmt(v, nd=2):
     return f"{v:.{nd}f}" if isinstance(v, (int, float)) else "—"
 
 
-def main(dry_run: bool) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
     cfs = build_cashflows()
     fut = [c for c in cfs if str(c["date"]) > "2026-06-26"]
     print(f"calendario explícito (27/04 · 27/10 + stubs): {len(cfs)} cupones; futuros (>settle):")
@@ -87,14 +89,11 @@ def main(dry_run: bool) -> int:
         print("== DRY RUN (no escribe) ==")
         return 0
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
     from apps.web.instruments_abm import save_cashflows
     from scripts.load_bond import verify
 
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-plc2-schedule")
-    print(f"backup pre-op: {snap}")
+    if (rc := guard_write("pre-plc2-schedule", force=force)):
+        return rc
     res = save_cashflows(PRIMARY, cfs)
     print(f"save_cashflows {res['ticker']}: {res['count']} flujos\n")
 
@@ -126,4 +125,5 @@ def main(dry_run: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))

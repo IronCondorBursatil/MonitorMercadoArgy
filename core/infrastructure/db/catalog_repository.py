@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import delete, inspect, select
 from sqlalchemy.exc import OperationalError
@@ -277,20 +277,65 @@ class CatalogRepository(IInstrumentsRepository):
         self._cache: List[Instrument] = []
         self._by_ticker: Dict[str, Instrument] = {}
         self._by_type: Dict[str, List[Instrument]] = {}
+        # {"orphans": [...], "defaulted": [...]} del último `_load` (ver `type_health`).
+        self._type_health: Dict[str, List[Dict[str, Any]]] = {"orphans": [], "defaulted": []}
+        # Motivo del fallo de la SIEMBRA, si la hubo (ver `_seed` / `seed_error`).
+        self._seed_error: Optional[str] = None
         init_db()
         if auto_seed and self._is_empty():
-            ingest_from_excel(self._xlsx_path)
+            self._seed()
         self._load()
+
+    def _seed(self) -> None:
+        """Bootstrap con la DB VACÍA: sembrar el catálogo desde el Excel semilla.
+
+        CONTRATO (explícito, porque cambió y el cambio no estaba flageado):
+
+        · `ingest_from_excel` **LANZA** si el Excel no aportó ni un instrumento
+          (semilla ausente/ilegible, 0 filas parseables). Eso está BIEN y se
+          mantiene: antes devolvía `[]` y se sembraba un catálogo vacío en silencio
+          —el guard anti-pérdida de `reseed_with_meta` no puede disparar con la DB
+          vacía, que es justo el bootstrap de un droplet nuevo— y la app arrancaba
+          con 0 bonos sin que nada lo dijera.
+
+        · Ese `raise` NO puede propagar desde el constructor. Al hacerlo convertía un
+          problema de DATOS en un fallo de ARRANQUE del proceso entero: `get_repo()`
+          reventaba, el lifespan moría y no quedaba en pie ni `/login` ni
+          `/api/health` — o sea, la app perdía justo la superficie donde el operador
+          leería el motivo. Además es un cambio de comportamiento respecto del
+          arranque histórico (que levantaba degradado) que nadie declaró.
+
+        Resolución: el fallo se ATRAPA acá, se grita a ERROR, queda en `seed_error` y
+        el arranque lo publica en `AppState` → `/api/health` (`catalog.seed_failed`) +
+        badge del header. La app levanta con el catálogo vacío, ruidosa y diagnosticable,
+        y la DB no queda contaminada con una siembra a medias (la transacción de
+        `reseed_with_meta` ni siquiera llegó a abrirse)."""
+        try:
+            ingest_from_excel(self._xlsx_path)
+        except Exception as e:  # noqa: BLE001 — el motivo se publica, no se traga
+            self._seed_error = f"{type(e).__name__}: {e}"
+            logger.error(
+                "catálogo VACÍO: la siembra desde %s falló (%s). La app arranca sin "
+                "instrumentos — se publica en /api/health (catalog.seed_failed) y en el "
+                "badge del header. Arreglá la semilla o restaurá un backup y reiniciá.",
+                self._xlsx_path, self._seed_error)
 
     def _is_empty(self) -> bool:
         with SessionLocal() as s:
             return s.execute(select(InstrumentORM.ticker).limit(1)).first() is None
 
     def _load(self) -> None:
-        from core.infrastructure.repositories import expand_currency_legs
+        from core.infrastructure.repositories import audit_catalog_types, expand_currency_legs
 
         with SessionLocal() as s:
             orms = s.execute(select(InstrumentORM)).scalars().all()
+            # Señal de salud del catálogo, sobre las filas que ya tenemos en la mano
+            # (sin una segunda query): tipos huérfanos (bono cargado pero invisible en
+            # todos los paneles) + tipos ASUMIDOS por default de hoja ambiguo (bono
+            # visible pero con la strategy de pricing posiblemente equivocada). Deja
+            # WARNING en el log; el reporte queda expuesto en `type_health` para que
+            # el arranque/health lo publique.
+            self._type_health = audit_catalog_types(orms)
             # 1 fila por bono → expandir a una especie por ticker (primario + mep/ccl).
             insts: List[Instrument] = []
             for o in orms:
@@ -313,6 +358,28 @@ class CatalogRepository(IInstrumentsRepository):
         `ingest_master.py`, con sus guards anti-pérdida de altas ABM — un flag de
         re-seed acá era el footgun exacto que esos guards tapan."""
         self._load()
+
+    @property
+    def type_health(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Reporte de tipos del último `_load`: {"orphans", "defaulted"}.
+
+        `orphans` = bonos que NINGÚN panel muestra (tipo fuera de
+        `instrument_groups`); `defaulted` = bonos cuyo tipo se ASUMIÓ del default de
+        una hoja ambigua (ON sin `tipo` → hard-dollar). Ambos ya se loguearon como
+        WARNING al cargar.
+
+        CABLEADO (ya no es un reporte que sólo leen los tests): el lifespan de
+        `apps/web/app.py` lo publica en `AppState.set_catalog_health` apenas warmea el
+        repo → sale en `/api/health` (bloque `catalog`). Sin ese consumidor, las filas
+        huérfanas volvían a ser invisibles EN SILENCIO, que es exactamente el patrón
+        que dejó vivo el bug original."""
+        return self._type_health
+
+    @property
+    def seed_error(self) -> Optional[str]:
+        """Motivo del fallo de la siembra de bootstrap, o None si no hubo que sembrar
+        (DB con datos) o la siembra salió bien. Ver `_seed` para el contrato."""
+        return self._seed_error
 
     # IInstrumentsRepository ------------------------------------------------ #
     def get_all_instruments(self) -> List[Instrument]:

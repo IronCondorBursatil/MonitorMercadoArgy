@@ -8,8 +8,9 @@ Used for:
 
 Class-level cache shared across instances (DolarAPIProvider() is created
 ~8× per refresh cycle inside use_case.execute). TTL coalesces all those
-calls into a single network round-trip while keeping data fresh between
-server cycles — must stay strictly below REFRESH_SEC.
+calls into a single network round-trip. El refresco real lo hace `prefetch()`
+(1× por ciclo del hub, sin TTL); `TTL_SECONDS` gatea SOLO el fallback síncrono
+`_fetch()` — no tiene que ser menor que `settings.refresh_sec` (hoy 60 vs 5).
 """
 
 import httpx
@@ -24,11 +25,20 @@ logger = logging.getLogger(__name__)
 
 class DolarAPIProvider:
     URL = "https://dolarapi.com/v1/dolares"
-    # Backstop TTL for callers that never invalidate (CLI scripts). The web
-    # refresh loop invalidates explicitly via `invalidate_cache()` once per
-    # cycle so every panel inside the cycle shares one network round-trip
-    # even when the cycle exceeds this TTL.
+    # TTL de la cache de clase: coalesce todas las lecturas de un ciclo en un solo
+    # round-trip. NADIE llama `invalidate_cache()` en la web (solo
+    # scripts/data_quality_check.py), así que este TTL es el único gate del hot-path.
     TTL_SECONDS = 60
+
+    # Negative caching (mismo patrón que REMProvider.FAIL_COOLDOWN / CAFCIProvider.
+    # _last_fail_ts): con dolarapi caído y el TTL vencido, `get_quote()` se llama
+    # POR INSTRUMENTO dentro del motor (~342 veces por ciclo vía DolarLinked/
+    # HardDollar) y cada una salía a la red con timeout de 10s bajo el lock de
+    # clase — el ciclo de 5s pasaba a decenas de minutos y bloqueaba también los
+    # handlers sync (/header/cards). Tras un fallo no se reintenta hasta el cooldown.
+    # "Fallo" incluye el 200 con payload inservible (ver `_process_payload`), no solo
+    # la excepción de red: los dos dejan la cache sin refrescar y amplifican igual.
+    FAIL_COOLDOWN = 30.0
 
     # Mayorista is the rate used to value DOLAR_LINKED bonds in pesos. If
     # the upstream stops updating we silently price DL bonds against an old
@@ -39,12 +49,15 @@ class DolarAPIProvider:
     _lock = threading.Lock()
     _cache: Dict[str, dict] = {}
     _last_fetch_ts: float = 0.0
+    _last_fail_ts: float = 0.0
     _last_stale_warn_ts: float = 0.0
 
     def invalidate_cache(self) -> None:
-        """Force the next get_* call to refetch from upstream. Called by the
-        refresh loop at the start of each cycle."""
+        """Force the next get_* call to refetch from upstream. Único caller:
+        `scripts/data_quality_check.py` (la web NO invalida: se apoya en el TTL).
+        También limpia el sello de fallo para que "forzar" signifique forzar."""
         type(self)._last_fetch_ts = 0.0
+        type(self)._last_fail_ts = 0.0
 
     async def prefetch(self, client) -> None:
         """Precarga asincrónica (FastAPI event loop)."""
@@ -54,22 +67,29 @@ class DolarAPIProvider:
             payload = await client.get_json(self.URL, timeout=10.0, source="DolarAPI")
             self._process_payload(payload)
         except Exception as e:
+            type(self)._last_fail_ts = time.time()
             logger.warning(f"DolarAPI prefetch failed: {e}")
 
     def _fetch(self) -> None:
         """Fetch sincrónico (fallback p/ scripts CLI)."""
         with self._lock:
-            if self._cache and (time.time() - self._last_fetch_ts) < self.TTL_SECONDS:
+            now = time.time()
+            if self._cache and (now - self._last_fetch_ts) < self.TTL_SECONDS:
                 return
+            if self._last_fail_ts and (now - self._last_fail_ts) < self.FAIL_COOLDOWN:
+                return  # upstream caído hace poco → servir stale, no amplificar
             try:
                 # Fallback sincrónico directo sin retry (simplificado)
                 resp = httpx.get(self.URL, timeout=10.0, headers={"User-Agent": "Mozilla/5.0"})
                 resp.raise_for_status()
                 self._process_payload(resp.json())
             except Exception as e:
+                type(self)._last_fail_ts = time.time()
                 logger.warning(f"DolarAPI fetch failed: {e}")
 
-    def _process_payload(self, payload) -> None:
+    def _process_payload(self, payload) -> bool:
+        """Vuelca el payload a la cache de clase. Devuelve True si produjo al menos
+        una cotización usable; False si el upstream contestó pero no sirvió nada."""
         fresh = {}
         for row in payload:
             casa = str(row.get("casa", "")).strip().lower()
@@ -81,11 +101,27 @@ class DolarAPIProvider:
                 "venta": float(row["venta"]) if row.get("venta") else None,
                 "fechaActualizacion": row.get("fechaActualizacion"),
             }
-        if fresh:
-            type(self)._cache = fresh
-            type(self)._last_fetch_ts = time.time()
-            logger.debug(f"Loaded {len(fresh)} USD quotes from dolarapi.")
-            self._check_staleness()
+        if not fresh:
+            # 200 con payload INUTILIZABLE (lista vacía, o filas sin `casa`): no hay
+            # excepción que sellar, pero tampoco hay dato — sin este sello el
+            # negative caching quedaba a medias y `get_quote()` volvía a la red POR
+            # INSTRUMENTO (~342 por ciclo, medido: 50 lecturas = 50 GETs). Un
+            # upstream degradado (mantenimiento, WAF que devuelve un body vacío)
+            # amplificaba igual que uno caído. La cache vieja NO se toca: se sigue
+            # sirviendo stale.
+            type(self)._last_fail_ts = time.time()
+            logger.warning(
+                "DolarAPI respondió sin cotizaciones usables — cooldown %.0fs "
+                "(se sigue sirviendo la cache previa: %d casas).",
+                self.FAIL_COOLDOWN, len(self._cache),
+            )
+            return False
+        type(self)._cache = fresh
+        type(self)._last_fetch_ts = time.time()
+        type(self)._last_fail_ts = 0.0
+        logger.debug(f"Loaded {len(fresh)} USD quotes from dolarapi.")
+        self._check_staleness()
+        return True
 
     def _check_staleness(self) -> None:
         # Skip on weekends: the FX market doesn't trade Sat/Sun, so a quote

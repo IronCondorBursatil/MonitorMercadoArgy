@@ -37,6 +37,10 @@
 >   antes todo lo no-30/360 caía a 365.25 ignorando el campo (ONs ACT/365 mal descontadas). Solver
 >   XIRR migrado a **Brent robusto** (`xirr.py`). Auditoría completa del codebase aplicada. Ver la
 >   convención **"Day-count / convención de descuento"** abajo y el CHANGELOG v7.2.
+> - **Fuente de precios (2026-06)**: dejó de ser "sólo Data912". Hoy la elige el `ProviderHub`
+>   entre `byma_open` (default) / `byma_realtime` / `data912`, con floor Data912 debajo. El
+>   pilar 4, el stack técnico y el pipeline de abajo ya están corregidos; el detalle vive en
+>   `CLAUDE.md`.
 > - **Las secciones de abajo sobre la capa web (server.py / app.js / Gridstack / endpoints
 >   `/api/*`) son HISTÓRICAS.** Las **convenciones financieras** (CER, TAMAR, BEI, day-counts,
 >   MD, accrued, settle T+0/T+1) SIGUEN VIGENTES — el motor preserva la matemática.
@@ -45,11 +49,11 @@
 
 ## VISIÓN GENERAL
 
-Monitor automatizado de los principales segmentos de renta fija en Argentina (Soberanos, Bopreales, Tasa Fija, CER, Dólar Linked, TAMAR PURO, Duales TAMAR, Duales CER/TAMAR, Futuros DLR) + Panel Líder de acciones BYMA, que obtiene precios en tiempo real desde **Data912** (`https://data912.com/live/*` + `https://data912.com/historical/*`), calcula TIR / Duration Modificada / Valor Técnico / Paridad / TNA / TEM de forma centralizada, presenta los resultados en consola, PNG y dashboard web (Gridstack drag-and-drop), e incluye un módulo de **Break-Even Inflation extendido** (NT3/2019 + NT8/2024) con sendero mensual contra REM-BCRA y método de pares. Cada ticker del dashboard abre un **popup de detalle** de 3 tabs (Detalles + Chart + Calculadora pro de bonos) con toggle de liquidación T+0/T+1.
+Monitor automatizado de los principales segmentos de renta fija en Argentina (Soberanos, Bopreales, Tasa Fija, CER, Dólar Linked, TAMAR PURO, Duales TAMAR, Duales CER/TAMAR, Futuros DLR) + Panel Líder de acciones BYMA, que obtiene precios en tiempo real de la **fuente live activa** (BYMA open por default; BYMA realtime o **Data912** —`https://data912.com/live/*` + `/historical/*`— como alternativas, con Data912 siempre presente como *floor*), calcula TIR / Duration Modificada / Valor Técnico / Paridad / TNA / TEM de forma centralizada, presenta los resultados en consola, PNG y dashboard web (Gridstack drag-and-drop), e incluye un módulo de **Break-Even Inflation extendido** (NT3/2019 + NT8/2024) con sendero mensual contra REM-BCRA y método de pares. Cada ticker del dashboard abre un **popup de detalle** de 3 tabs (Detalles + Chart + Calculadora pro de bonos) con toggle de liquidación T+0/T+1.
 
 ### Stack técnico
 - Python 3.12+
-- **Precios de mercado**: Data912 live (`arg_notes`, `arg_bonds`, `arg_corp`, `arg_stocks`) + historical (`/historical/bonds`, `/historical/stocks`)
+- **Precios de mercado**: fuente **conmutable** detrás de `ProviderHub` — BYMA open (default), BYMA realtime (con credenciales) o Data912 live (`arg_notes`, `arg_bonds`, `arg_corp`, `arg_stocks`) + historical (`/historical/bonds`, `/historical/stocks`). Data912 además actúa de **floor** permanente debajo de la activa. Ver `core/infrastructure/byma/sources.py` y CLAUDE.md
 - **Índice CER + TAMAR**: BCRA API v4.0 (vars 30 y 44)
 - **Futuros DLR**: Matba/Primary WebSocket público (modo `guest`, sin auth) — reverse-engineered `wss://matbarofex.primary.ventures/ws`
 - **FX USD/ARS**: dolarapi.com
@@ -60,7 +64,7 @@ Monitor automatizado de los principales segmentos de renta fija en Argentina (So
 - **Master de instrumentos**: `data/instruments_master.xlsx`
 - Matemática: SciPy (Newton + Brentq para XIRR, least_squares para NSS), NumPy, Pandas
 - Salida: Tabulate (consola), Matplotlib (PNG), `http.server` (web dashboard) + Chart.js (frontend) + Gridstack (layout)
-- HTTP client uniforme: `core/infrastructure/_http.py::http_get_json` (single-shot retry sobre transient errors)
+- HTTP client: `core/infrastructure/async_http.py::ResilientClient` (httpx async + pool keep-alive + circuit breaker y semáforo por host + retry sobre transients) para el hot-path. Los providers sync que quedan (CAFCI, argentinadatos) usan `httpx` directo con cache propio por TTL y **sin retry**, corriendo en `to_thread`. *(El viejo `core/infrastructure/_http.py::http_get_json` fue BORRADO — ya no existe.)*
 - Tests: pytest (`tests/`); data-quality suite (`scripts/data_quality_check.py`)
 
 ---
@@ -72,7 +76,7 @@ Monitor automatizado de los principales segmentos de renta fija en Argentina (So
 | **1. Una config por curva (panel)** | `apps/web/server.py::_build_refresh_context` | Cada curva es un panel del dashboard, declarado como tupla `(id, tipos, opts)`; todos comparten el row-builder `_base_bond_row()`. |
 | **2. SQLite (`catalog.db`) = fuente de verdad del catálogo; Excel/CSV = semillas de bootstrap** | `core/infrastructure/db/catalog_repository.py::CatalogRepository` (runtime) · `instruments_master.xlsx` + `data/obligaciones_negociables.csv` (seeds) · [apps/web/instruments_abm.py](apps/web/instruments_abm.py) (editor) | **(v7.2)** El catálogo VIVO es **SQLite** (en `%LOCALAPPDATA%\monitor`, fuera del working tree de git). El Excel master y el CSV de ON **sólo siembran** la DB en bootstrap (si está vacía). La **ABM escribe SQLite directo** (transaccional) y es el editor de altas/bajas/ediciones — las altas por ABM viven SOLO en la DB. Sin listas hardcodeadas de tickers. *(El viejo "Excel = única fuente" + ABM con writes atómicos al Excel quedó obsoleto en la reingeniería.)* |
 | **3. Matemática financiera centralizada** | `core/domain/services.py::FinancialEngine` + `core/domain/cashflow_synth.py` | Única implementación de xirr, TIR, MD, V.Téc, TNA, TEM. Nadie reimplementa fórmulas. Cashflow synthesis es un módulo puro reutilizado por el repo y la ABM. |
-| **4. Datos puramente Data912** | `core/infrastructure/repositories.py::Data912MarketDataProvider` | Único provider de precios live + histórico (OHLC). Excepciones documentadas: BCRA (CER, TAMAR), dolarapi (FX), Matba/Primary WS (futuros DLR + spot A3500, sin auth), REM (expectativas IPC), CAFCI (FCI: catálogo + rendimientos diarios). |
+| **4. Fuente de precios única e INTERCAMBIABLE** | `core/infrastructure/byma/sources.py::MarketSource` (`byma_open` \| `byma_realtime` \| `data912`) detrás de `core/infrastructure/provider_hub.py::ProviderHub` · `data912_provider.py::Data912MarketDataProvider` | **(2026-06)** Nadie instancia un cliente de precios propio: el hub elige la fuente activa (default `byma_open`, conmutable en caliente por `/source/*`) y le mergea DEBAJO el floor Data912 para los símbolos que la activa no lista. Excepciones documentadas: BCRA (CER, TAMAR, A3500), dolarapi (FX), Matba/Primary WS (futuros DLR, sin auth), REM (expectativas IPC), CAFCI + ArgentinaDatos (FCI), FIX SCR (calificaciones). *(El viejo "datos puramente Data912" quedó obsoleto; `Data912MarketDataProvider` tampoco vive más en `repositories.py`.)* |
 
 ---
 
@@ -81,7 +85,7 @@ Monitor automatizado de los principales segmentos de renta fija en Argentina (So
 ```
 instruments_master.xlsx ──► ExcelInstrumentsRepository ──┐
                                                           │
-Data912 live ────────────► Data912MarketDataProvider ──┐ │
+fuente live activa ──────► ProviderHub (+ floor Data912) ┐ │
 Data912 historical ────────────────────────────────────┤ │
                                                        ▼ ▼
                                       GenerateMonitorReport.execute(types)
@@ -137,8 +141,11 @@ Monitores - Data912/
 │   │   ├── yield_curve.py              # NS, NSS, bootstrapping, Fisher, forward BEI, pair-of-bonds, real_fx_drift
 │   │   └── inflation_path.py           # Sendero mensual de BEI (NT8/2024 Fig. 4)
 │   ├── infrastructure/
-│   │   ├── _http.py                    # http_get_json: session keep-alive + single-shot retry sobre transient (timeout/5xx/429/conn)
-│   │   ├── repositories.py             # ExcelInstrumentsRepository + Data912MarketDataProvider (live + OHLC histórico)
+│   │   ├── async_http.py               # ResilientClient: httpx async, pool, breaker + semáforo por host, retry sobre transients
+│   │   ├── provider_hub.py             # ProviderHub: fuente live activa + floor Data912, merge stale-safe
+│   │   ├── byma/                       # sources (byma_open/realtime/data912), field_map, credentials, universe, catálogo
+│   │   ├── repositories.py             # ExcelInstrumentsRepository + build_instrument (parser de fila → Instrument)
+│   │   ├── data912_provider.py         # Data912MarketDataProvider (live + OHLC histórico)
 │   │   ├── indices_provider.py         # BCRAIndicesProvider (CER + TAMAR, disk-mirrored + offline-friendly)
 │   │   ├── fx_provider.py              # DolarAPIProvider (USD/ARS quotes)
 │   │   ├── futures_provider.py         # RofexProvider — WS público matba/primary, sin auth, thread daemon persistente
@@ -197,8 +204,8 @@ Monitores - Data912/
 
 **Nunca**:
 - Hardcodear listas de tickers en un monitor (usar `instrument_groups.py`).
-- Crear un cliente HTTP nuevo para precios live (usar `Data912MarketDataProvider`).
-- Crear un cliente HTTP nuevo para otra fuente sin pasar por `core/infrastructure/_http.py::http_get_json` (perdés el retry sobre transients).
+- Crear un cliente HTTP nuevo para precios live (usar el `ProviderHub` / la `MarketSource` activa).
+- Crear un cliente HTTP nuevo para otra fuente sin pasar por `core/infrastructure/async_http.py::ResilientClient` (perdés pool, breaker y el retry sobre transients). Si por algún motivo va sync, usar `httpx` con cache por TTL y correrlo en `to_thread` — y saber que ahí NO hay retry.
 - Reimplementar TIR / duration / NPV (usar `FinancialEngine`).
 - Reimplementar cashflow synthesis (usar `cashflow_synth.synth_cashflows`).
 - Leer el catálogo fuera de `CatalogRepository` (SQLite). El Excel master / CSV de ON sólo se leen para **sembrar** la DB (bootstrap); el editor de runtime es la ABM (`instruments_abm.py`, escribe SQLite transaccional). *(v7.2: la verdad es SQLite, no el Excel.)*
@@ -507,8 +514,11 @@ Todos los tickers son clickeables (independiente de si tienen OHLC) — la tab C
 
 | Variable | Valor | Para qué sirve |
 |---|---|---|
-| (ninguna) | — | El provider de futuros usa el WS público de Matba/Primary (modo `guest`, sin credenciales). No hay ROFEX_* env vars desde la migración a WebSocket. |
+| `BYMADATA_USER` / `BYMADATA_PASS` | credenciales BYMA | Gatean la fuente live **`byma_realtime`**: sin ellas `make_source("byma_realtime")` tira `BymaRealtimeError`, la app cae a `byma_open` con WARNING y la UI marca el modo `available=False` ("Configurá BYMADATA_USER / BYMADATA_PASS"). El camino normal de carga es la UI (`/source/credentials` → `byma/credentials.save_credentials`, que escribe el `.env` y lo aplica en caliente), no editar el archivo a mano. |
+| `MONITOR_*` (~40 campos) | ver `config/settings.py` | `Settings` declara `env_prefix="MONITOR_"` y `env_file=".env"`, así que **todo** campo de settings se puede fijar acá (`MONITOR_MARKET_SOURCE`, `MONITOR_DB_DIR`, `MONITOR_JWT_SECRET_KEY`, …). En el droplet estas van en el `EnvironmentFile` del systemd, no en `.env`. |
+| (futuros: ninguna) | — | El provider de futuros usa el WS público de Matba/Primary (modo `guest`, sin credenciales). No hay `ROFEX_*` env vars desde la migración a WebSocket. |
 
+El `.env` está gitignoreado y nunca se comiteó: es el de la máquina del dev.
 `config/settings.py` tiene su propio `_load_dotenv()` mini-parser — no requiere `python-dotenv`.
 
 REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limit 1 req/min → `REMProvider` cachea 6h.
@@ -553,7 +563,7 @@ REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limi
 - [ ] ¿Nuevo cálculo financiero? `FinancialEngine` en `core/domain/services.py`. Cashflow synth nuevo → dispatch en `core/domain/cashflow_synth.py`.
 - [ ] ¿Nuevo monitor CLI? Script en `apps/cli/`, tipo en `instrument_groups.py`.
 - [ ] ¿Nuevo panel web? Schema en `_get_columns`, registro en `Snapshot.__init__`, builder dentro de `_refresh_*` (server.py), `.grid-stack-item` en `index.html` con `gs-id`.
-- [ ] ¿Nueva fuente de datos? Justificar por qué no se puede con Data912; si es índice/referencia, modelo análogo a `BCRAIndicesProvider`; usar `core/infrastructure/_http.py::http_get_json` para el cliente HTTP.
+- [ ] ¿Nueva fuente de datos? Justificar por qué no la cubre la fuente activa del hub; si es índice/referencia, modelo análogo a `BCRAIndicesProvider`; el cliente HTTP es `core/infrastructure/async_http.py::ResilientClient` (async). Ojo con los timeouts: el centinela de "usar el default del cliente" es `httpx.USE_CLIENT_DEFAULT`, **no `None`** (`None` = sin timeout, el request cuelga para siempre).
 - [ ] ¿Cambio de UI? Bumpear `?v=N` en `style.css` / `app.js` / `gridstack` imports de `index.html` para invalidar cache.
 - [ ] ¿Nuevo ticker para popup histórico? Agregar a `HISTORICAL_SUPPORTED_TICKERS` en `server.py` Y a `HISTORY_SUPPORTED_TICKERS` en `app.js` (KEEP IN SYNC). Idealmente consumir `/api/supported_tickers` desde el frontend para eliminar el drift.
 - [ ] ¿Tests? Cualquier cambio en `cashflow_synth` / `FinancialEngine` / `instruments_abm` / `bond_detail` precisa actualizar/sumar test en `tests/`. Correr `scripts/data_quality_check.py` antes de releases para validar feeds externos.
@@ -561,7 +571,7 @@ REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limi
 
 ---
 
-**Última actualización:** 2026-05-30
+**Última actualización:** 2026-09-03 (auditoría: fuente de precios, cliente HTTP y `.env` puestos al día; el resto de la capa web sigue siendo histórico) · contenido financiero: 2026-05-30
 **Versión:** 7.2 — **Day-count centralizado + solver Brent + auditoría** (ver CHANGELOG v7.2). · 7.1 — **Dashboard HTMX: UI + ABM soberanos + pricing pata ARS** (sobre la web FastAPI+HTMX de v7.0; arquitectura actual en `CLAUDE.md`). Ver CHANGELOG v7.1. · 7.0 — **Reingeniería `mejora.md`** (branch `refactor/mejora-reingenieria`): pricing core Strategy/Protocol/Pydantic (equivalencia verificada), persistencia SQLite+DuckDB (`CatalogRepository`), primitivas async (httpx/breaker/hub), y **web FastAPI + HTMX** reemplazando el http.server + SPA. **Arquitectura actual en `CLAUDE.md`.** · 6.5 — Cartera + Escenarios + Valor Relativo (ver CHANGELOG v6.5). · 6.4 — Panel FCI (CAFCI). Nueva fuente de datos: Fondos Comunes de Inversión vía el micrositio de estadísticas de CAFCI (`estadisticas.cafci.org.ar/comparador-de-fondos.json`), que bundle-a en un solo JSON diario el catálogo completo (1149 fondos / 4602 clases) + la matriz de rendimientos diaria (~3723 clases con VCP + TNA/Directo a 7d/1m/3m/6m/YTD/12m). El método histórico del repo `fedemoglia/cafci-api` (pegarle a `api.cafci.org.ar` sin auth) está muerto: ese host hoy está detrás de una CloudFront Function con allowlist de rutas (`{"error":"Route not allowed"}`). Nuevo `CAFCIProvider` (fetch 1×/día, disk-mirror, offline-friendly, prime en background), endpoints `/api/fci` + `/api/fci/<clase_id>`, panel web `fci` con filtros (tipo de renta + moneda) + buscador + toggle TNA/Directo + headers ordenables + popup de detalle. Tests en `tests/test_cafci_provider.py`.
 
 ### CHANGELOG v7.2

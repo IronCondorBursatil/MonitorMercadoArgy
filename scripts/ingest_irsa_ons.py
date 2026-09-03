@@ -35,6 +35,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.op_guards import guard_write  # noqa: E402
+
 EMISOR = "IRSA INVERSIONES Y REPRESENTACIONES S.A."
 SHEET = "Obligaciones_Negociables"
 
@@ -111,7 +113,7 @@ def _explicit_cfs(b: dict) -> list[dict] | None:
     return act365_bullet(b["emision"], b["coupon_dates"], b["rate"])
 
 
-def main(dry_run: bool) -> None:
+def main(dry_run: bool = False, force: bool = False) -> int:
     from core.domain.models import Cashflow, Instrument
     from core.domain.pricing.base import VanillaStrategy
     from core.domain.pricing.context import PricingContext
@@ -123,11 +125,8 @@ def main(dry_run: bool) -> None:
     if dry_run:
         print("== DRY RUN (no escribe) ==\n")
     else:
-        from config.settings import settings
-        from core.infrastructure.db.backup import backup_db
-        snap = backup_db(settings.catalog_db, settings.backup_dir,
-                         keep=settings.backup_keep, tag="pre-irsa-ons")
-        print(f"backup pre-op: {snap}\n")
+        if (rc := guard_write("pre-irsa-ons", force=force)):
+            return rc
         from apps.web.instruments_abm import save_instrument
 
     for b in BONDS:
@@ -175,7 +174,9 @@ def main(dry_run: bool) -> None:
 
     if not dry_run:
         print("Listo. Reiniciá el server (o esperá el reload del repo) para verlas en el panel.")
+    return 0
 
 
 if __name__ == "__main__":
-    main(dry_run="--dry-run" in sys.argv)
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))

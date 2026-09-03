@@ -11,7 +11,9 @@ Instruments del CatalogRepository.
 
 from __future__ import annotations
 
-from typing import Optional
+import html
+import logging
+from typing import Optional, Tuple
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
@@ -23,6 +25,8 @@ from core.domain import portfolio
 from core.domain.instrument_groups import (
     BOPREALES, CER, DOLAR_LINKED, DUAL_TAMAR, SOBERANOS, TAMAR, TASA_FIJA,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -52,46 +56,88 @@ def _metrics_by_ticker(state) -> dict:
     return out
 
 
-def _render_body(request: Request, state, repo, fx) -> HTMLResponse:
-    holdings = cartera_store.list_holdings()
-    fx_rate = None
+def _quote(fx, method: str) -> Optional[float]:
+    """Lee una punta del provider de FX de forma tolerante (None si falla)."""
+    if not fx:
+        return None
     try:
-        fx_rate = fx.get_mayorista_venta() if fx else None
+        fn = getattr(fx, method, None)
+        v = fn() if callable(fn) else None
     except Exception:
-        fx_rate = None
-    pf = portfolio.build_portfolio(holdings, _metrics_by_ticker(state), fx_usd_ars=fx_rate)
+        return None
+    return v if (v and v > 0) else None
+
+
+def _fx_rates(fx) -> Tuple[Optional[float], Optional[float]]:
+    """(MEP, CCL) de venta para valuar las posiciones en dólares.
+
+    Una pata …D liquida al **MEP** (dólar bolsa) y una …C al **CCL** — NO al
+    mayorista/A3500, que es el oficial y tiene brecha contra ambos (antes se usaba
+    el mayorista para TODO el libro y el sesgo se propagaba a pesos, TIR/MD
+    ponderadas y P&L de escenarios, porque todo se pondera por `market_value_ars`).
+
+    Degradación: si el provider no expone una punta, se cae a la otra y por último
+    al mayorista — una valuación aproximada es preferible a dejar en blanco todas
+    las posiciones en dólares.
+    """
+    mep = _quote(fx, "get_mep_venta")
+    ccl = _quote(fx, "get_ccl_venta")
+    if mep is None or ccl is None:
+        fallback = mep or ccl or _quote(fx, "get_mayorista_venta")
+        mep = mep or fallback
+        ccl = ccl or fallback
+    return mep, ccl
+
+
+def _context(state, repo, fx) -> dict:
+    """Contexto compartido por la página y el fragmento (misma valuación en ambos)."""
+    holdings = cartera_store.list_holdings()
+    mep, ccl = _fx_rates(fx)
+    pf = portfolio.build_portfolio(holdings, _metrics_by_ticker(state),
+                                   fx_usd_ars=mep, fx_cable_ars=ccl)
     by_ticker = {i.ticker: i for i in repo.get_all_instruments()}
-    cfs = portfolio.portfolio_cashflows(holdings, by_ticker)
-    return _TEMPLATES.TemplateResponse(
-        request, "fragments/cartera_body.html",
-        {"pf": pf, "cashflows": cfs},
+    return {"pf": pf, "cashflows": portfolio.portfolio_cashflows(holdings, by_ticker)}
+
+
+# Banner de error del alta. El fragmento `cartera_body.html` no tiene slot propio,
+# así que se antepone al swap de `#cartera-body` (mismo patrón visual que `.abm-err`).
+_ERR_BANNER = (
+    '<div class="cartera-err" role="alert" style="margin:0 12px 8px;padding:8px 10px;'
+    'border:1px solid var(--neg);border-radius:6px;background:rgba(168,36,43,.1);'
+    'color:var(--neg);font-weight:600">⚠ No se guardó: {msg}</div>'
+)
+
+
+def _render_body(request: Request, state, repo, fx, error: Optional[str] = None) -> HTMLResponse:
+    resp = _TEMPLATES.TemplateResponse(
+        request, "fragments/cartera_body.html", _context(state, repo, fx),
     )
+    if not error:
+        return resp
+    banner = _ERR_BANNER.format(msg=html.escape(str(error)))
+    return HTMLResponse(banner + resp.body.decode("utf-8"), status_code=resp.status_code)
 
 
 @router.get("/cartera", response_class=HTMLResponse)
 def cartera_page(request: Request, state=Depends(get_state), repo=Depends(get_repo), fx=Depends(get_fx)):
-    holdings = cartera_store.list_holdings()
-    fx_rate = None
-    try:
-        fx_rate = fx.get_mayorista_venta() if fx else None
-    except Exception:
-        fx_rate = None
-    pf = portfolio.build_portfolio(holdings, _metrics_by_ticker(state), fx_usd_ars=fx_rate)
-    by_ticker = {i.ticker: i for i in repo.get_all_instruments()}
-    cfs = portfolio.portfolio_cashflows(holdings, by_ticker)
     return _TEMPLATES.TemplateResponse(request, "pages/cartera.html",
-                                       {"pf": pf, "cashflows": cfs})
+                                       _context(state, repo, fx))
 
 
 @router.post("/cartera/holding", response_class=HTMLResponse)
 def add_holding(request: Request, ticker: str = Form(...), nominal: float = Form(...),
                 cost_price: Optional[float] = Form(None), note: str = Form(""),
                 state=Depends(get_state), repo=Depends(get_repo), fx=Depends(get_fx)):
+    error = None
     try:
         cartera_store.upsert_holding(ticker, nominal, cost_price, note)
-    except ValueError:
-        pass
-    return _render_body(request, state, repo, fx)
+    except ValueError as e:
+        # NUNCA tragar el error (mismo criterio que el ABM): el form se auto-resetea
+        # con `hx-on::after-request`, así que sin aviso el usuario lee un alta que
+        # nunca se persistió como si hubiera salido bien.
+        logger.warning("Cartera: alta rechazada (%s): %s", ticker, e)
+        error = str(e)
+    return _render_body(request, state, repo, fx, error=error)
 
 
 @router.delete("/cartera/holding/{ticker}", response_class=HTMLResponse)

@@ -19,16 +19,86 @@ router = APIRouter()
 _MAX_LOGIN_ATTEMPTS = 5
 _LOGIN_WINDOW_SEC = 300
 _login_attempts: dict = defaultdict(list)
+# Techo duro de claves vivas: el barrido por ventana ya las vence, esto acota el
+# pico de un ataque distribuido (una clave = una tupla chica, ~4k es despreciable).
+_MAX_TRACKED_KEYS = 4096
 # Hash bcrypt dummy: verificar SIEMPRE (aunque el usuario no exista) iguala el tiempo
 # de respuesta y evita enumerar usuarios por timing. Lazy para no pagar bcrypt al import.
 _DUMMY_HASH = None
 
 
+def _trusted_proxies() -> frozenset:
+    """Peers TCP cuyo X-Forwarded-For se cree (frontera de confianza del proxy).
+
+    Sale de `settings.trusted_proxy_ips` y de NINGÚN otro lado: la convención del repo
+    es que pydantic-settings sea el único lector del env (MONITOR_TRUSTED_PROXY_IPS).
+    Leerlo acá con `os.environ` además invertía la precedencia — el `getattr(settings,
+    ...)` que había ganaba en silencio el día que el campo existiera. Vacío = no
+    confiar en ningún XFF (todo se imputa al peer TCP)."""
+    return frozenset(p.strip() for p in str(settings.trusted_proxy_ips or "").split(",")
+                     if p.strip())
+
+
 def _client_ip(request: Request) -> str:
-    xff = request.headers.get("x-forwarded-for")  # requiere uvicorn --proxy-headers
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else "?"
+    """IP a la que se le imputan los intentos de login.
+
+    El header X-Forwarded-For lo escribe el CLIENTE: si se lee sin más, el atacante
+    elige un bucket nuevo por intento y el limiter no dispara nunca. Sólo se lo cree
+    si el peer TCP es un proxy confiable, y de ahí se toma la ÚLTIMA entrada: nginx
+    usa `$proxy_add_x_forwarded_for` = "$http_x_forwarded_for, $remote_addr", así que
+    la que agregó NUESTRO proxy va al final; todo lo anterior es falseable.
+    """
+    peer = request.client.host if request.client else "?"
+    if peer not in _trusted_proxies():
+        return peer
+    xff = request.headers.get("x-forwarded-for")
+    if not xff:
+        return peer
+    parts = [p.strip() for p in xff.split(",") if p.strip()]
+    return parts[-1] if parts else peer
+
+
+def _prune_login_attempts(now: float) -> None:
+    """Barrido GLOBAL del contador (antes sólo se podaba la clave visitada: con una
+    clave distinta por intento el dict quedaba creciendo sin vencimiento)."""
+    stale = [k for k, ts in _login_attempts.items()
+             if not ts or now - ts[-1] >= _LOGIN_WINDOW_SEC]
+    for key in stale:
+        _login_attempts.pop(key, None)
+    if len(_login_attempts) > _MAX_TRACKED_KEYS:
+        exceso = len(_login_attempts) - _MAX_TRACKED_KEYS
+        for key, _ in sorted(_login_attempts.items(), key=lambda kv: kv[1][-1])[:exceso]:
+            _login_attempts.pop(key, None)
+
+
+# Destino post-login por pestaña, en el MISMO orden que el nav de base.html. La home
+# `/` la sirve el router de paneles, montado con RequireTabPermission("bonos"): mandar
+# a `/` a un usuario sin esa pestaña lo rebotaba al login para siempre (login OK → 302
+# `/` → RequiresLoginException → 302 /login), sin ningún mensaje.
+_TAB_LANDING = (
+    ("bonos", "/"),
+    ("on", "/on"),
+    ("curva", "/curva"),
+    ("cartera", "/cartera"),
+    ("bcra", "/bcra"),
+    ("cashflows", "/cashflows"),
+    ("fci", "/fci"),
+    ("escenarios", "/escenarios"),
+    ("opciones", "/options"),
+    ("catalogo", "/catalogo"),
+    ("abm", "/abm"),
+)
+
+
+def _landing_url(user: UserORM):
+    """Primera pestaña que el usuario SÍ puede ver (None si no tiene ninguna)."""
+    tabs = user.allowed_tabs or []
+    if user.is_admin or "*" in tabs:
+        return "/"
+    for tab, url in _TAB_LANDING:
+        if tab in tabs:
+            return url
+    return None
 
 
 def _dummy_hash() -> str:
@@ -46,6 +116,7 @@ def login_page(request: Request):
 def login(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     key = (_client_ip(request), (username or "").strip().lower())
     now = time.time()
+    _prune_login_attempts(now)
     recent = [t for t in _login_attempts[key] if now - t < _LOGIN_WINDOW_SEC]
     _login_attempts[key] = recent
     if len(recent) >= _MAX_LOGIN_ATTEMPTS:
@@ -62,11 +133,20 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
 
     _login_attempts.pop(key, None)   # login OK → limpiar el contador
 
+    landing = _landing_url(user)
+    if landing is None:
+        # Sin ninguna pestaña habilitada no hay a dónde mandarlo: decirlo, en vez de
+        # dejarlo rebotando entre `/` y `/login` como si la clave estuviera mal.
+        return _TEMPLATES.TemplateResponse(
+            request, "pages/login.html",
+            {"error": "Tu usuario no tiene ningún módulo habilitado. "
+                      "Pedile acceso a un administrador."}, status_code=403)
+
     # Generar token JWT
     access_token = create_access_token(data={"sub": user.username})
 
-    # Redirigir al home (o donde haya intentado entrar) seteando la cookie
-    response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    # Redirigir a la primera pestaña permitida seteando la cookie
+    response = RedirectResponse(url=landing, status_code=status.HTTP_302_FOUND)
     response.set_cookie(
         key="access_token",
         value=access_token,

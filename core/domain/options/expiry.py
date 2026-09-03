@@ -23,14 +23,16 @@ def resolve_expiry_date(month: int, today: Optional[date] = None,
                         holiday_engine=None) -> date:
     """Devuelve el tercer viernes (con fallback a hábil previo si hay engine).
 
-    `month` es 1-12 sin año; el año se infiere: si el tercer viernes de este año
-    ya pasó (o pasa en los próximos 5 días), se asume el del año siguiente.
-    Esto matchea el comportamiento real del listado BYMA (los meses cortos
-    aparecen como vto del año en curso; los lejanos como año siguiente).
+    `month` es 1-12 sin año; el año se infiere: sólo si el tercer viernes de este
+    año YA PASÓ se asume el del año siguiente. Una opción vence al cierre del
+    tercer viernes, así que ese mismo día la serie sigue siendo válida (y toda su
+    semana de vencimiento es, de hecho, la más operada). Antes había un margen de
+    5 días que rolaba la cohorte del mes en curso un AÑO entero durante sus
+    últimas 5 ruedas → t_days ~365 en vez de ~4 y TNA/IV/griegos sin sentido.
     """
     today = today or date.today()
     candidate = third_friday(today.year, month)
-    if candidate <= today + timedelta(days=5):
+    if candidate < today:
         candidate = third_friday(today.year + 1, month)
     if holiday_engine is not None:
         try:

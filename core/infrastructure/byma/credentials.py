@@ -21,6 +21,16 @@ USER_KEY = "BYMADATA_USER"
 PASS_KEY = "BYMADATA_PASS"
 _KEYS = (USER_KEY, PASS_KEY)
 
+# El `.env` es un formato de una linea por registro: cualquier separador de linea
+# embebido en una credencial inyecta una linea KEY=VALUE arbitraria (que
+# `config.settings._load_dotenv` carga a os.environ en el proximo arranque y que
+# `clear_credentials` no limpia). Se rechaza, no se sanea en silencio.
+# Ojo: la lista NO es solo \n/\r. `str.splitlines()` -- que usa el round-trip de
+# esta misma funcion al releer el archivo -- corta tambien en VT/FF/FS/GS/RS,
+# NEL (U+0085) y LS/PS (U+2028/9). Se agrega NUL, que rompe os.environ.
+_FORBIDDEN = "".join(map(chr, (0x00, 0x0A, 0x0B, 0x0C, 0x0D,
+                               0x1C, 0x1D, 0x1E, 0x85, 0x2028, 0x2029)))
+
 
 def env_path(path: Optional[os.PathLike] = None) -> Path:
     if path is not None:
@@ -43,6 +53,19 @@ def save_credentials(user: str, password: str, path: Optional[os.PathLike] = Non
     password = (password or "").strip()
     if not user or not password:
         raise ValueError("Usuario y contraseña son requeridos.")
+    if any(c in user or c in password for c in _FORBIDDEN) or "=" in user:
+        # Contrato: se PROPAGA ValueError; traducirlo a una respuesta es del caller.
+        # Hoy el caller SÍ lo traduce: `apps/web/routers/source.py::source_credentials`
+        # envuelve la llamada en `try/except ValueError` y devuelve 400 con el motivo
+        # (antes la llamada estaba fuera de todo try —el único envolvía el probe
+        # `_ensure_token`— y, como `apps/web/app.py` no registra
+        # `exception_handler(ValueError)`, este camino terminaba en un 500 con traza).
+        # No es inalcanzable: un usuario BYMA con `=` en el nombre pasa el probe OAuth
+        # (login válido) y recién muere acá.
+        # STATUS-HTTP-REAL: 400  ← lo verifica tests/test_rem_R2_infra_credentials_contrato.py
+        # contra el AST del router; si alguien saca ese try/except, el test exige
+        # volver este número a 500 (y así el comentario no vuelve a mentir).
+        raise ValueError("Usuario/contraseña con caracteres no permitidos.")
     os.environ[USER_KEY] = user
     os.environ[PASS_KEY] = password
 

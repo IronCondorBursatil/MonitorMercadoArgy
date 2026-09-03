@@ -76,10 +76,15 @@ def payoff_curve(legs: Iterable[OptionLeg], items_by_ticker: dict[str, OptionIte
             v += q * it.greeks.vega;  have_v = True
 
     max_gain = max(ys); max_loss = min(ys)
-    # Break-evens: cruces por cero (interpolación lineal).
+    # Break-evens: cruces por cero (interpolación lineal). El lado derecho es
+    # INCLUSIVO (`<=` / `>=`): si la grilla cae justo sobre el break-even (straddle
+    # K=100 con prima 12 muestreado de a $1 → payoff exactamente 0 en 88 y 112), la
+    # comparación estricta no detectaba NINGÚN cruce y `breakevens` salía vacía.
+    # Inclusivo de un solo lado no duplica: el punto siguiente arranca en 0 y ya no
+    # cumple la guarda (también colapsa un tramo plano en 0 a un único break-even).
     bes: list[float] = []
     for i in range(1, len(ys)):
-        if (ys[i - 1] < 0 < ys[i]) or (ys[i - 1] > 0 > ys[i]):
+        if (ys[i - 1] < 0 <= ys[i]) or (ys[i - 1] > 0 >= ys[i]):
             t = ys[i - 1] / (ys[i - 1] - ys[i])
             bes.append(xs[i - 1] + t * (xs[i] - xs[i - 1]))
 

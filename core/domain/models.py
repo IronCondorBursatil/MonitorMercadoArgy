@@ -51,6 +51,12 @@ class Cashflow(BaseModel):
         return self.amortization + self.interest
 
 
+# Grafías cortas de "ley argentina" que aparecen en el campo `ley_aplicable`
+# (cargas por script). Se comparan por IGUALDAD, no por substring: "AR" como
+# substring matchearía "ARGELIA"/"HARVARD" y "EXTRANJERA" contiene "AR".
+_LEY_ARGENTINA_ALIAS = frozenset({"AR", "ARG", "ARGY", "LOC"})
+
+
 class Instrument(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -118,8 +124,23 @@ class Instrument(BaseModel):
     @property
     def is_ley_argentina(self) -> bool:
         """Ley local explícita → la pata pesos se valúa contra MEP (dólar bolsa).
-        Extranjera o SIN dato → CCL (cable): el universo ON es mayormente ley NY."""
-        return "ARGENTIN" in (self.ley_aplicable or "").upper()
+        Extranjera o SIN dato → CCL (cable): el universo ON es mayormente ley NY.
+
+        Normalización DEFENSIVA de las grafías que existen de verdad en el campo:
+        el form ABM y `on_catalog` escriben "Argentina"/"Extranjera" y
+        `byma/universe` mapea "Ley Local" → "Argentina", pero hay scripts de carga
+        que escribieron abreviaturas — en la catalog.db viva hay una fila con
+        `'ARG'` (y `scratch/gen_prov_cba_caba.py` sigue emitiendo esa grafía).
+        Con el chequeo viejo (`"ARGENTIN" in ...`) `'ARG'`/`'AR'`/`'Local'` caían
+        del lado EXTRANJERO y la pata pesos se dolarizaba al CCL en vez del MEP —
+        un error silencioso del tamaño de la brecha MEP/CCL en precio/TIR/paridad.
+        """
+        v = (self.ley_aplicable or "").upper().strip().rstrip(".")
+        if not v:
+            return False
+        return ("ARGENTIN" in v or "LOCAL" in v
+                or v in _LEY_ARGENTINA_ALIAS
+                or v.removeprefix("LEY ").strip() in _LEY_ARGENTINA_ALIAS)
 
     @property
     def is_tamar_puro(self) -> bool:

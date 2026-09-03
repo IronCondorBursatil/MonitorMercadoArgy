@@ -7,8 +7,9 @@ El server viejo queda en el historial de git / branch master.)
 import sys
 
 # --- Guard de versión de Python -------------------------------------------- #
-# Pinneado a Python 3.12 (ver requirements.txt). En esta máquina el runtime es
-# el "Microsoft Store" Python 3.12; arrancá con run.bat o el intérprete correcto.
+# Pinneado a Python 3.12 (ver requirements.txt). El runtime es el Python de
+# Programs: `py -3.12`, o %LOCALAPPDATA%\Programs\Python\Python312\python.exe
+# (el "Store Python" ya no existe). Arrancá con run.bat, que lo resuelve solo.
 if sys.version_info[:2] != (3, 12):
     raise SystemExit(
         f"[Monitor] Requiere Python 3.12.x — estás usando {sys.version.split()[0]}.\n"

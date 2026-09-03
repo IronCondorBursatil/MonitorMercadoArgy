@@ -1,5 +1,33 @@
 {# Chain Calls ← K → Puts del subyacente seleccionado.
    Embebe `chain-data` (JSON) que el strategy builder lee para calcular payoff. #}
+
+{# Celda de punta clickeable. OJO con el cruce: la columna BID arma una pata LONG,
+   que ENTRA AL ASK (y la columna ASK arma una SHORT, que entra al bid). Si el lado
+   que se va a usar está en 0 —serie sin oferta/demanda— la pata no entra al número
+   que el usuario está viendo sino al fallback mid → last (espejo de `optEntryPx` /
+   `analytics._resolve_premium`), así que la celda se marca con ⚠ y el title dice el
+   precio REAL de entrada. Y si no hay NINGÚN precio utilizable (punta, mid y último
+   en 0) la pata entraría al nominal de 0,01: ahí directamente no se puede clickear.
+   `qty` = dirección de la pata que arma el click (1 long / -1 short).             #}
+{%- macro leg_cell(o, qty, shown, side) -%}
+  {%- if not o -%}
+    <td class="{{ side }} right">—</td>
+  {%- else -%}
+    {%- set used = (o.ask if qty > 0 else o.bid) or 0 -%}
+    {%- set fallback = (o.mid or 0) if (o.mid or 0) > 0 else (o.last or 0) -%}
+    {%- set entry = used if used > 0 else fallback -%}
+    {%- set dir = "long" if qty > 0 else "short" -%}
+    {%- if entry > 0 -%}
+    <td class="{{ side }} right clickable" onclick="optAddLeg('{{ o.ticker }}', {{ qty }})"
+        title="{{ dir }} · entra a {{ "%.2f"|format(entry) }}{% if used <= 0 %} — sin {{ "oferta (ask)" if qty > 0 else "demanda (bid)" }}: se valúa a mid/last, NO a esta punta{% endif %}">
+      {{ "%.2f"|format(shown) }}{% if used <= 0 %} ⚠{% endif %}</td>
+    {%- else -%}
+    <td class="{{ side }} right dim"
+        title="{{ dir }} sin precio utilizable (punta, mid y último en 0): no se puede armar la pata">
+      {{ "%.2f"|format(shown) }}</td>
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro -%}
 <div class="opt-ph">
   CHAIN <b>{{ underlying }}</b>
   <select class="opt-vto-sel" onchange="optSetMonth(this.value)">
@@ -23,23 +51,15 @@
       {% for r in rows %}
       <tr class="{% if r.is_atm %}atm{% endif %}">
         {% set c = r.call %}{% set p = r.put %}
-        <td class="C right{% if c %} clickable{% endif %}"
-            {% if c %}onclick="optAddLeg('{{ c.ticker }}', 1)" title="long bid"{% endif %}>
-          {% if c %}{{ "%.2f"|format(c.bid) }}{% else %}—{% endif %}</td>
-        <td class="C right{% if c %} clickable{% endif %}"
-            {% if c %}onclick="optAddLeg('{{ c.ticker }}', -1)" title="short ask"{% endif %}>
-          {% if c %}{{ "%.2f"|format(c.ask) }}{% else %}—{% endif %}</td>
+        {{ leg_cell(c, 1, c.bid if c else 0, "C") }}
+        {{ leg_cell(c, -1, c.ask if c else 0, "C") }}
         <td class="right">{% if c and c.delta is not none %}{{ "%.2f"|format(c.delta) }}{% else %}—{% endif %}</td>
         <td class="right">{% if c and c.iv_pct is not none %}{{ "%.0f"|format(c.iv_pct) }}{% else %}—{% endif %}</td>
         <td class="k">{{ "%.2f"|format(r.strike) }}</td>
         <td class="right">{% if p and p.iv_pct is not none %}{{ "%.0f"|format(p.iv_pct) }}{% else %}—{% endif %}</td>
         <td class="right">{% if p and p.delta is not none %}{{ "%.2f"|format(p.delta) }}{% else %}—{% endif %}</td>
-        <td class="V right{% if p %} clickable{% endif %}"
-            {% if p %}onclick="optAddLeg('{{ p.ticker }}', 1)" title="long bid"{% endif %}>
-          {% if p %}{{ "%.2f"|format(p.bid) }}{% else %}—{% endif %}</td>
-        <td class="V right{% if p %} clickable{% endif %}"
-            {% if p %}onclick="optAddLeg('{{ p.ticker }}', -1)" title="short ask"{% endif %}>
-          {% if p %}{{ "%.2f"|format(p.ask) }}{% else %}—{% endif %}</td>
+        {{ leg_cell(p, 1, p.bid if p else 0, "V") }}
+        {{ leg_cell(p, -1, p.ask if p else 0, "V") }}
       </tr>
       {% endfor %}
       {% if not rows %}

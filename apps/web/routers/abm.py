@@ -13,6 +13,7 @@ el Excel: el master ya es solo semilla).
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 
 from typing import Optional
@@ -275,7 +276,11 @@ async def abm_cashflows(request: Request, repo=Depends(get_repo)):
             repo.reload()
         await asyncio.to_thread(_save)
     except (ValueError, KeyError) as e:
-        return HTMLResponse(f'<span class="abm-flash" style="color:var(--neg)">⚠ {e}</span>')
+        # `e` arrastra texto que vino del FORM (ticker/fechas/importes): este flash es
+        # HTML armado a mano —el resto de la ABM va por Jinja, que autoescapa— así que
+        # sin escapar es XSS reflejado (mismo defecto que el 404 de /bond/{ticker}).
+        return HTMLResponse(
+            f'<span class="abm-flash" style="color:var(--neg)">⚠ {html.escape(str(e))}</span>')
     return HTMLResponse(f'<span class="abm-flash">✓ {len(cfs)} flujos guardados</span>')
 
 

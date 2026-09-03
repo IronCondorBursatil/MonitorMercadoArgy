@@ -41,7 +41,7 @@ from core.infrastructure.history_paths import resolve_read, state_path
 # Helpers/endpoints viven en core.domain.fci (fuente única): _to_float parsea los
 # números-string de CAFCI; _ARD_FCI_CATEGORIAS son los endpoints del fallback ArgentinaDatos.
 from core.domain.fci import ARD_FCI_ENDPOINTS as _ARD_FCI_CATEGORIAS
-from core.domain.fci.derive import to_float as _to_float
+from core.domain.fci.derive import norm as _norm, to_float as _to_float
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -225,9 +225,16 @@ class CAFCIProvider:
                     nombre = row.get("fondo") or ""
                     if not nombre:
                         continue
+                    # Identidad estable y ÚNICA por fondo: `unify_classes` agrupa por
+                    # `fondo_id`, así que con None TODO el universo colapsaba en un
+                    # solo registro (`by_fondo[None]`), mezclando nombre de un fondo
+                    # con vcp/fecha de otro y sumando el AUM de la industria entera.
+                    # ARD no publica ids → derivamos uno determinístico del nombre
+                    # (el front lo usa solo como string opaco: FMAP/favoritos/seed).
+                    fid = f"ard:{_norm(nombre)}"
                     result.append({
-                        "fondo_id":        None,
-                        "clase_id":        None,
+                        "fondo_id":        fid,
+                        "clase_id":        fid,
                         "fondo_nombre":    nombre,
                         "clase_nombre":    None,
                         "tipo_renta":      tipo_renta,

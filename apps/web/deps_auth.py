@@ -4,7 +4,23 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 class RequiresLoginException(Exception):
+    """NO autenticado (sin cookie / token vencido) → el handler global redirige a /login."""
     pass
+
+
+class TabForbiddenException(Exception):
+    """Autenticado pero SIN permiso para esa pestaña.
+
+    Es un caso DISTINTO de la falta de login y por eso tiene excepción propia: mandar
+    a /login a alguien que YA está logueado le miente ('sesión vencida'), lo hace
+    reingresar la clave y —si su pestaña de landing no es la que tecleó— parece un
+    rebote sin explicación. Corresponde 403 con la lista de lo que sí puede ver.
+    """
+
+    def __init__(self, tab: str, allowed=None):
+        self.tab = tab
+        self.allowed = list(allowed or [])
+        super().__init__(f"sin permiso para la pestaña {tab!r}")
 
 
 from core.infrastructure.db.engine import SessionLocal
@@ -82,5 +98,9 @@ class RequireTabPermission:
         if "*" in tabs or self.tab_name in tabs:
             return current_user
 
-        raise RequiresLoginException() # O un 403, pero RequiresLoginException lo redirige a un lugar seguro/Login. Alternativamente, lanzar 403 Forbidden.
+        # Autenticado pero sin esta pestaña: 403 (no 302 a /login). Con el redirect,
+        # tipear a mano una URL sin permiso te devolvía el FORMULARIO DE LOGIN estando
+        # logueado —indistinguible de una sesión vencida— y, si el landing del usuario
+        # no era esa URL, quedaba pareciendo un rebote.
+        raise TabForbiddenException(self.tab_name, tabs)
 

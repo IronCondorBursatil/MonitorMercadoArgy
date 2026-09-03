@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from core.infrastructure._tls import should_verify
 from core.infrastructure.byma.sources import BymaOpenSource
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,10 @@ def _rows(payload) -> list:
 
 def _post(path: str, body: dict, client: Optional[httpx.Client]) -> list:
     own = client is None
-    cli = client or httpx.Client(verify=False, timeout=40.0)
+    # TLS por la política única del repo (`_tls.should_verify`), no `verify=False`
+    # hardcodeado: con la allowlist default el resultado es el mismo, pero el
+    # override `MONITOR_TLS_NO_VERIFY_HOSTS` deja de ser inerte en este camino.
+    cli = client or httpx.Client(verify=should_verify(_BASE), timeout=40.0)
     try:
         r = cli.post(_BASE + path, json=body, headers=_HEADERS)
         if r.status_code != 200:

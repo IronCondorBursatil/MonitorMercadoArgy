@@ -21,15 +21,19 @@ import asyncio
 import logging
 import os
 import time
+from html import escape
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from apps.web.deps_auth import RequiresLoginException, get_current_user_html, get_current_user, RequireTabPermission
+from apps.web.deps_auth import (
+    RequireTabPermission, RequiresLoginException, TabForbiddenException,
+    get_current_user, get_current_user_html,
+)
 from apps.web.routers import auth as auth_router, users_abm
 
 
@@ -131,6 +135,52 @@ async def _options_loop(app: FastAPI) -> None:
             logger.exception("options loop iteration failed")
 
 
+def _catalog_health_report(repo) -> dict:
+    """Reporte publicable de la salud del catálogo, leído del repo ya cargado.
+
+    `orphans` = bonos con un `instrument_type` que no pertenece a ningún grupo de
+    `instrument_groups`: se cargan, guardan cashflows y acumulan precio, pero NINGÚN
+    panel los muestra ni los precia (todo el read-path filtra por igualdad exacta).
+    `defaulted` = bonos cuyo tipo se ASUMIÓ del default de una hoja ambigua (una ON
+    sin `tipo` se precia como hard-dollar aunque sea dollar-linked: otra moneda de
+    pago). `seed_error` = la siembra de bootstrap falló y el catálogo quedó vacío."""
+    health = getattr(repo, "type_health", None) or {}
+    return {
+        "instruments": len(repo.get_all_instruments()),
+        "orphans": [e.get("ticker", "") for e in health.get("orphans", ())],
+        "defaulted": [e.get("ticker", "") for e in health.get("defaulted", ())],
+        "seed_error": getattr(repo, "seed_error", None),
+    }
+
+
+async def _publish_catalog_health(app: FastAPI, repo) -> dict:
+    """Cablea la salud del catálogo a `AppState` → `/api/health` (bloque `catalog`)
+    y, si la siembra falló, al badge del header vía `record_error`.
+
+    Este es el consumidor que faltaba: `CatalogRepository.type_health` se construyó
+    para que el arranque lo publicara, pero sus únicos lectores eran los tests. Una
+    señal sin consumidor es exactamente el patrón que dejó el bug original invisible
+    durante meses — las filas huérfanas volvían a serlo en silencio.
+
+    El catálogo VACÍO por una semilla ilegible sí es un error de operación (no hay
+    nada que servir): va a `record_error` para que el badge lo muestre, y `AppState`
+    lo retiene aparte para que el siguiente refresh 'exitoso' de 0 instrumentos no lo
+    borre. Los huérfanos NO degradan el semáforo: son crónicos y lo dejarían rojo
+    para siempre (ver `AppState.status`)."""
+    rep = _catalog_health_report(repo)
+    state = app.state.app_state
+    state.set_catalog_health(**rep)
+    if rep["seed_error"]:
+        await state.record_error(
+            f"catálogo vacío: la siembra desde el Excel falló ({rep['seed_error']})")
+    if rep["orphans"]:
+        logger.warning(
+            "catálogo: %d bono(s) invisibles en todos los paneles (tipo huérfano) — "
+            "publicado en /api/health: %s", len(rep["orphans"]),
+            " ".join(rep["orphans"][:20]))
+    return rep
+
+
 def _ensure_obligaciones_negociables() -> int:
     """Bootstrap de las ONs desde el CSV **sólo si la hoja está vacía**.
 
@@ -210,7 +260,21 @@ async def _startup_reconcile(app: FastAPI) -> None:
         # por el universo BYMA (mismo ISIN). Idempotente. Requiere byma_catalog cargado.
         legs = await asyncio.to_thread(_backfill_legs)
         if n or enriched or legs:
-            get_repo().reload()
+            # El reload va en su PROPIO try: es la carga del catálogo, no una
+            # tarea de enriquecimiento best-effort. Si falla, los paneles siguen
+            # sirviendo el cache viejo (sin las patas/ISIN recién escritos) y hasta
+            # ahora eso moría en el `except` global de abajo, que sólo loguea —
+            # el fallo de carga del repo no llegaba a NINGUNA superficie.
+            try:
+                get_repo().reload()
+            except Exception as e:  # noqa: BLE001
+                logger.exception("reload del catálogo falló tras el reconcile")
+                await app.state.app_state.record_error(
+                    f"catálogo: el reload falló — {type(e).__name__}: {e}")
+        # Republicar: el reconcile pudo dar de alta filas (acciones, ONs, patas) y
+        # con ellas tipos huérfanos nuevos. Corre igual si el reload falló: entonces
+        # el reporte describe el cache que efectivamente se está sirviendo.
+        await _publish_catalog_health(app, get_repo())
         logger.info("Startup: catálogo +%d filas, %d ISIN, %d especies BYMA, +%d patas.",
                     n, enriched, universe, legs)
     except asyncio.CancelledError:
@@ -435,6 +499,22 @@ async def _bei_loop(app: FastAPI) -> None:
             logger.exception("BEI loop iteration failed")
 
 
+def _crash_reporter(app: FastAPI):
+    """`on_crash` del supervisor → `AppState.record_loop_crash(name, reason)`.
+
+    Se le pasa el nombre del loop ESTRUCTURADO, no embebido en una frase: antes esto
+    armaba "loop {name} cayó ({reason}) — reiniciando" y `AppState` volvía a sacarle
+    el nombre con un regex, así que cambiar una palabra del mensaje (o un `reason`
+    largo, que la truncación a 300 chars cortaba antes del ')') desviaba la caída al
+    canal equivocado EN SILENCIO. Función de módulo —no un closure adentro del
+    lifespan— para que el wiring sea testeable sin levantar la app."""
+    async def _on_crash(name: str, reason: str) -> None:
+        # Que la caída deje rastro (registro por loop + badge si el loop es crítico):
+        # el incidente del 2026-09-01 duró 22hs justamente por ser mudo.
+        await app.state.app_state.record_loop_crash(name, reason)
+    return _on_crash
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from core.infrastructure.bondterminal_provider import BondTerminalProvider
@@ -478,6 +558,10 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001
         logger.warning("backup de catalog.db falló (no bloquea el arranque)", exc_info=True)
     repo = get_repo()  # warm: carga SQLite / siembra desde Excel
+    # Salud del catálogo → AppState (badge + /api/health). Incluye el fallo de la
+    # SIEMBRA: `CatalogRepository` ya no lo deja explotar el arranque (mataba también
+    # /login y /api/health, o sea la superficie donde se lee el motivo), lo publica.
+    await _publish_catalog_health(app, repo)
     # Providers para el popup de detalle (comparten caches class-level con el refresh).
     app.state.provider = Data912MarketDataProvider()
     app.state.indices = BCRAIndicesProvider(excel_repo=repo)
@@ -494,12 +578,7 @@ async def lifespan(app: FastAPI):
     stopping = asyncio.Event()
     app.state.stopping = stopping
     if not os.environ.get("MONITOR_DISABLE_LOOPS"):
-        async def _on_crash(name: str, reason: str) -> None:
-            # Que la caída deje rastro visible (badge del header + /api/health): el
-            # incidente del 2026-09-01 duró 22hs justamente por ser mudo.
-            await app.state.app_state.record_error(
-                f"loop {name} cayó ({reason}) — reiniciando")
-
+        _on_crash = _crash_reporter(app)
         # `_startup_reconcile` NO se supervisa: corre una vez y terminar es su contrato.
         # Los otros cinco son `while True` — si terminan, es una caída (ver supervisor.py).
         tasks = [asyncio.create_task(_startup_reconcile(app))]
@@ -529,7 +608,20 @@ async def lifespan(app: FastAPI):
         await app.state.client.aclose()
 
 
-app = FastAPI(title="Monitor Renta Fija AR", lifespan=lifespan)
+# Docs de OpenAPI APAGADAS por default: FastAPI las monta sobre el router raíz, fuera
+# de los `include_router(..., dependencies=[...])` donde vive TODA la auth, y el único
+# middleware global es GZip → /openapi.json publicaba el inventario completo de rutas
+# (incluida la ABM de usuarios y los nombres de campo de /source/credentials) sin
+# cookie. Para levantarlas en desarrollo: MONITOR_ENABLE_DOCS=1 (NUNCA en el droplet:
+# las re-expone públicamente, no las pone detrás del login).
+_DOCS = bool(os.environ.get("MONITOR_ENABLE_DOCS"))
+app = FastAPI(
+    title="Monitor Renta Fija AR",
+    lifespan=lifespan,
+    docs_url="/docs" if _DOCS else None,
+    redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
+)
 # GZip: el dataset de /fci/data es grande (~varios MB en JSON) → comprime ~6-7×.
 # compresslevel=6 (default de Starlette = 9): mismo tamaño de salida en la práctica,
 # ~mitad de CPU por request (medido sobre 4 MB: 107ms→43ms) — para TODA la app.
@@ -565,8 +657,34 @@ app.mount("/static", CachedStaticFiles(directory=str(Path(__file__).resolve().pa
 @app.exception_handler(RequiresLoginException)
 async def requires_login_exception_handler(request: Request, exc: RequiresLoginException):
     if request.headers.get("HX-Request"):
-        return JSONResponse(status_code=200, headers={"HX-Redirect": "/login"})
+        # `content` es POSICIONAL y obligatorio en JSONResponse: sin él esto tiraba
+        # TypeError y el fragmento HTMX de un usuario deslogueado terminaba en un 500
+        # (sin `HX-Redirect`, o sea sin volver al login) en vez de redirigir.
+        return JSONResponse({"detail": "login required"}, status_code=200,
+                            headers={"HX-Redirect": "/login"})
     return RedirectResponse(url="/login", status_code=302)
+
+
+@app.exception_handler(TabForbiddenException)
+async def tab_forbidden_exception_handler(request: Request, exc: TabForbiddenException):
+    """403 'sin permiso' — NUNCA un redirect a /login.
+
+    Falta de PERMISO ≠ falta de LOGIN: el usuario ya se autenticó, mandarlo al
+    formulario le dice 'sesión vencida' y lo deja reintentando la clave para siempre.
+    Se le muestra qué pestañas SÍ tiene (con link) para que salga de ahí."""
+    tabs = {tab: url for tab, url in auth_router._TAB_LANDING}
+    links = " · ".join(f'<a href="{escape(url)}">{escape(tab)}</a>'
+                       for tab, url in tabs.items() if tab in exc.allowed)
+    return HTMLResponse(
+        '<!doctype html><meta charset="utf-8"><title>Sin permiso</title>'
+        '<div style="font:14px system-ui;max-width:38rem;margin:12vh auto;padding:0 1rem">'
+        f'<h1 style="font-size:1.1rem">Sin permiso para «{escape(str(exc.tab))}»</h1>'
+        '<p>Tu usuario no tiene habilitada esta pestaña. No es un problema de sesión: '
+        'seguís logueado.</p>'
+        + (f'<p>Podés ir a: {links}</p>' if links
+           else '<p>No tenés ningún módulo habilitado — pedile acceso al administrador.</p>')
+        + '<p><a href="/logout">Cerrar sesión</a></p></div>',
+        status_code=403)
 
 
 app.include_router(auth_router.router)
@@ -602,12 +720,23 @@ def health(repo=Depends(get_repo), state=Depends(get_state)):
     # del error lo ve el badge del header (/health/badge), que está detrás de login.
     st = state.status()
     return {
+        # `status` habla de los PRECIOS (el refresh loop). La caída de un loop
+        # lateral (ratings/bei/price_history/options) NO lo degrada —eso sería
+        # gritar 'sin datos' con el snapshot fresco de hace 5s— pero se reporta
+        # aparte en `degraded_loops` para que ops la vea. Sólo NOMBRES: el motivo
+        # es el string crudo de una excepción y este endpoint es público.
         "status": "ok" if st["ok"] else "degraded",
         "instruments": len(repo.get_all_instruments()),
         "metrics_cached": len(state.metrics()),
         "is_stale": st["is_stale"],
         "age_seconds": st["age_seconds"],
         "last_refresh": st["last_refresh"],
+        "degraded_loops": st["degraded_loops"],
+        # Salud del CATÁLOGO: cuántos bonos quedaron invisibles (tipo huérfano),
+        # cuántos tienen el tipo ASUMIDO por un default ambiguo y si la siembra de
+        # bootstrap falló. Sólo CUENTAS y un booleano — el motivo crudo del fallo
+        # (paths del servidor) y el inventario de tickers se quedan del lado privado.
+        "catalog": st["catalog"],
         "ok": st["ok"],
     }
 

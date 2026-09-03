@@ -112,7 +112,21 @@ async def source_credentials(request: Request, user: str = Form(...), password: 
     except Exception as e:  # noqa: BLE001 — auth/red → feedback al usuario, no 500
         return _err(f"No se pudo validar la clave: {str(e)[:160]}")
 
-    save_credentials(user, password)            # .env + os.environ
+    # `save_credentials` valida su propio contrato (no-vacíos, sin separadores de línea
+    # ni `=` en el usuario) y PROPAGA ValueError. Sin este try la excepción salía por
+    # arriba y, como `apps/web/app.py` no registra `exception_handler(ValueError)`,
+    # terminaba en un **500** con traza: un usuario BYMA con `=` en el nombre pasa el
+    # probe OAuth (login válido) y recién moría acá. Es entrada del usuario → 400 con el
+    # motivo, como el resto del handler. (Contrato ligado por
+    # tests/test_rem_R2_infra_credentials_contrato.py, que compara el AST de este
+    # router contra la marca `STATUS-HTTP-REAL` de `save_credentials`.)
+    try:
+        save_credentials(user, password)        # .env + os.environ
+    except ValueError as e:
+        return _err(str(e))
+    except OSError as e:                        # .env no escribible (permisos, disco)
+        logger.warning("No se pudo persistir el .env de BYMA: %s", e)
+        return _err(f"No se pudo guardar la clave en .env: {e}")
     hub.set_source(probe)                        # ya logueado (reusa el token validado)
     app_state.set_data_source(hub.active_mode, hub.active_label, hub.is_delayed)
     await app_state._notify()

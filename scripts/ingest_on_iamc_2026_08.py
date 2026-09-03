@@ -13,8 +13,12 @@ VALIDACIÓN (criterio de aceptación, mismo método que ingest_iamc_2026_08):
 se compara contra lo que PUBLICA el IAMC a la liquidación 31/08/2026 —
 intereses corridos, V.Téc y TIR. El bono que no reproduce esos números NO se carga.
 
+VERIFICADO (`op_guards.guard_write`): si el server está vivo o el snapshot pre-op
+falló, no escribe — el alta REEMPLAZA el cronograma completo de cada bono.
+
     py -3.12 scripts/ingest_on_iamc_2026_08.py --dry-run
     py -3.12 scripts/ingest_on_iamc_2026_08.py
+    py -3.12 scripts/ingest_on_iamc_2026_08.py --force     # saltea los guards
 """
 
 from __future__ import annotations
@@ -32,9 +36,35 @@ from dateutil.relativedelta import relativedelta  # noqa: E402
 from core.domain.models import Cashflow, Instrument, MarketSnapshot  # noqa: E402
 from core.domain.pricing import metrics  # noqa: E402
 from core.domain.services import FinancialEngine  # noqa: E402
+from scripts.op_guards import guard_write  # noqa: E402
 
 SETTLE = date(2026, 8, 31)
 SHEET = "Obligaciones_Negociables"
+ORIGEN = "IAMC 2026-08-28 (deuda corporativa)"
+
+
+def merge_raw_fields(actual: dict | None, ley_aplicable: str | None,
+                     cupon_anual_pct) -> dict:
+    """Mezcla lo que escribe ESTE script sobre el `raw_fields` que ya tenga la fila.
+
+    POR QUÉ MERGE Y NO ASIGNACIÓN: `raw_fields` es un blob COMPARTIDO por varios
+    productores — `serie_clase` (scripts de clases), `sector_override` (ABM) y el
+    sub-blob `byma` (ficha técnica: emisor/garantía/monto residual, que consume
+    `byma/catalog_products.py`) viven ahí. Asignarlo entero borraba todo eso en
+    cada re-corrida, sin aviso y sin forma de recuperarlo salvo backup. Es el
+    mismo bug que a115f7e arregló en el script hermano `ingest_iamc_2026_08`.
+
+    `ley_aplicable` sólo se pisa si viene: el motor elige MEP (ley AR) vs CCL
+    (Extranjera) con ese campo, así que sobrescribirlo con None cambiaría el
+    pricing de la pata pesos. Devuelve un dict NUEVO (el ORM detecta el cambio del
+    JSON por identidad + `flag_modified`)."""
+    rf = dict(actual or {})
+    rf["origen"] = ORIGEN
+    if ley_aplicable:
+        rf["ley_aplicable"] = ley_aplicable
+    if cupon_anual_pct is not None:
+        rf["cupon_anual_pct"] = cupon_anual_pct
+    return rf
 
 # FX implícito del informe (cierre_ars / precio_usd de los globales donde IAMC publica
 # ambos: AL30 1535.27, GD30 1535.26, AE38 1535.29). Las ON cotizan en pesos y la
@@ -215,7 +245,14 @@ def validar(row: dict) -> dict:
     return out
 
 
-def main(dry_run: bool = False) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
+    # Preflight ANTES de validar nada: el alta REEMPLAZA el cronograma completo de
+    # cada bono (delete + insert de cashflows) y pisa campos del ORM, así que sin
+    # red de seguridad —o con el monitor vivo, que seguiría sirviendo el catálogo
+    # cacheado— no corre. El dry-run no escribe: se saltea el preflight.
+    if not dry_run and (rc := guard_write("pre-on-iamc", force=force)):
+        return rc
+
     from on_data_2026_08_28 import ONS
 
     # Se procesan TODOS los que tienen cronograma derivable: bullets + amortizables
@@ -248,15 +285,11 @@ def main(dry_run: bool = False) -> int:
         print("\nNada que cargar.")
         return 1
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
+    from sqlalchemy.orm.attributes import flag_modified
+
     from core.infrastructure.db.catalog_repository import init_db
     from core.infrastructure.db.engine import SessionLocal
     from core.infrastructure.db.models import CashflowORM, InstrumentORM
-
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-on-iamc")
-    print("\nbackup pre-op: %s" % snap)
 
     init_db()
     creados, actualizados = [], []
@@ -278,9 +311,11 @@ def main(dry_run: bool = False) -> int:
             orm.payment_frequency = inst.payment_frequency
             orm.day_count = inst.day_count
             orm.category = "Obligaciones Negociables"
-            orm.raw_fields = {"origen": "IAMC 2026-08-28 (deuda corporativa)",
-                              "ley_aplicable": inst.ley_aplicable,
-                              "cupon_anual_pct": row["tasa"]}
+            # MERGE (no asignación): ver merge_raw_fields — el blob lo comparten
+            # varios productores (serie_clase, sector_override, ficha byma).
+            orm.raw_fields = merge_raw_fields(orm.raw_fields, inst.ley_aplicable,
+                                              row["tasa"])
+            flag_modified(orm, "raw_fields")
             orm.cashflows = [
                 CashflowORM(ticker=t, fecha_pago=c.date,
                             amortizacion=c.amortization, cupon_interes=c.interest)
@@ -300,4 +335,5 @@ def main(dry_run: bool = False) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))

@@ -9,6 +9,43 @@ Capitalización MENSUAL con day-count 30/360:
     Pago a vto = VNO × (1 + TEM_max)^N_meses
     DUAL: TEM_max = max(TAMAR_TEM, fixed_TEM_mensual)
     DUAL_CER_TAMAR: max(rail TAMAR monthly, rail CER ratio × (1+spread)^years)
+
+======================================================================
+CONTRATO DEL V.TÉC / PAYOFF DE **DUAL_CER_TAMAR** — LEER ANTES DE TOCAR
+======================================================================
+Esta cadena ya se rompió DOS veces (se perdió el lag CER al unificar el V.Téc
+contra el payoff; se perdió el escalón de liquidación al restaurar el lag). Son
+CUATRO pasos, en este orden, y cada uno mueve la paridad del panel:
+
+  1. LIQUIDACIÓN  T+N   `settlement_byma_date(end, lag=cer_settle_lag)`
+     El V.Téc de un bono indexado se paga contra el CER de su **liquidación**, no
+     el de la fecha de rueda: `calculate_technical_value` recibe `ref` = fecha de
+     referencia (hoy) + `settle_lag` (1 = 24hs, 0 = CI) y el ref CER arranca en
+     T+N. Es la MISMA convención que `pricing/base.py` aplica a todo bono CER.
+     Sólo corre en el camino V.Téc (`to_date == ref_date`, `cer_settle_lag`
+     provisto); el payoff a vencimiento ya está parado en la fecha de pago, así
+     que va con `cer_settle_lag=None` (sin escalón).
+
+  2. LAG CER 10 HÁB.    `cer_reference_date(<paso 1>, instrument.cer_lag)`
+     NT8/2024 (`agents.md` › "Bonos CER"): el CER que indexa un pago de fecha D
+     es el de `cer_lag` días hábiles BYMA ANTES de D. Corre en los DOS caminos
+     (V.Téc y payoff proyectado). Sin él, el riel CER se sobrestima ~0,9% con CER
+     a 2%/mes (14-15 días corridos de indexación de más).
+
+  3. SPREAD             `× (1 + cer_spread)^years`
+     `cer_spread` es el spread contractual del riel CER (sólo DUAL_CER_TAMAR,
+     serie TXMJ*), devengado act/365.25 desde la emisión. Ignorarlo hacía que la
+     TIR saliera idéntica con spread 0.00 y 0.04.
+
+  4. MAX DE RIELES      `max(payoff_tamar, payoff_cer)`
+     agents.md › "Bonos TAMAR": *"Payoff a vto = max(rail_TAMAR, CER_ratio ×
+     (1+cer_spread)^years)"*. Vale también para el V.Téc devengado al settle.
+
+Es decir: **settlement T+N → lag CER 10 hábiles → spread → max de rieles**.
+Guardas: `tests/test_fin_Z1_financiero_vtec_settlement.py` (los dos escalones),
+`tests/test_rem_R1_financiero_cer_lag.py` (el lag en los dos caminos) y
+`tests/test_aud_B_financiero_dual_cer_tamar.py` (spread + max + round-trip).
+El espejo del motor congelado vive en `tests/_legacy_engine.py`.
 """
 
 from __future__ import annotations
@@ -18,7 +55,9 @@ from datetime import date, timedelta
 from typing import Optional
 
 from core.domain.clock import today as _domain_today
-from core.domain.conventions import days_30_360, tamar_tem
+from core.domain.conventions import (
+    cer_reference_date, days_30_360, settlement_byma_date, tamar_tem,
+)
 from core.domain.xirr import _JULIAN_YEAR
 
 
@@ -114,9 +153,16 @@ def avg_tamar_tna(
 def tamar_dual_payoff_at(
     instrument, ref_date: date, indices_provider,
     *, tamar_forecast: Optional[float] = None, to_date: Optional[date] = None,
+    cer_settle_lag: Optional[int] = None,
 ) -> Optional[float]:
     """Valor per-100 del bono TAMAR PURO/DUAL/DUAL_CER_TAMAR a fecha `to_date`
-    (default = maturity). Si `to_date == ref_date`, devuelve V.Téc al settle."""
+    (default = maturity). Si `to_date == ref_date`, devuelve V.Téc al settle.
+
+    `cer_settle_lag` (sólo DUAL_CER_TAMAR): plazo BYMA T+N que se aplica a `end`
+    ANTES del lag CER — paso 1 del contrato del docstring del módulo. `None`
+    (default) = sin escalón, que es lo correcto para el payoff a vencimiento
+    (`end` ya es la fecha de pago). El camino V.Téc pasa `ctx.settle_lag`
+    (1 = 24hs, 0 = CI)."""
     if instrument is None or indices_provider is None:
         return None
     if not instrument.emission_date:
@@ -149,7 +195,21 @@ def tamar_dual_payoff_at(
     # DUAL_CER_TAMAR: comparar contra rail CER al vencimiento.
     if instrument.is_dual_cer_tamar and instrument.cer_base and instrument.cer_base > 0:
         cer_spread = instrument.cer_spread or 0.0
-        cer_at_end = project_cer_at(end, indices_provider)
+        # PASOS 1 y 2 del contrato (ver docstring del módulo), EN ESTE ORDEN:
+        #   1. ESCALÓN DE LIQUIDACIÓN T+N — sólo en el camino V.Téc, donde `end`
+        #      es la fecha de RUEDA y el bono se indexa por el CER de su
+        #      liquidación (misma convención que `pricing/base.py` para todo CER).
+        #      El payoff a vencimiento pasa `cer_settle_lag=None`: `end` ya es la
+        #      fecha de pago y un T+1 de más adelantaría la indexación un día.
+        #   2. LAG DE 10 DÍAS HÁBILES BYMA (NT8/2024, `agents.md` › "Bonos CER"):
+        #      el CER que indexa un pago de fecha D es el de `cer_lag` hábiles
+        #      ANTES. Vale para los DOS caminos. Sin el lag el riel CER se
+        #      sobrestima ~0,9% con CER a 2%/mes (14-15 días corridos de más) y el
+        #      error va derecho a la paridad cuando ese riel domina el `max`.
+        cer_end = (end if cer_settle_lag is None
+                   else settlement_byma_date(end, lag=cer_settle_lag))
+        cer_at_end = project_cer_at(
+            cer_reference_date(cer_end, instrument.cer_lag), indices_provider)
         if cer_at_end:
             years = (end - instrument.emission_date).days / _JULIAN_YEAR
             payoff_cer = 100.0 * (cer_at_end / instrument.cer_base) * (1.0 + cer_spread) ** years

@@ -131,6 +131,24 @@
   };
 
   function _fmt(v, d) { if (v == null || isNaN(v)) return "—"; return Number(v).toFixed(d == null ? 2 : d); }
+
+  /* Premio de entrada de una pata: ask si long, bid si short, con fallback a
+     mid → last → 0.01 cuando ese lado no tiene punta (bid/ask llegan en 0.00 desde
+     chain.py y nada los filtra: ~26% de los contratos vivos no tienen ask).
+     ESPEJO EXACTO de `core/domain/options/analytics.py::_resolve_premium`, que es
+     lo que usa el bloque P(profit)/EV del mismo panel — sin esto, las stats de la
+     izquierda (Costo / Máx pérdida / Break-evens) se calculaban con premio 0 y una
+     estrategia aparentaba no poder perder. */
+  function optEntryPx(o, qty) {
+    var primary = qty > 0 ? o.ask : o.bid;
+    if (primary > 0) return primary;
+    if (o.mid > 0) return o.mid;
+    if (o.last > 0) return o.last;
+    return 0.01;                 // nominal positivo (misma convención del server)
+  }
+  /* true si la punta que corresponde a la pata está vacía → el premio salió de un
+     fallback y hay que avisarlo (el usuario clickeó un bid/ask que NO es su entrada). */
+  function optNoQuote(o, qty) { return !((qty > 0 ? o.ask : o.bid) > 0); }
   function _fmtInt(v) { return v == null ? "—" : Math.round(v).toLocaleString("es-AR"); }
 
   // Listener: cada vez que el fragment de chain se cambia, refrescamos cache + redrawn.
@@ -195,10 +213,16 @@
     }, null);
   }
   function optBuildPreset(name) {
+    // CONTRATO: una clave por cada nombre de core/domain/options/strategies.py
+    // ::PRESET_NAMES (el router los renderiza como botones). Un nombre sin
+    // builder devuelve [] y BORRA la estrategia armada.
+    // Lo ata tests/test_rem_R1_financiero_option_presets.py.
     var s = OPT.spot;
     var presets = {
       long_call: function () { return [["C", s * 1.02, 1]]; },
       long_put: function () { return [["V", s * 0.98, 1]]; },
+      short_call: function () { return [["C", s * 1.02, -1]]; },
+      short_put: function () { return [["V", s * 0.98, -1]]; },
       covered_call: function () { return [["C", s * 1.03, -1]]; },
       bull_call_spread: function () { return [["C", s, 1], ["C", s * 1.08, -1]]; },
       bear_put_spread: function () { return [["V", s, 1], ["V", s * 0.92, -1]]; },
@@ -227,13 +251,18 @@
       box.innerHTML = OPT.legs.map(function (l, i) {
         var o = byTk[l.ticker]; if (!o) return "";
         var isLong = l.qty > 0;
-        var px = isLong ? o.ask : o.bid;
+        var px = optEntryPx(o, l.qty);
+        var noQuote = optNoQuote(o, l.qty);
+        var warn = noQuote
+          ? ' <span class="neg" title="Sin ' + (isLong ? 'oferta (ask)' : 'demanda (bid)') +
+            ': se valúa a ' + _fmt(px) + ' (mid/last), no a la punta de la chain">⚠ sin punta</span>'
+          : '';
         var kindLabel = o.kind === "C" ? "CALL" : "PUT";
         return '<div class="opt-leg">' +
           '<span class="opt-leg-dir ' + (isLong ? 'long' : 'short') + '">' + (isLong ? '↑ LONG' : '↓ SHORT') + '</span>' +
           '<span class="opt-leg-kind ' + o.kind + '">' + kindLabel + '</span>' +
           '<span class="opt-leg-info"><b>' + o.underlying + '</b> @ K ' + _fmt(o.strike, 0) +
-            ' <span class="dim">' + o.month + ' · px ' + _fmt(px) + '</span></span>' +
+            ' <span class="dim">' + o.month + ' · px ' + _fmt(px) + '</span>' + warn + '</span>' +
           '<span class="opt-leg-qty">' +
             '<button class="opt-qb" onclick="OPT.legs[' + i + '].qty--; OPT.legs = OPT.legs.filter(x => x.qty !== 0); renderStrategy()">−</button>' +
             '<span class="opt-leg-q">' + (l.qty > 0 ? '+' : '') + l.qty + '</span>' +
@@ -285,12 +314,13 @@
   function drawPayoff(byTk) {
     var spot = OPT.spot, lo = spot * 0.6, hi = spot * 1.4;
     var xs = [], ys = [], cost = 0;
-    var d = 0, g = 0, th = 0, vg = 0;
+    var d = 0, g = 0, th = 0, vg = 0, noQuote = 0;
     var haveG = false, haveT = false, haveV = false;
     var strikes = [];
     OPT.legs.forEach(function (l) {
       var o = byTk[l.ticker]; if (!o) return;
-      var entry = l.qty > 0 ? o.ask : o.bid;
+      var entry = optEntryPx(o, l.qty);
+      if (optNoQuote(o, l.qty)) noQuote += 1;
       cost += l.qty * entry;
       if (o.delta != null) d += l.qty * o.delta;
       if (o.gamma != null) { g += l.qty * o.gamma; haveG = true; }
@@ -305,7 +335,7 @@
       OPT.legs.forEach(function (l) {
         var o = byTk[l.ticker]; if (!o) return;
         var intr = o.kind === "C" ? Math.max(0, S - o.strike) : Math.max(0, o.strike - S);
-        var entry = l.qty > 0 ? o.ask : o.bid;
+        var entry = optEntryPx(o, l.qty);
         y += l.qty * (intr - entry);
       });
       ys.push(y);
@@ -327,7 +357,12 @@
     sCost.className = "v " + (!OPT.legs.length ? "" : cost < 0 ? "pos" : "neg");
     sCost.title = !OPT.legs.length ? "" : (cost < 0
       ? "Crédito neto: recibís " + _fmt(-cost, 2)
-      : "Débito neto: pagás " + _fmt(cost, 2));
+      : "Débito neto: pagás " + _fmt(cost, 2))
+      + (noQuote ? " · ⚠ " + noQuote + " pata(s) sin punta: valuadas a mid/last" : "");
+    // Aviso visible (no sólo en el tooltip) de que hay patas sin punta de mercado.
+    document.getElementById("strat-info").textContent =
+      (OPT.legs.length ? OPT.legs.length + " leg" + (OPT.legs.length > 1 ? "s" : "") : "vacío")
+      + (noQuote ? " · ⚠ " + noQuote + " sin punta" : "");
     document.getElementById("s-max").textContent = OPT.legs.length ? _fmt(maxG) : "—";
     document.getElementById("s-min").textContent = OPT.legs.length ? _fmt(maxL) : "—";
     document.getElementById("s-be").textContent = bes.length

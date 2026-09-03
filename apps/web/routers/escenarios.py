@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse
 
 from apps.web import cartera_store
 from apps.web.deps import get_fx, get_state
-from apps.web.routers.cartera import _GRUPO, _metrics_by_ticker
+from apps.web.routers.cartera import _fx_rates, _GRUPO, _metrics_by_ticker
 from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.domain import portfolio, scenarios
 from core.domain.portfolio import position_currency
@@ -44,12 +44,18 @@ def _market_rows(state, d_tir_bps: float, d_fx_pct: float) -> list:
 
 
 def _cartera_pnl(state, fx, d_tir_bps: float, d_fx_pct: float) -> dict:
+    """P&L del libro ante el escenario, valuado EXACTAMENTE como /cartera.
+
+    Usa el mismo helper `cartera._fx_rates` (MEP para las …D, CCL para las …C) en
+    vez del mayorista/A3500: con el oficial, el MISMO libro valía distinto en
+    /cartera y en /escenarios (brecha típica del 5% al 30%), y como
+    `portfolio_shock` pondera cada ΔP por `market_value_ars`, el sesgo se
+    propagaba al P&L agregado y al ranking de contribuciones.
+    """
     holdings = cartera_store.list_holdings()
-    try:
-        fx_rate = fx.get_mayorista_venta() if fx else None
-    except Exception:
-        fx_rate = None
-    pf = portfolio.build_portfolio(holdings, _metrics_by_ticker(state), fx_usd_ars=fx_rate)
+    mep, ccl = _fx_rates(fx)
+    pf = portfolio.build_portfolio(holdings, _metrics_by_ticker(state),
+                                   fx_usd_ars=mep, fx_cable_ars=ccl)
     return scenarios.portfolio_shock(pf["positions"], d_tir_bps=d_tir_bps, d_fx_pct=d_fx_pct)
 
 

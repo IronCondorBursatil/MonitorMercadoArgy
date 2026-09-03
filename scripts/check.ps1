@@ -1,8 +1,8 @@
 # Gate de calidad local (M0.2): ruff + pytest. Falla (exit 1) si cualquiera falla.
 #
-# No hay CI ni remoto (repo local). Este es el "¿está verde el repo?" canónico —
-# correrlo antes de cerrar una branch o mergear a master. Equivale a lo que haría
-# un CI gate, ejecutado a mano.
+# No hay CI. Este es el "¿está verde el repo?" canónico — correrlo antes de pushear a
+# origin/main (github.com/IronCondorBursatil/MonitorMercadoArgy): el deploy del droplet
+# lo hace deploy.sh desde main. Equivale a un CI gate, ejecutado a mano.
 #
 # Uso:
 #   pwsh scripts/check.ps1            # ruff + pytest completo

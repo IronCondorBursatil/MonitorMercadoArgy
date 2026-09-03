@@ -20,13 +20,22 @@ from apps.web.templates import TEMPLATES as _TEMPLATES
 
 router = APIRouter()
 
-# Bytes YA gzippeados del dataset, memoizados junto a su identidad. El dataset son
-# ~4 MB de JSON: sin esto, CADA visita a /fci pagaba json.dumps (~92 ms) + gzip del
-# middleware (~128 ms) aunque el dataset estuviera cacheado — y el GZipMiddleware
-# comprime DENTRO del event loop, o sea que frenaba el SSE y todos los paneles.
-# Se memoiza por el mismo `generated_at` del dataset, así se invalida solo.
+# Bytes YA gzippeados del dataset, memoizados junto al dataset que los produjo. El
+# dataset son ~4 MB de JSON: sin esto, CADA visita a /fci pagaba json.dumps (~92 ms) +
+# gzip del middleware (~128 ms) aunque el dataset estuviera cacheado — y el
+# GZipMiddleware comprime DENTRO del event loop, o sea que frenaba el SSE y todos los
+# paneles.
+#
+# La clave es la IDENTIDAD del objeto (`is`), no `(generated_at, len(funds))`: ninguno
+# de esos dos cambia entre un dataset degradado y uno sano (mismo corte CAFCI, misma
+# cantidad de fondos), así que la clave vieja pisaba el guard deliberado de
+# `fci_service` de "NO memoizar un dataset degradado" — el service reconstruía bien y
+# el router seguía sirviendo los bytes sin AUM hasta el corte del día siguiente.
+# `get_fci_dataset` devuelve EL MISMO dict mientras su cache sea válido (y uno nuevo
+# cuando rebuildea: dataset degradado, rollover de día, corte nuevo, force=True), o sea
+# que la identidad hereda exactamente su política de cacheabilidad.
 _GZ_LOCK = threading.Lock()
-_GZ: dict = {"key": None, "body": None}
+_GZ: dict = {"src": None, "body": None}
 
 
 @router.get("/fci", response_class=HTMLResponse)
@@ -42,15 +51,14 @@ def fci_data(request: Request, cafci=Depends(get_cafci),
     if "gzip" not in request.headers.get("accept-encoding", "").lower():
         return JSONResponse(ds)
 
-    key = ((ds.get("meta") or {}).get("generated_at"), len(ds.get("funds") or ()))
     with _GZ_LOCK:
-        body = _GZ["body"] if _GZ["key"] == key else None
+        body = _GZ["body"] if _GZ["src"] is ds else None
     if body is None:
         body = gzip.compress(
             json.dumps(ds, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
             compresslevel=6)
         with _GZ_LOCK:
-            _GZ["key"], _GZ["body"] = key, body
+            _GZ["src"], _GZ["body"] = ds, body
     # Content-Encoding ya seteado → GZipMiddleware se saltea la respuesta (no
     # re-comprime): starlette/middleware/gzip.py chequea justamente ese header.
     return Response(content=body, media_type="application/json",

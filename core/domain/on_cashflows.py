@@ -11,6 +11,10 @@ Convención (alineada al glosario IAMC de renta fija):
   - Amortización bullet (1 cuota = VR al vto) o en `amort_count` cuotas iguales
     de capital, la última al vencimiento.
   - Cupón cero → único pago de VR al vencimiento.
+  - **Períodos CORTOS (stubs)**: el cupón se prorratea ACT/365 por los días reales
+    del período (misma convención que `scripts/fix_on_plc2_schedule.py`). Aplica al
+    primer período (emisión → primer cupón) y al último cuando el vto no cae en la
+    grilla. Sin esto, AERBO (período final de 175 días) pagaba un semestre entero.
 
 Montos en base 100 de VN (el precio del ticker …D viene en USD base 100).
 """
@@ -66,6 +70,28 @@ def amort_schedule(prox_cap: date, maturity: date, capital_freq: int,
     return sorted(set(out))
 
 
+# Tolerancia (días) para decidir si un período es REGULAR. `relativedelta` clampea
+# el fin de mes (30-Sep + 6m = 30-Mar, no 31-Mar), así que un período regular puede
+# quedar hasta ~3 días corrido de la fecha teórica sin ser un stub. Los stubs reales
+# del universo ON se desvían decenas de días (AERBO: 175 vs 183; AA2000-2031: 4 vs 92).
+_STUB_TOL_DAYS = 5
+
+
+def _period_rate(coupon_rate: float, cfreq: int, prev: date, d: date,
+                 months: int) -> float:
+    """Tasa devengada del período `(prev, d]`.
+
+    Período REGULAR → `coupon_rate / cfreq` (cupón completo, como siempre).
+    Período CORTO/LARGO (stub) → prorrateo ACT/365 por los días reales. Es la
+    convención declarada para las ONs del informe (base ACT/365) y la que ya aplica
+    `scripts/fix_on_plc2_schedule.py` al mismo patrón en PLC2.
+    """
+    regular_end = prev + relativedelta(months=months)
+    if abs((d - regular_end).days) <= _STUB_TOL_DAYS:
+        return coupon_rate / cfreq
+    return coupon_rate * (d - prev).days / 365.0
+
+
 def build_on_cashflows(
     emission: date,
     maturity: date,
@@ -91,7 +117,8 @@ def build_on_cashflows(
         return [Cashflow(date=maturity, amortization=vr, interest=0.0)]
 
     cfreq = coupon_freq if coupon_freq and coupon_freq > 0 else 1
-    coupon_set = set(_coupon_dates(emission, maturity, max(12 // cfreq, 1), next_coupon))
+    months = max(12 // cfreq, 1)
+    coupon_set = set(_coupon_dates(emission, maturity, months, next_coupon))
 
     dates = sorted({d for d in (amort_dates or [maturity]) if d}) or [maturity]
     per = vr / len(dates)
@@ -99,8 +126,13 @@ def build_on_cashflows(
 
     cfs: List[Cashflow] = []
     outstanding = vr
+    prev = emission          # inicio del período de devengamiento corriente
     for d in sorted(coupon_set | set(amort_map)):
-        interest = outstanding * coupon_rate / cfreq if d in coupon_set else 0.0
+        if d in coupon_set:
+            interest = outstanding * _period_rate(coupon_rate, cfreq, prev, d, months)
+            prev = d         # sólo un pago de cupón cierra el período
+        else:
+            interest = 0.0
         amort = amort_map.get(d, 0.0)
         outstanding = max(outstanding - amort, 0.0)
         cfs.append(Cashflow(date=d, amortization=amort, interest=interest))

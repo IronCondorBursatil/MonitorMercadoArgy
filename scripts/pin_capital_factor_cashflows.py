@@ -26,8 +26,9 @@ from apps.web.instruments_abm import get_instrument, list_instruments, save_inst
 from config.settings import settings
 from core.domain.models import MarketSnapshot
 from core.domain.services import FinancialEngine as FE
-from core.infrastructure.db.backup import backup_db, restore_db
+from core.infrastructure.db.backup import restore_db
 from core.infrastructure.db.catalog_repository import CatalogRepository
+from scripts.op_guards import guard_write_snapshot
 
 SETTLE = date(2026, 6, 10)
 
@@ -73,7 +74,7 @@ def _delta(a, b):
     return abs(a - b)
 
 
-def main(dry: bool) -> int:
+def main(dry: bool, force: bool = False) -> int:
     targets = []
     for it in list_instruments():
         g = get_instrument(it["key"]) or {}
@@ -91,8 +92,13 @@ def main(dry: bool) -> int:
         print("\n(dry-run: no se escribe nada)" if dry else "\nNada para hacer.")
         return 0
 
-    bkp = backup_db(settings.catalog_db, settings.backup_dir, keep=0, tag="pre-explicit-capf")
-    print(f"\nBackup pre-op: {bkp}\n")
+    # El snapshot NO puede ser opcional: si falla, `bkp` queda en None y el rollback
+    # de más abajo explota (`Path(None)` → TypeError) con el catálogo ya mutado a
+    # medias. `guard_write_snapshot` verifica el retorno (y el server vivo).
+    rc, bkp = guard_write_snapshot("pre-explicit-capf", force=force)
+    if rc:
+        return rc
+    print()
 
     def _tickers(fields):
         return {str(fields.get(k)).upper() for k in ("ticker", "ticker_ars", "ticker_mep",
@@ -119,6 +125,10 @@ def main(dry: bool) -> int:
             failures.append(tk)
 
     if failures:
+        if bkp is None:   # sólo con --force: el operador aceptó correr sin red
+            print(f"\n⚠ Cambios detectados en {failures} y NO hay backup (--force): "
+                  "restaurá a mano con scripts/restore_catalog.py.")
+            return 1
         print(f"\n⚠ Cambios detectados en {failures} → RESTAURANDO backup (sin cambios).")
         restore_db(bkp, settings.catalog_db)
         return 1
@@ -130,4 +140,5 @@ def main(dry: bool) -> int:
 if __name__ == "__main__":
     # `--dry` se mantiene como alias del viejo nombre; `--dry-run` es el del resto
     # de los scripts, y antes caía en la rama que ESCRIBE.
-    raise SystemExit(main(dry=bool({"--dry", "--dry-run"} & set(sys.argv))))
+    raise SystemExit(main(dry=bool({"--dry", "--dry-run"} & set(sys.argv)),
+                          force="--force" in sys.argv))

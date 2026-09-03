@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 import httpx
 
@@ -20,6 +20,13 @@ from core.infrastructure._tls import should_verify
 from core.infrastructure.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
+
+# `httpx.USE_CLIENT_DEFAULT` es el centinela de httpx para "usar el timeout
+# configurado en el cliente". Pasar `None` NO es equivalente: significa
+# `httpx.Timeout(None)`, o sea SIN connect/read/write/pool timeout — un request
+# colgado no vuelve nunca y el refresh loop queda awaiteando para siempre.
+_USE_CLIENT_DEFAULT = httpx.USE_CLIENT_DEFAULT
+_TimeoutArg = Union[float, httpx.Timeout, None, type(_USE_CLIENT_DEFAULT)]
 
 
 class ResilientClient:
@@ -33,8 +40,11 @@ class ResilientClient:
         transport: Optional[httpx.AsyncBaseTransport] = None,
         user_agent: str = "monitor/2.0",
     ):
-        # Verificación TLS por host (ver _tls.py): verificada por defecto, sin verificar
-        # solo para hosts con cadena rota (BYMA addin). Dos clientes pooled (misma
+        # Verificación TLS por host (ver _tls.py): se verifica SIEMPRE por default —
+        # desde 2026-09-03 `_DEFAULT_NO_VERIFY` está VACÍA (los tres hosts BYMA
+        # encadenan OK con certifi), así que `_client_noverify` queda DORMIDO salvo
+        # que un operador exceptúe un host por MONITOR_TLS_NO_VERIFY_HOSTS.
+        # Dos clientes pooled (misma
         # factory — anti-drift); se elige por URL. Si se inyecta un transport (tests
         # con MockTransport), se usa para ambos — la verificación es irrelevante bajo
         # mock. Sin follow_redirects (default httpx): el redirect cross-host con el
@@ -65,7 +75,7 @@ class ResilientClient:
         return self._breakers[host], self._sems[host]
 
     async def get_json(self, url: str, *, source: Optional[str] = None, retries: int = 1,
-                       headers: Optional[dict] = None, timeout: Optional[float] = None):
+                       headers: Optional[dict] = None, timeout: _TimeoutArg = _USE_CLIENT_DEFAULT):
         """GET → JSON con breaker + semáforo + retry transitorio. Propaga
         CircuitOpenError si el breaker del host está abierto (caller usa stale)."""
         return await self._request_json("GET", url, retries=retries, headers=headers,
@@ -73,14 +83,14 @@ class ResilientClient:
 
     async def post_json(self, url: str, *, json=None, source: Optional[str] = None,
                         retries: int = 1, headers: Optional[dict] = None,
-                        timeout: Optional[float] = None):
+                        timeout: _TimeoutArg = _USE_CLIENT_DEFAULT):
         """POST (body JSON) → JSON con breaker + semáforo + retry transitorio.
         Mismo contrato que get_json (BYMA usa POST en casi todos sus endpoints)."""
         return await self._request_json("POST", url, json=json, retries=retries,
                                         headers=headers, timeout=timeout)
 
     async def _request_json(self, method: str, url: str, *, json=None, retries: int = 1,
-                            headers: Optional[dict] = None, timeout: Optional[float] = None):
+                            headers: Optional[dict] = None, timeout: _TimeoutArg = _USE_CLIENT_DEFAULT):
         breaker, sem = self._host_guard(url)
         client = self._client if should_verify(url) else self._client_noverify
         async with breaker:

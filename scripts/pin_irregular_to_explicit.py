@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from apps.web.instruments_abm import get_instrument, list_instruments, save_instrument  # noqa: E402
 from config.settings import settings  # noqa: E402
-from core.infrastructure.db.backup import backup_db, restore_db  # noqa: E402
+from core.infrastructure.db.backup import restore_db  # noqa: E402
+from scripts.op_guards import guard_write_snapshot  # noqa: E402
 
 DROP = ("prox_cupon", "amort inicio", "amort cantidad")
 
@@ -32,7 +33,7 @@ def _tk(f):
             "ticker_ccl") if f.get(k)}
 
 
-def main() -> int:
+def main(force: bool = False) -> int:
     targets = []
     for it in list_instruments():
         g = get_instrument(it["key"]) or {}
@@ -43,8 +44,13 @@ def main() -> int:
     if not targets:
         return 0
 
-    bkp = backup_db(settings.catalog_db, settings.backup_dir, keep=0, tag="pre-drop-irregular")
-    print(f"Backup pre-op: {bkp}\n")
+    # El snapshot NO puede ser opcional: si falla, `bkp` queda en None y el rollback
+    # de más abajo explota (`Path(None)` → TypeError) con el catálogo ya mutado a
+    # medias. `guard_write_snapshot` verifica el retorno (y el server vivo).
+    rc, bkp = guard_write_snapshot("pre-drop-irregular", force=force)
+    if rc:
+        return rc
+    print()
 
     fails = []
     for tk, sheet, g in targets:
@@ -61,6 +67,10 @@ def main() -> int:
             fails.append(tk)
 
     if fails:
+        if bkp is None:   # sólo con --force: el operador aceptó correr sin red
+            print(f"\n⚠ {len(fails)} bonos cambiaron y NO hay backup (--force): "
+                  "restaurá a mano con scripts/restore_catalog.py.")
+            return 1
         print(f"\n⚠ {len(fails)} bonos cambiaron → RESTAURANDO backup (sin cambios).")
         restore_db(bkp, settings.catalog_db)
         return 1
@@ -70,4 +80,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(force="--force" in sys.argv))

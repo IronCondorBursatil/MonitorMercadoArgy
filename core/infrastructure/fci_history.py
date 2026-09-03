@@ -5,7 +5,7 @@ Por qué existe: el flujo de un FCI no se publica. Se infiere de la variación d
 **cuotapartes en circulación (ccp)**, que cambian *solo* por suscripciones/rescates,
 no por el precio:
 
-    flujo_neto(d) ≈ (ccp[d] − ccp[d-1]) · vcp[d]
+    flujo_neto(d) ≈ (ccp[d] − ccp[d-1]) · precio_cuotaparte[d]
 
 (equivalente a ΔAUM − rendimiento·AUM, pero sin contaminarse por la apreciación del
 VCP). CAFCI no trae `ccp`/`patrimonio`; **ArgentinaDatos sí**, pero solo del último
@@ -131,7 +131,10 @@ class FCIHistoryStore:
         return len(clean)
 
     def net_flows(self, fondo: str) -> Dict[date, float]:
-        """Serie de flujo neto (Δccp × vcp) de un fondo desde su histórico acumulado."""
+        """Serie de flujo neto (Δccp × precio de cuotaparte) de un fondo desde su
+        histórico acumulado. El precio sale de `patrimonio/ccp` de la fila, con fallback
+        `vcp/1000` (ArgentinaDatos publica el VCP por 1.000 cuotapartes) — ver
+        `_unit_price`/`net_flow_series`."""
         return net_flow_series(self.get_series(fondo))
 
     def keys(self) -> List[str]:
@@ -146,31 +149,71 @@ class FCIHistoryStore:
 # fuente (renombre de fondo en ArgentinaDatos, error de carga, etc.) y se descartan.
 _NET_FLOW_MAX_JUMP = 3.0   # Δccp > 3× ccp_prev → implausible
 
-def net_flow_series(series: Dict[date, dict]) -> Dict[date, float]:
-    """Flujo neto orgánico entre puntos consecutivos: `(ccp[d] − ccp[prev]) · vcp[d]`.
 
-    Pura: no toca disco. Usa `vcp` del día (no del previo) para valuar las cuotapartes
-    suscriptas/rescatadas. Saltea puntos sin `ccp`/`vcp`. El primer punto no tiene flujo.
+def _unit_price(row: dict) -> Optional[float]:
+    """Precio de UNA cuotaparte a partir de la fila del store.
+
+    ArgentinaDatos publica `vcp` **por cada 1.000 cuotapartes**: sobre el store real
+    (cortes 2026-06-09..2026-08-31, 16.830 filas) la identidad `patrimonio = ccp·vcp/1000`
+    se cumple en 9.276 de las 9.394 filas con los 3 campos no nulos (las 114 restantes
+    son redondeo a entero de ccp/patrimonio en fondos minúsculos: 0,0025% del patrimonio
+    del corte). Excepción real: los 2 fondos "investire … (valor de liq. final de cp)"
+    publican `patrimonio = ccp·vcp` (valor por 1 cuotaparte). Por eso el precio se deriva
+    por fila de `patrimonio/ccp` — que respeta ambas convenciones y deja el flujo en la
+    misma escala que el AUM — y solo cae a `vcp/1000` cuando falta patrimonio o ccp
+    (7.410 filas del store traen `patrimonio` 0/NULL y 7.434 traen `ccp` 0).
+    """
+    pat, ccp, vcp = row.get("patrimonio"), row.get("ccp"), row.get("vcp")
+    if pat and ccp:
+        return pat / ccp
+    return vcp / 1000.0 if vcp is not None else None
+
+
+def net_flow_series(series: Dict[date, dict]) -> Dict[date, float]:
+    """Flujo neto orgánico entre puntos consecutivos: `(ccp[d] − ccp[prev]) · precio[d]`.
+
+    Pura: no toca disco. Usa el precio unitario del día (no del previo, ver `_unit_price`:
+    `patrimonio/ccp`, con fallback `vcp/1000` — ArgentinaDatos publica el VCP por 1.000
+    cuotapartes) para valuar las suscriptas/rescatadas. El primer punto no tiene flujo.
+
+    **`ccp <= 0` es DATO AUSENTE, no una circulación real de cero.** ArgentinaDatos
+    publica `ccp = 0` (y `patrimonio` 0/NULL) cuando simplemente no trae el dato de esa
+    clase ese día: en el store real son 2.122 de 4.706 filas del corte (45%), incluidos
+    fondos de decenas de miles de millones. Tomarlos como observación fabricaba dos
+    flujos fantasma simétricos:
+
+      - `0 → X` se leía como una suscripción por el patrimonio ENTERO (40 transiciones
+        en el store, +1,014e11), y el guard de continuidad NO la filtraba porque exige
+        `ccp_prev > 0`;
+      - `X → 0` se leía como el rescate total del fondo (37 transiciones, −8,27e10), y
+        ese SÍ pasaba el guard (Δccp/ccp = 1,0 < 3,0).
+
+    Por eso esos puntos se descartan y la serie se **puentea** (el flujo se imputa al
+    siguiente día con dato, que es lo mismo que ya se hace con los días sin publicación).
+    El alta REAL de un fondo no se pierde por esto: el primer punto con `ccp` de la serie
+    nunca genera flujo (no hay previo contra el cual medir).
 
     Guard de continuidad: saltos implausibles (Δccp > _NET_FLOW_MAX_JUMP × ccp_prev)
     se descartan — evita que un renombre de fondo en ArgentinaDatos genere un flujo
     espurio gigante en el panel FCI.
     """
     days = sorted(d for d, v in series.items()
-                  if v and v.get("ccp") is not None and v.get("vcp") is not None)
+                  if v and (v.get("ccp") or 0) > 0 and v.get("vcp") is not None)
     out: Dict[date, float] = {}
     for i in range(1, len(days)):
         prev, cur = series[days[i - 1]], series[days[i]]
         ccp_prev = prev["ccp"]
-        if ccp_prev and ccp_prev > 0:
-            delta_ratio = abs(cur["ccp"] - ccp_prev) / ccp_prev
-            if delta_ratio > _NET_FLOW_MAX_JUMP:
-                logger.warning(
-                    "net_flow_series: salto implausible Δccp/ccp=%.1f× el %s — "
-                    "descartado (¿renombre/colisión de fondo en ArgentinaDatos?)",
-                    delta_ratio, days[i])
-                continue
-        out[days[i]] = (cur["ccp"] - ccp_prev) * cur["vcp"]
+        delta_ratio = abs(cur["ccp"] - ccp_prev) / ccp_prev
+        if delta_ratio > _NET_FLOW_MAX_JUMP:
+            logger.warning(
+                "net_flow_series: salto implausible Δccp/ccp=%.1f× el %s — "
+                "descartado (¿renombre/colisión de fondo en ArgentinaDatos?)",
+                delta_ratio, days[i])
+            continue
+        unit = _unit_price(cur)
+        if unit is None:
+            continue
+        out[days[i]] = (cur["ccp"] - ccp_prev) * unit
     return out
 
 
