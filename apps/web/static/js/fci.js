@@ -24,13 +24,13 @@ var key = function (f) { return String(f.fid); };
 // ---------------- formatters ----------------
 function fmtPct(v, dec) { if (v == null || isNaN(v)) return "—"; return v.toFixed(dec == null ? 1 : dec) + "%"; }
 function cls(v) { return v == null ? "" : (v >= 0 ? "pos" : "neg"); }
-function fmtAum(v) {
+function fmtAum(v, ccy) {
   if (v == null) return "—";
-  var a = Math.abs(v), sg = v < 0 ? "-" : "";
-  if (a >= 1e12) return sg + "$" + (a / 1e12).toFixed(2) + " B";
-  if (a >= 1e9) return sg + "$" + (a / 1e9).toFixed(1) + " MM";
-  if (a >= 1e6) return sg + "$" + (a / 1e6).toFixed(0) + " M";
-  return sg + "$" + Math.round(a).toLocaleString("es-AR");
+  var a = Math.abs(v), sg = v < 0 ? "-" : "", u = ccy === "USD" ? "US$" : "$";
+  if (a >= 1e12) return sg + u + (a / 1e12).toFixed(2) + " B";
+  if (a >= 1e9) return sg + u + (a / 1e9).toFixed(1) + " MM";
+  if (a >= 1e6) return sg + u + (a / 1e6).toFixed(0) + " M";
+  return sg + u + Math.round(a).toLocaleString("es-AR");
 }
 function fmtMoney(v) { if (v == null) return "—"; return "$" + Number(v).toLocaleString("es-AR"); }
 function esc(s) {
@@ -38,27 +38,60 @@ function esc(s) {
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
-// lens-adjusted return for a fund/period/metric
+// lens-adjusted return for a fund/period/metric.
+// El `directo` de CAFCI ya viene en la moneda de la clase: a un fondo en dolares NO hay
+// que restarle la devaluacion (seria contarla dos veces) y, para el lente real, primero
+// hay que pasarlo a pesos con la devaluacion y recien ahi deflactar por CER. Mismo
+// criterio de f.moneda que ya usaba vcpSeries().
 function getRet(f, period, metric, lens) {
   var r = (f.rend || {})[period] || {};
   var d = r.directo;
   if (d == null) return null;
-  if (lens !== "ars") {
-    var mkey = lens === "usd" ? "mep" : (lens === "real" ? "cer" : null);
-    var macro = (mkey && (M.macro[mkey] || {})[period]) || 0;
-    d = ((1 + d / 100) / (1 + macro / 100) - 1) * 100;
-    if (metric === "tna") return d / (PDAYS[period] || 365) * 365;
-    return d;
-  }
-  return metric === "tna" ? r.tna : d;
+  var usd = f.moneda === "USD";
+  // ars, o el lente USD sobre un fondo que YA cotiza en dolares: nada que convertir
+  if (lens === "ars" || (lens === "usd" && usd)) return metric === "tna" ? r.tna : d;
+  var mep = (M.macro.mep || {})[period] || 0, cer = (M.macro.cer || {})[period] || 0;
+  if (lens === "usd") d = ((1 + d / 100) / (1 + mep / 100) - 1) * 100;
+  else if (lens === "real") d = usd ? ((1 + d / 100) * (1 + mep / 100) / (1 + cer / 100) - 1) * 100
+                                    : ((1 + d / 100) / (1 + cer / 100) - 1) * 100;
+  else return metric === "tna" ? r.tna : d;
+  return metric === "tna" ? d / (PDAYS[period] || 365) * 365 : d;
+}
+// Los flujos nacen en la moneda de cada CLASE (Δccp × precio de cuotaparte: las clases
+// USD de ArgentinaDatos traen vcp Y patrimonio en dolares) y el server los entrega YA
+// separados: `flows` = las clases en pesos, `flows_usd` = las clases en dolares (ausente
+// si no hay). Convertir por la moneda del FONDO no alcanzaba: 95 de 1.096 fondos tienen
+// clases en monedas distintas, y a 10 de ellos (rotulados USD) se les multiplicaba por
+// el MEP un flujo que ya estaba en pesos.
+// Para agregar entre fondos llevamos todo a pesos con el MEP del corte. Sin MEP no hay
+// conversion posible -> null, y el fondo queda fuera del agregado (con aviso) en vez de
+// sumar dolares como si fueran pesos.
+function mepNow() { var m = M.macro && M.macro.mep_now; return (m && m > 0) ? m : null; }
+function hasFlow(a) { return !!a && a.some(function (v) { return v; }); }
+function flowsARS(f) {
+  var ars = f.flows || [], usd = f.flows_usd;
+  if (!hasFlow(usd)) return ars;      // sin pata USD (o toda en cero) no hay nada que convertir
+  var mep = mepNow();
+  if (!mep) return null;
+  var n = Math.max(ars.length, usd.length), out = [];
+  for (var i = 0; i < n; i++) out.push((ars[i] || 0) + (usd[i] || 0) * mep);
+  return out;
 }
 function lensTag() { return S.lens === "usd" ? " · USD @MEP" : (S.lens === "real" ? " · real s/CER" : ""); }
-// deflacta una serie base-100 según el lens (rampa lineal a 12m)
-function histLens(series) {
+// deflacta una serie base-100 según el lens (rampa lineal a 12m). Igual que getRet:
+// un fondo en dolares no se deflacta por la devaluacion, y para el lente real se pasa
+// primero a pesos.
+function histLens(series, f) {
   if (!series || S.lens === "ars") return series;
-  var mkey = S.lens === "usd" ? "mep" : "cer";
-  var m = (M.macro[mkey] || {}).meses_12 || 0, n = series.length;
-  return series.map(function (v, i) { return v / (1 + m / 100 * (n > 1 ? i / (n - 1) : 0)); });
+  var usd = !!f && f.moneda === "USD";
+  if (S.lens === "usd" && usd) return series;
+  var mep = (M.macro.mep || {}).meses_12 || 0, cer = (M.macro.cer || {}).meses_12 || 0;
+  var n = series.length;
+  return series.map(function (v, i) {
+    var t = n > 1 ? i / (n - 1) : 0;
+    if (S.lens === "usd") return v / (1 + mep / 100 * t);
+    return usd ? v * (1 + mep / 100 * t) / (1 + cer / 100 * t) : v / (1 + cer / 100 * t);
+  });
 }
 // serie de VCP reconstruida en la unidad del lens (ars nominal / usd@mep / real cer)
 function vcpSeries(f) {
@@ -66,14 +99,25 @@ function vcpSeries(f) {
   var hist = f.hist, n = hist.length, last = hist[n - 1] || 100;
   var nom = hist.map(function (h) { return f.vcp * h / last; });
   if (S.lens === "usd" && f.moneda !== "USD") {
-    var m = (M.macro.mep || {}).meses_12 || 0, now = (M.macro.mep_now) || 1255;
+    // mep_now es null POR CONTRATO cuando no hay MEP (lens.py). Antes se dividia por un
+    // 1255 escrito a mano y se rotulaba igual "USD (MEP)": el nivel del eje quedaba
+    // mintiendo sin ninguna senal en la UI. Sin FX real no se dibuja la serie en USD.
+    var m = (M.macro.mep || {}).meses_12 || 0, now = M.macro.mep_now;
+    if (!now || now <= 0) return { err: "Sin MEP disponible para expresar la cuotaparte en dolares." };
     return { unit: "USD (MEP)", data: nom.map(function (v, i) {
       var mep = now / (1 + m / 100 * (1 - (n > 1 ? i / (n - 1) : 0))); return v / mep; }) };
   }
   if (S.lens === "real") {
+    // "USD real (CER)" era una unidad imposible: dolares deflactados por la inflacion EN
+    // PESOS. Un fondo en dolares se pasa primero a pesos por el FX de cada punto y recien
+    // ahi se deflacta -> queda en pesos constantes, igual que los fondos en ARS.
     var c = (M.macro.cer || {}).meses_12 || 0;
-    return { unit: (f.moneda === "USD" ? "USD" : "$") + " real (CER)",
-      data: nom.map(function (v, i) { return v / (1 + c / 100 * (n > 1 ? i / (n - 1) : 0)); }) };
+    var usdf = f.moneda === "USD", mr = (M.macro.mep || {}).meses_12 || 0, nowr = M.macro.mep_now;
+    if (usdf && (!nowr || nowr <= 0)) return { err: "Sin MEP disponible para pasar la cuotaparte en dolares a pesos reales." };
+    return { unit: "$ real (CER)", data: nom.map(function (v, i) {
+      var t = n > 1 ? i / (n - 1) : 0;
+      var fx = usdf ? nowr / (1 + mr / 100 * (1 - t)) : 1;
+      return v * fx / (1 + c / 100 * t); }) };
   }
   return { unit: f.moneda === "USD" ? "USD" : "ARS", data: nom };
 }
@@ -91,6 +135,7 @@ function vcpRangeFrom(range) {
 }
 function vcpWindow(f) {
   var s = vcpSeries(f); if (!s) return null;
+  if (s.err) return { err: s.err };
   var axis = M.hist_axis, from = detailState.vcpFrom || axis[0], to = detailState.vcpTo || axis[axis.length - 1];
   var lab = [], dat = [];
   for (var i = 0; i < axis.length; i++) { if (axis[i] >= from && axis[i] <= to) { lab.push(axis[i]); dat.push(s.data[i]); } }
@@ -112,7 +157,7 @@ function renderStrip() {
   var cov = (M.macro.cer && M.macro.cer.meses_12 != null) ? "" :
     "<span class='hs'>lente 12m <span>acumulando</span></span>";
   el.innerHTML =
-    "<b>FCI · CAFCI</b><span class='hs'>corte <span>" + (M.fecha_base || "—") + "</span></span>"
+    "<b>FCI · CAFCI</b><span class='hs'>corte <span>" + (esc(M.fecha_base) || "—") + "</span></span>"
     + "<span class='hs'>fondos <span>" + M.n_total + "</span></span>"
     + "<span class='hs'>AUM real <span>" + M.n_aum_real + "/" + M.n_shown + "</span></span>"
     + "<span class='hs'>flujos <span>" + (M.flows_real ? "reales" : "acumulando") + "</span></span>"
@@ -284,7 +329,7 @@ function renderComparar() {
     row("Costo admin.", function (f) { return fmtPct(f.fee_admin, 2); });
     row("Salida", function (f) { return f.fee_out != null ? fmtPct(f.fee_out, 2) : "—"; });
     row("Liquidación", function (f) { return f.settle; });
-    row("Horizonte", function (f) { return f.horizonte || "—"; });
+    row("Horizonte", function (f) { return f.horizonte ? esc(f.horizonte) : "—"; });
     row("Mín.", function (f) { return f.min ? fmtMoney(f.min) : "—"; });
     html += "</tbody></table></div>";
   } else { html += "<p class='empty'>Agregá fondos para compararlos lado a lado.</p>"; }
@@ -312,7 +357,7 @@ function drawCmpChart(chosen) {
   var ctx = document.getElementById("cmpchart"); if (!ctx || !window.Chart) return;
   if (cmpChart) cmpChart.destroy();
   cmpChart = new Chart(ctx, { type: "line", data: { labels: M.hist_axis, datasets: chosen.map(function (f, i) {
-    return { label: f.fondo, data: histLens(f.hist || []).map(function (v) { return v / 100 * 10000; }),
+    return { label: f.fondo, data: histLens(f.hist || [], f).map(function (v) { return v / 100 * 10000; }),
       borderColor: COLORS[i % COLORS.length], backgroundColor: "transparent", borderWidth: 2, pointRadius: 0, tension: .25 };
   }) }, options: chartOpts({ money: true }) });
 }
@@ -368,7 +413,7 @@ function renderFlujos() {
 
   if (!anyReal) {
     html += "<p class='empty'>Flujos en acumulación. El histórico de cuotapartes se está juntando a diario "
-      + "(flujo = Δcuotapartes × VCP); en unas ruedas vas a ver los flujos reales por fondo y gestora.</p></div></section>";
+      + "(flujo = Δcuotapartes × precio de cuotaparte); en unas ruedas vas a ver los flujos reales por fondo y gestora.</p></div></section>";
     document.getElementById("view").innerHTML = html;
     document.querySelectorAll("#view .pill").forEach(function (b) { b.onclick = function () { S.flowCat = b.dataset.c; renderFlujos(); }; });
     var fw0 = document.getElementById("flowwin");
@@ -376,13 +421,20 @@ function renderFlujos() {
     return;
   }
 
+  var conv = [], skipped = 0;
+  mem.forEach(function (f) {
+    var fl = flowsARS(f);
+    if (fl == null) { skipped++; return; }        // fondo en USD y sin MEP: no agregable
+    conv.push({ f: f, flows: fl });
+  });
+
   var totals = [];
-  for (var i = start; i < NALL; i++) { var s = 0; mem.forEach(function (f) { s += (f.flows || [])[i] || 0; }); totals.push(s); }
+  for (var i = start; i < NALL; i++) { var s = 0; conv.forEach(function (x) { s += x.flows[i] || 0; }); totals.push(s); }
   var months = monthLabels(W);
   var maxAbs = Math.max.apply(null, totals.map(Math.abs).concat([1]));
   var periodTotal = totals.reduce(function (a, b) { return a + b; }, 0);
   var byMgr = {};
-  mem.forEach(function (f) { var sum = 0; for (var i = start; i < NALL; i++) sum += (f.flows || [])[i] || 0; byMgr[f.soc || "—"] = (byMgr[f.soc || "—"] || 0) + sum; });
+  conv.forEach(function (x) { var sum = 0; for (var i = start; i < NALL; i++) sum += x.flows[i] || 0; byMgr[x.f.soc || "—"] = (byMgr[x.f.soc || "—"] || 0) + sum; });
   var mgrs = Object.keys(byMgr).map(function (k) { return [k, byMgr[k]]; }).sort(function (a, b) { return Math.abs(b[1]) - Math.abs(a[1]); });
   var mgrMax = Math.max.apply(null, mgrs.map(function (m) { return Math.abs(m[1]); }).concat([1]));
 
@@ -390,7 +442,10 @@ function renderFlujos() {
     var h = Math.abs(v) / maxAbs * 100;
     return "<div class='fb'><div class='b " + (v >= 0 ? "pos" : "neg") + "' style='height:" + h + "%' title='" + months[i] + ": " + fmtAum(v) + "'></div><small>" + months[i] + "</small></div>";
   }).join("") + "</div>"
-    + "<p class='note'>Flujo neto mensual (suscripciones − rescates), Δcuotapartes × VCP · acumulado del período: <b class='" + cls(periodTotal) + "'>" + fmtAum(periodTotal) + "</b>.</p>"
+    + "<p class='note'>Flujo neto mensual (suscripciones − rescates), Δcuotapartes × precio de cuotaparte, en pesos"
+    + " (las clases en dólares se convierten al MEP del corte) · acumulado del período: <b class='"
+    + cls(periodTotal) + "'>" + fmtAum(periodTotal) + "</b>"
+    + (skipped ? " · <b>" + skipped + "</b> fondos con flujos en dólares excluidos (sin MEP para convertir)" : "") + ".</p>"
     + "<h4 style='margin:16px 0 6px;color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.4px'>Flujos por gestora (" + mgrs.length + ") · acumulado " + W + "M</h4>";
   html += mgrs.map(function (m, mi) {
     var name = m[0], val = m[1], w = Math.abs(val) / mgrMax * 100, open = !!S.flowOpen[name];
@@ -399,8 +454,8 @@ function renderFlujos() {
       + "<div class='rkbar' style='background:var(--row-alt)'><i style='width:" + w + "%;background:" + (val >= 0 ? "var(--pos)" : "var(--neg)") + ";opacity:.5'></i><b>" + esc(name) + "</b></div>"
       + "<div class='rkv " + (val >= 0 ? "pos" : "neg") + "'>" + fmtAum(val) + "</div></div>";
     if (open) {
-      var funds = mem.filter(function (f) { return (f.soc || "—") === name; }).map(function (f) {
-        var sum = 0; for (var i = start; i < NALL; i++) sum += (f.flows || [])[i] || 0; return { f: f, v: sum };
+      var funds = conv.filter(function (x) { return (x.f.soc || "—") === name; }).map(function (x) {
+        var sum = 0; for (var i = start; i < NALL; i++) sum += x.flows[i] || 0; return { f: x.f, v: sum };
       }).sort(function (a, b) { return Math.abs(b.v) - Math.abs(a.v); });
       var fmax = Math.max.apply(null, funds.map(function (x) { return Math.abs(x.v); }).concat([1]));
       rowh += "<div class='mgr-funds'>" + funds.map(function (x) {
@@ -420,9 +475,19 @@ function renderFlujos() {
   document.querySelectorAll("#view .mgr-row").forEach(function (r) { r.onclick = function () { var nm = mgrs[+r.dataset.mi][0]; S.flowOpen[nm] = !S.flowOpen[nm]; renderFlujos(); }; });
   document.querySelectorAll("#view .subfund").forEach(function (r) { r.onclick = function (e) { e.stopPropagation(); openDetail(r.dataset.k); }; });
 }
+// M.fecha_base es date-only ("YYYY-MM-DD") y `new Date(s)` lo parsea como UTC: en un
+// browser con offset negativo (ART = UTC-3) el dia 1 de un mes cae en el mes ANTERIOR al
+// leerlo con getMonth()/getFullYear() local. El server trabaja en fecha civil
+// (date.fromisoformat), asi que el corte se parsea SIEMPRE en local, por aca. Todo uso de
+// M.fecha_base como fecha pasa por esta funcion (antes cada call site lo parseaba solo y
+// PDAYS.ytd se habia quedado con el bug: con fecha_base = 1/1 devolvia ~365 en vez de 1).
+function baseDate() {
+  var p = String(M.fecha_base || "").split("-");
+  return p.length === 3 ? new Date(+p[0], +p[1] - 1, +p[2]) : null;
+}
 function monthLabels(n) {
   var names = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-  var base = M.fecha_base ? new Date(M.fecha_base) : new Date();
+  var base = baseDate() || new Date();
   var out = [];
   for (var i = n - 1; i >= 0; i--) { var d = new Date(base.getFullYear(), base.getMonth() - i, 1); out.push(names[d.getMonth()]); }
   return out;
@@ -512,6 +577,7 @@ function drawPane() {
   } else if (t === "vcp") {
     var w = vcpWindow(f);
     if (!w) { pane.innerHTML = "<p class='empty'>Sin histórico de cuotaparte para este fondo.</p>"; }
+    else if (w.err) { pane.innerHTML = "<p class='empty'>" + esc(w.err) + "</p>"; }
     else {
       var axis = M.hist_axis, isvar = detailState.vcpMode === "var";
       var ret = w.data.length > 1 ? (w.data[w.data.length - 1] / w.data[0] - 1) * 100 : null;
@@ -548,15 +614,25 @@ function drawPane() {
     }
   } else if (t === "flows") {
     if (!f.flows_real) {
-      pane.innerHTML = "<p class='empty'>Flujos en acumulación para este fondo (Δcuotapartes × VCP). "
+      pane.innerHTML = "<p class='empty'>Flujos en acumulación para este fondo (Δcuotapartes × precio de cuotaparte). "
         + "El histórico se junta a diario; volvé en unas ruedas.</p>";
     } else {
+      // El fondo puede tener clases en pesos Y en dolares (95 de 1.096): el server manda
+      // las dos patas por separado y aca se elige la unidad SIN mezclarlas. Mono-moneda ->
+      // su propia moneda; mixto -> pesos con la pata USD al MEP (y si no hay MEP, solo la
+      // pata en pesos, avisando que falta la otra).
       var months = monthLabels(12);
-      var maxAbs = Math.max.apply(null, (f.flows || []).map(Math.abs).concat([1]));
-      pane.innerHTML = "<div class='flowbars'>" + (f.flows || []).map(function (v, i) {
+      var fa = f.flows || [], fu = hasFlow(f.flows_usd) ? f.flows_usd : null, mep = mepNow();
+      var data = fa, ccy = "ARS", note = "en pesos";
+      if (fu && !hasFlow(fa)) { data = fu; ccy = "USD"; note = "en dólares (la moneda de sus clases)"; }
+      else if (fu && mep) { data = flowsARS(f); note = "en pesos (las clases en dólares, al MEP del corte)"; }
+      else if (fu) { note = "en pesos: solo las clases en pesos — sin MEP no se pueden sumar las clases en dólares"; }
+      var maxAbs = Math.max.apply(null, data.map(Math.abs).concat([1]));
+      pane.innerHTML = "<div class='flowbars'>" + data.map(function (v, i) {
         var h = Math.abs(v) / maxAbs * 100;
-        return "<div class='fb'><div class='b " + (v >= 0 ? "pos" : "neg") + "' style='height:" + h + "%' title='" + months[i] + ": " + fmtAum(v) + "'></div><small>" + months[i] + "</small></div>";
-      }).join("") + "</div><p class='note'>Flujo neto mensual (suscripciones − rescates) = Δcuotapartes × VCP.</p>";
+        return "<div class='fb'><div class='b " + (v >= 0 ? "pos" : "neg") + "' style='height:" + h + "%' title='" + months[i] + ": " + fmtAum(v, ccy) + "'></div><small>" + months[i] + "</small></div>";
+      }).join("") + "</div><p class='note'>Flujo neto mensual (suscripciones − rescates) = Δcuotapartes × precio de cuotaparte, "
+        + note + ".</p>";
     }
   } else if (t === "ficha") {
     pane.innerHTML = "<dl class='ficha'>"
@@ -633,7 +709,7 @@ function render() {
   document.getElementById("srcnote").innerHTML =
     "Fuentes — catálogo+retornos+VCP: <b>CAFCI</b> · AUM: <b>ArgentinaDatos</b> (" + M.n_aum_real + "/" + M.n_shown + ") · "
     + "lente USD/CER: <b>BCRA</b> (A3500/CER) · histórico: real (fci_history) o reconstruido de retornos reales · "
-    + "flujos: <b>" + (M.flows_real ? "reales (Δccp×VCP)" : "acumulando") + "</b>. Composición no disponible (sin fuente pública). "
+    + "flujos: <b>" + (M.flows_real ? "reales (Δccp × precio de cuotaparte)" : "acumulando") + "</b>. Composición no disponible (sin fuente pública). "
     + "Subcategorías derivadas de campos CAFCI.";
   ({ mercado: renderMercado, rankings: renderRankings, comparar: renderComparar, favoritos: renderFavoritos, flujos: renderFlujos }[S.view] || renderMercado)();
 }
@@ -648,7 +724,7 @@ function boot() {
   M = D.meta; FUNDS = D.funds || [];
   PERIODS = M.periods; PL = M.period_labels;
   PDAYS = { dias_7: 7, mes_1: 30, dias_90: 90, dias_180: 180, ytd: 155, meses_12: 365 };
-  PDAYS.ytd = (function () { if (!M.fecha_base) return 155; var d = new Date(M.fecha_base); return Math.max(1, Math.round((d - new Date(d.getFullYear(), 0, 0)) / 864e5)); })();
+  PDAYS.ytd = (function () { var d = baseDate(); return d ? Math.max(1, Math.round((d - new Date(d.getFullYear(), 0, 0)) / 864e5)) : 155; })();
   FMAP = {}; FUNDS.forEach(function (f) { FMAP[key(f)] = f; });
   S.favs = new Set(Array.from(S.favs).filter(function (k) { return FMAP[k]; })); saveFavs();
   S.cmp = S.cmp.filter(function (k) { return FMAP[k]; }); saveCmp();

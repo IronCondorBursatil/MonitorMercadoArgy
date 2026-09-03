@@ -3,8 +3,9 @@ unificación de clases, AUM join, histórico de cuotaparte, lente de moneda, flu
 
 Esta es la fuente de verdad runtime que reemplaza al viejo `scripts/build_fci_mock_data.py`
 (borrado): a partir del parse enriquecido de CAFCI (`cafci_provider._parse_payload`) + AUM de
-ArgentinaDatos + macro real (A3500/CER vía BCRA) + flujos reales (`fci_history`, Δccp×VCP) arma
-la forma que consume el front (`apps/web/static/js/fci.js`).
+ArgentinaDatos + macro real (A3500/CER vía BCRA) + flujos reales (`fci_history`:
+Δccp × precio de cuotaparte, separados por moneda de clase) arma la forma que consume el
+front (`apps/web/static/js/fci.js`).
 
 Convenciones:
   - Composición de cartera: NO se sintetiza (sin fuente pública real; CAFCI ficha gateada).
