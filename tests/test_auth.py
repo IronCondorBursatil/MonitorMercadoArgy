@@ -118,11 +118,14 @@ def test_limited_user_reaches_allowed_tab(users):
 
 
 def test_limited_user_blocked_from_other_tab(users):
+    """403 'sin permiso', NO 302 al login: el usuario está autenticado — mandarlo al
+    formulario le decía 'sesión vencida' y lo dejaba reintentando la clave (ver
+    apps/web/deps_auth.TabForbiddenException y tests/test_rem_R3_web_seguridad.py)."""
     with TestClient(app) as c:
         c.post("/login", data={"username": "bob", "password": "bobpass"})
         r = c.get("/fci", follow_redirects=False)  # 'fci' NO permitido
-    assert r.status_code == 302
-    assert r.headers["location"] == "/login"
+    assert r.status_code == 403
+    assert "location" not in r.headers, r.headers
 
 
 def test_nonadmin_denied_users_page(users):

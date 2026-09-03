@@ -64,20 +64,44 @@ async def supervise(
     delay = base_delay
     consecutive_cancels = 0
 
+    async def _report(reason: str) -> None:
+        if on_crash is None:
+            return
+        try:
+            await on_crash(name, reason)
+        except Exception:  # noqa: BLE001 — reportar no puede tumbar el supervisor
+            logger.exception("on_crash de %r falló", name)
+
     while not stopping.is_set():
         started = _monotonic()
         spurious_cancel = False
+        ran_for = 0.0
         try:
             await factory()
+            ran_for = _monotonic() - started
             reason = "el loop retornó sin excepción"
         except asyncio.CancelledError:
+            ran_for = _monotonic() - started
             if stopping.is_set():
                 raise                      # shutdown real: honrar la cancelación
+            # "Seguidas" = de una RÁFAGA. Si el loop venía corriendo sano, esta
+            # cancelación no forma parte de la ráfaga anterior y el presupuesto
+            # arranca de cero. Sin esto el contador era acumulado de por vida del
+            # proceso (los 5 loops reales nunca retornan ni dejan escapar una
+            # Exception, así que el reset de más abajo es inalcanzable en prod):
+            # cinco cancelaciones espurias espaciadas por días mataban el loop.
+            if ran_for >= healthy_after:
+                consecutive_cancels = 0
             consecutive_cancels += 1
+            reason = "CancelledError espuria (no venía del shutdown)"
             if consecutive_cancels >= max_consecutive_cancels:
                 logger.error(
                     "loop %r: %d cancelaciones seguidas — el event loop debe estar "
                     "cerrando; me rindo.", name, consecutive_cancels)
+                # Reportar ANTES de propagar: ésta es la muerte DEFINITIVA (la que
+                # deja el loop caído para siempre) y era la única que no llegaba al
+                # badge del header ni a /api/health.
+                await _report(f"{reason} — me rindo tras {consecutive_cancels} seguidas")
                 raise
             # Cancelación espuria: absorberla. `uncancel()` limpia el pedido de
             # cancelación pendiente para que el `sleep` de abajo no vuelva a morir.
@@ -85,8 +109,8 @@ async def supervise(
             if task is not None:
                 task.uncancel()
             spurious_cancel = True
-            reason = "CancelledError espuria (no venía del shutdown)"
         except Exception as e:  # noqa: BLE001 — nada puede matar al supervisor
+            ran_for = _monotonic() - started
             reason = f"{type(e).__name__}: {e}"
             logger.exception("loop %r cayó con excepción", name)
         if not spurious_cancel:
@@ -96,17 +120,12 @@ async def supervise(
             break
 
         # Una corrida larga = el loop estaba sano; la caída fue puntual → reintento ya.
-        ran_for = _monotonic() - started
         if ran_for >= healthy_after:
             delay = base_delay
 
         logger.warning("loop %r terminó (%s) — reiniciando en %.1fs",
                        name, reason, delay)
-        if on_crash is not None:
-            try:
-                await on_crash(name, reason)
-            except Exception:  # noqa: BLE001 — reportar no puede tumbar el supervisor
-                logger.exception("on_crash de %r falló", name)
+        await _report(reason)
 
         try:
             await _sleep(delay)

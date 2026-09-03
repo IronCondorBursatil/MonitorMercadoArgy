@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 
 from apps.web.deps import get_repo
@@ -19,7 +19,12 @@ router = APIRouter()
 
 
 @router.get("/cashflows", response_class=HTMLResponse)
-def cashflows_page(request: Request, days: int = 180, repo=Depends(get_repo)):
+def cashflows_page(request: Request,
+                   # Acotado: `today + timedelta(days=days)` tira OverflowError apenas
+                   # se pasa de date.max (≈2.912.000 días) y nadie lo atrapa → 500 con
+                   # traceback. Fuera de rango, FastAPI devuelve un 422 limpio.
+                   days: int = Query(180, ge=1, le=3650),
+                   repo=Depends(get_repo)):
     today = date.today()
     horizon = today + timedelta(days=days)
     events = []

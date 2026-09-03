@@ -276,7 +276,12 @@
     // toolbar que se registran después (botones muertos con datos refrescando).
     var HIDDEN_PANELS = lsGet("panels-hidden-v1", null);   // [gs-id]
     if (!Array.isArray(HIDDEN_PANELS)) HIDDEN_PANELS = (DL && Array.isArray(DL.hidden)) ? DL.hidden.slice() : [];
-    var HIDDEN_COLS = lsGet("panel-cols-v1", null);        // {gs-id: [colIndex]}
+    // v2: el ocultamiento se guarda por ÍNDICE de columna, así que cualquier cambio
+    // en la lista de columnas de un panel (sacar "Sector" de PROVINCIALES) corre los
+    // índices y le oculta al usuario la columna equivocada. Bumpear la clave descarta
+    // la preferencia vieja —una vez— en vez de aplicarla mal. Si mañana cambian otra
+    // vez las columnas: subir a v3 (y limpiar la clave anterior abajo).
+    var HIDDEN_COLS = lsGet("panel-cols-v2", null);        // {gs-id: [colIndex]}
     if (!isObj(HIDDEN_COLS)) HIDDEN_COLS = (DL && isObj(DL.cols)) ? JSON.parse(JSON.stringify(DL.cols)) : {};
 
     function panelTitle(item) {
@@ -369,7 +374,7 @@
       var hid = (Array.isArray(HIDDEN_COLS[id]) ? HIDDEN_COLS[id] : []).filter(function (x) { return String(x) !== String(n); });
       if (!nowOn) hid.push(parseInt(n, 10));
       HIDDEN_COLS[id] = hid;
-      lsSet("panel-cols-v1", HIDDEN_COLS);
+      lsSet("panel-cols-v2", HIDDEN_COLS);
     });
 
     // --- CONFIG global (nav): elegir qué paneles ver / restaurar cerrados -- //
@@ -413,7 +418,8 @@
           } else if (action.dataset.action === "reset-default") {
             localStorage.removeItem("grid-layout-v3");
             localStorage.removeItem("panels-hidden-v1");
-            localStorage.removeItem("panel-cols-v1");
+            localStorage.removeItem("panel-cols-v2");
+            localStorage.removeItem("panel-cols-v1");   // resto de la versión anterior
             location.reload();  // recarga → toma el layout default del server
           }
           return;

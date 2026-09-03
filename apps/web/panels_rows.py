@@ -419,6 +419,25 @@ def _build_bei_rows(panel_id: str, state) -> List[dict]:
     return rows
 
 
+# Columnas que un panel HEREDA del schema pero no puede poblar. `provinciales` reusa
+# `_ON_COLS` (misma economía que una ON hard-dollar), pero "Sector" es la taxonomía de
+# emisores CORPORATIVOS de `on_classification`: los 28 subsoberanos del catálogo caen
+# TODOS en "Otros" y `_build_rows` sólo la puebla para el panel de ONs, así que la
+# columna salía siempre "—" con su <th> y su toggle del Config operando sobre nada.
+# (Una taxonomía subsoberana propia —provincia/municipio/región— sería otra cosa.)
+_PANEL_DROP_COLS = {"provinciales": {"sector"}}
+
+
+def panel_columns(panel_id: str) -> List[dict]:
+    """Columnas EFECTIVAS de un panel = las del schema menos las que no puede poblar.
+
+    Fuente ÚNICA para el `<th>` del dashboard, el `ncols` del fragmento y las celdas:
+    si se desalinean, el toggle `hcol-N` del Config oculta la columna equivocada."""
+    cols = PANELS.get(panel_id, (None, None, []))[2]
+    drop = _PANEL_DROP_COLS.get(panel_id)
+    return [c for c in cols if c["key"] not in drop] if drop else list(cols)
+
+
 def _build_rows(panel_id: str, state, provider=None, cols_override=None,
                 metrics_override=None) -> List[dict]:
     if panel_id == "valor_relativo":
@@ -429,9 +448,8 @@ def _build_rows(panel_id: str, state, provider=None, cols_override=None,
         return _build_bei_rows(panel_id, state)
     if panel_id not in PANELS:
         return []
-    _title, types, cols = PANELS[panel_id]
-    if cols_override is not None:
-        cols = cols_override
+    types = PANELS[panel_id][1]
+    cols = cols_override if cols_override is not None else panel_columns(panel_id)
     today = date.today()
     ccy_filterable = panel_id in CCY_FILTER_PANELS
     ley_filterable = panel_id in LEY_FILTER_PANELS

@@ -73,6 +73,23 @@
 .opt-chain-tbl tr.atm td.k { background: rgba(74,141,255,.20); }
 .opt-chain-tbl td.C { color: var(--call, #2dd17a); }
 .opt-chain-tbl td.V { color: var(--put,  #ff5e6c); }
+/* Celda SIN precio utilizable (punta, mid y último en 0): la pata no se puede armar,
+   así que `leg_cell` la deja sin onclick y le pone `dim` + el motivo en el `title`.
+   Sin regla propia esa celda se veía IGUAL que una clickeable (mismo verde/rojo de
+   call/put, con el hover de fila encima): el aviso era invisible y la única pista era
+   que el click no hacía nada. `td.C.dim`/`td.V.dim` van explícitos para ganarle al
+   color del lado sin depender del orden del archivo; el `not-allowed` se limita a las
+   celdas de punta (`.right`) para no contagiar a la fila "Sin contratos", que usa el
+   mismo `dim` como simple atenuación. */
+.opt-chain-tbl td.dim,
+.opt-chain-tbl td.C.dim,
+.opt-chain-tbl td.V.dim {
+  color: var(--text-mute, #6b7aa6);
+  font-style: italic;
+  opacity: .6;
+}
+.opt-chain-tbl td.dim.right { cursor: not-allowed; }
+
 .opt-chain-tbl td.clickable { cursor: pointer; }
 .opt-chain-tbl td.C.clickable:hover { background: rgba(45,209,122,.18); }
 .opt-chain-tbl td.V.clickable:hover { background: rgba(255,94,108,.18); }

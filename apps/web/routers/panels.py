@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -32,7 +33,7 @@ from apps.web.panels_rows import (  # noqa: F401 — re-exported for tests + ext
     _next_coupon_date, _pct, _row_values, _fmt, _cell_class,
     _build_rv_rows, _build_panel_lider_rows, _build_futuros_rows,
     _implied_rates, _peso_tea_curve, _futuros_label, _build_futuros_share,
-    _build_bei_rows, _build_rows, _chart_payload,
+    _build_bei_rows, _build_rows, _chart_payload, panel_columns,
     _share_full_cols, _drop_empty_share_cols,
     _ALL_BOND_COLS, _SHARE_DROP_COLS,
     _RV_GROUPS, _ONE_MONTH_YEARS, _TASA_FIJA_TYPES,
@@ -72,6 +73,12 @@ def _read_default_layout() -> str:
 # ── CI metrics: memoización por (revision, panel_id) ────────────────────────
 
 _CI_METRICS_CACHE: dict = {}
+# `panel_rows` es un handler SYNC → FastAPI lo corre en el threadpool de anyio, y los
+# dos paneles con selector CI disparan su hx-get con el MISMO evento sse:refresh: hay
+# dos hilos dentro de `_ci_metrics` en cada ciclo. Sin este lock la lectura y la purga
+# eran read-modify-write no atómicos (doble `del` → KeyError, iteración mientras el
+# otro borra → RuntimeError) y el fragmento salía 500. Mismo patrón que fci_service.
+_CI_METRICS_LOCK = threading.Lock()
 
 
 def _ci_metrics(panel_id: str, request: Request, hist_provider,
@@ -87,13 +94,10 @@ def _ci_metrics(panel_id: str, request: Request, hist_provider,
         return None
 
     cache_key = (revision, panel_id)
-    if cache_key in _CI_METRICS_CACHE:
-        return _CI_METRICS_CACHE[cache_key]
-
-    # Purgar entradas de revisiones anteriores (revision es monótonamente creciente).
-    stale = [k for k in _CI_METRICS_CACHE if k[0] != revision]
-    for k in stale:
-        del _CI_METRICS_CACHE[k]
+    with _CI_METRICS_LOCK:               # get() en vez de `in` + []: una sola lectura
+        hit = _CI_METRICS_CACHE.get(cache_key)
+    if hit is not None:                  # (una lista vacía también es un hit válido)
+        return hit
 
     hub = request.app.state.hub
     ci_provider = HubMarketDataProvider(hub, hist_provider, settle="CI")
@@ -105,7 +109,11 @@ def _ci_metrics(panel_id: str, request: Request, hist_provider,
         indices=getattr(app_state, "indices", None),
         fx=getattr(app_state, "fx", None),
     ).execute(list(types), settle_date=date.today(), settle_lag=0)
-    _CI_METRICS_CACHE[cache_key] = result
+    with _CI_METRICS_LOCK:
+        # Purgar entradas de revisiones anteriores (revision es monótonamente creciente).
+        for k in [k for k in _CI_METRICS_CACHE if k[0] != revision]:
+            _CI_METRICS_CACHE.pop(k, None)
+        _CI_METRICS_CACHE[cache_key] = result
     return result
 
 
@@ -113,7 +121,7 @@ def _ci_metrics(panel_id: str, request: Request, hist_provider,
 
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request, state=Depends(get_state)):
-    panels = [{"id": pid, "title": PANELS[pid][0], "columns": PANELS[pid][2],
+    panels = [{"id": pid, "title": PANELS[pid][0], "columns": panel_columns(pid),
                "ccy_filter": pid in CCY_FILTER_PANELS,
                "ley_filter": pid in LEY_FILTER_PANELS,
                "settle_filter": pid in SETTLE_FILTER_PANELS,
@@ -163,7 +171,7 @@ def clear_default_layout():
 def panel_rows(panel_id: str, request: Request, settle: str = "24", state=Depends(get_state),
                provider=Depends(get_provider), rofex=Depends(get_rofex),
                fx=Depends(get_fx), indices=Depends(get_indices)):
-    cols = PANELS.get(panel_id, (None, None, []))[2]
+    cols = panel_columns(panel_id)
     if panel_id == "futuros":
         rows = _build_futuros_rows(rofex, fx, indices)
     elif settle.upper() == "CI" and panel_id in SETTLE_FILTER_PANELS:
