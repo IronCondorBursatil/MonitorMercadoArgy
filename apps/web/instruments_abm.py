@@ -26,8 +26,10 @@ from core.domain.on_classification import SECTORS as _ON_SECTORS, SECTOR_MAP, cl
 from core.infrastructure.db.catalog_repository import init_db, instrument_to_orm
 from core.infrastructure.db.engine import SessionLocal
 from core.infrastructure.db.models import CashflowORM, InstrumentORM
+from core.domain.instrument_groups import is_known_type
 from core.infrastructure.repositories import (
     build_instrument, _currency_tickers, split_currency_tickers,
+    _resolve_instrument_type, audit_catalog_types,
 )
 
 logger = logging.getLogger(__name__)
@@ -479,6 +481,45 @@ def list_instruments_coverage(price_of=None, sheet: Optional[str] = None) -> Lis
     return out
 
 
+def _type_field_for(sheet: str) -> Optional[str]:
+    """Clave del form que lleva el `instrument_type` de esa hoja ('tipo'/'clase'),
+    o None si la hoja no tiene campo de tipo (Dolar_Linked)."""
+    keys = {f["key"] for f in SHEET_SCHEMAS.get(sheet, {}).get("fields", [])}
+    for k in ("tipo", "clase"):
+        if k in keys:
+            return k
+    return None
+
+
+def audit_catalog_health() -> Dict[str, List[Dict[str, Any]]]:
+    """Chequeo de salud de los tipos del catálogo, leyendo SQLite.
+
+    Wrapper con I/O de `repositories.audit_catalog_types` (que es la lógica, sobre
+    filas ya cargadas). Lo usa el operador a mano y lo puede consumir el ABM; el
+    arranque NO pasa por acá — `CatalogRepository._load` audita las filas que ya
+    tiene en la mano, sin una segunda query."""
+    init_db()
+    with SessionLocal() as s:
+        from sqlalchemy.orm import noload
+        rows = s.execute(
+            select(InstrumentORM).options(noload(InstrumentORM.cashflows))
+            .order_by(InstrumentORM.ticker)
+        ).scalars().all()
+        return audit_catalog_types(rows)
+
+
+def audit_orphan_types() -> List[Dict[str, Any]]:
+    """Bonos del catálogo cuyo `instrument_type` no pertenece a NINGÚN grupo de
+    `core/domain/instrument_groups` → no se precian ni aparecen en ningún panel
+    (los paneles filtran por igualdad exacta de tipo).
+
+    Es el chequeo que faltaba: hoy un tipo huérfano entra en silencio (se carga,
+    se guarda, tiene cashflows y precio) y nadie se entera. Lo consumen el script
+    de migración `scripts/migrate_orphan_types.py`, la verificación post-migración
+    y los tests. La señal de ARRANQUE va por `CatalogRepository.type_health`."""
+    return audit_catalog_health()["orphans"]
+
+
 def register_stocks(tickers) -> List[str]:
     """Da de alta acciones (equities) con SOLO el ticker (sin términos ni flujos),
     bajo la categoría 'Acciones'. Idempotente — no toca las ya presentes (ni las
@@ -546,6 +587,13 @@ def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
             return None
         sheet = orm.sheet or ""
         fields = dict(orm.raw_fields or {})
+        # Tipo: la COLUMNA manda cuando raw_fields no lo trae. Sin esto, las filas
+        # sembradas por script (los ingest IAMC guardan raw_fields sin `tipo`) volvían
+        # del round-trip get→save con el tipo recalculado del nombre de la hoja →
+        # "OBLIGACIONES_NEGOCIABLES"/"SOBERANOS", invisibles en todos los paneles.
+        tkey = _type_field_for(sheet)
+        if tkey and not str(fields.get(tkey) or "").strip():
+            fields[tkey] = orm.instrument_type or ""
         # los slots de ticker reflejan la fila (no los raw_fields, que pueden
         # estar viejos): clasificar cada ticker por sufijo.
         for k in ("ticker", *_SOB_SLOTS):
@@ -612,6 +660,24 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
     primary, mep, ccl = split_currency_tickers(tickers)
     all_tickers = [t for t in (primary, mep, ccl) if t]
 
+    # Guard de tipo: un `instrument_type` fuera de instrument_groups deja al bono
+    # invisible en TODOS los paneles (filtran por igualdad exacta) y sin pricing.
+    # Se valida ANTES de abrir la transacción: fail-fast, sin escribir nada.
+    #
+    # `warn=False`: esto es un PRE-CHEQUEO, no el camino de escritura. Con el aviso
+    # puesto, guardar una ON sin `tipo` logueaba el MISMO WARNING dos veces por click
+    # (acá y de nuevo adentro de `build_instrument`, abajo) — un aviso repetido se lee
+    # como dos filas afectadas y le baja el precio a la señal. La traza la deja el
+    # camino real: si el save sigue, `build_instrument` avisa una vez; si el tipo es
+    # huérfano, el ValueError de acá se lo dice al usuario en la cara (y el router lo
+    # loguea), que es más fuerte que una línea de log.
+    itype = _resolve_instrument_type(normalized, sheet, primary, warn=False)
+    if not is_known_type(itype):
+        raise ValueError(
+            f"tipo '{itype}' no pertenece a ningún grupo de instrument_groups: el bono "
+            f"no se preciaría ni aparecería en ningún panel. Elegí un tipo válido de "
+            f"la hoja {sheet}.")
+
     parsed_cfs = _parse_cashflows(cashflows) if cashflows is not None else None
 
     init_db()
@@ -629,6 +695,16 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
             else:
                 cfs = _safe_synth(normalized)
 
+        # raw_fields: MERGE sobre el blob previo, no reemplazo. El form solo manda
+        # las claves de SHEET_SCHEMAS[sheet]; asignar `normalized` entero borraba
+        # todo lo demás — el cache `byma`/`ficha`, `origen`, `cupon_anual_pct` y el
+        # `ley_aplicable` de las hojas que no tienen ese campo en el form. El form
+        # SIGUE GANANDO sobre sus propias claves (incluido vaciarlas). Se acumulan
+        # los blobs de todas las filas a consolidar, con el primario último (manda).
+        prev_raw: Dict[str, Any] = {}
+        for o in sorted(existing, key=lambda x: x.ticker == primary):
+            prev_raw.update(o.raw_fields or {})
+
         for o in existing:
             s.delete(o)
         s.flush()  # libera las PK antes de re-insertar
@@ -636,7 +712,7 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
         inst = build_instrument(normalized, sheet, cfs)  # ticker = primario
         if inst is None:
             raise ValueError("ticker is required")
-        s.add(instrument_to_orm(inst, sheet=sheet, raw_fields=normalized,
+        s.add(instrument_to_orm(inst, sheet=sheet, raw_fields={**prev_raw, **normalized},
                                 ticker_mep=mep, ticker_ccl=ccl))
 
     logger.info("ABM: %s %s [%s] in %s%s", action, primary, ",".join(all_tickers), sheet,

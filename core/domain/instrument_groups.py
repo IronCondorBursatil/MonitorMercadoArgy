@@ -35,3 +35,35 @@ PANEL_LIDER = [
     "LOMA", "METR", "PAMP", "SUPV", "TECO2", "TGNO4", "TGSU2", "TRAN",
     "TXAR", "VALO", "YPFD",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# Universo de `instrument_type` VÁLIDOS.
+#
+# Todo el read-path (paneles, `apps/web/app.py::_ALL_TYPES`, `on_service`) filtra
+# por IGUALDAD EXACTA de `instrument_type` contra las listas de arriba: un tipo que
+# no figure en ninguna NO se precia y NO se ve en ningún panel — el bono queda
+# cargado pero invisible. Por eso el borde de escritura (`build_instrument` /
+# ABM) valida contra este set en vez de inventar un tipo del nombre de la hoja.
+#
+# `ACCION` no tiene panel por tipo (el Panel Líder cotiza por ticker) pero es un
+# tipo legítimo del catálogo (altas de `instruments_abm.register_stocks`).
+# --------------------------------------------------------------------------- #
+ACCIONES = ["ACCION"]
+
+BOND_TYPES = [*SOBERANOS, *BOPREALES, *TASA_FIJA, *CER, *DOLAR_LINKED, *TAMAR,
+              *DUAL_TAMAR, *OBLIGACIONES_NEGOCIABLES, *PROVINCIALES]
+
+KNOWN_TYPES = frozenset(BOND_TYPES + ACCIONES)
+
+
+def is_known_type(instrument_type) -> bool:
+    """True si `instrument_type` pertenece a algún grupo (= algún panel lo muestra)."""
+    return str(instrument_type or "").upper().strip() in KNOWN_TYPES
+
+
+def orphan_types(types) -> list:
+    """Los tipos de `types` que no pertenecen a ningún grupo, ordenados y sin
+    repetir. Vacío = todo el universo es visible en algún panel."""
+    return sorted({str(t or "").upper().strip() for t in types
+                   if not is_known_type(t)})

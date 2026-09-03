@@ -53,7 +53,9 @@ def backup_db(db_path: _PathLike, backup_dir: _PathLike, *, keep: int = 7,
     recientes. Devuelve el Path creado, o None si la DB no existe o la copia falló.
 
     Sin `tag`: a lo sumo uno por día calendario (el backup diario del arranque) —
-    devuelve None si ya hay backup de hoy. Con `tag` (ej. 'pre-reseed'): snapshot
+    devuelve None si ya hay backup DIARIO de hoy. El pool tagged no lo bloquea: son
+    series independientes (el dedup las mezclaba y un snapshot pre-op de la mañana
+    cancelaba el diario de todo el día). Con `tag` (ej. 'pre-reseed'): snapshot
     INCONDICIONAL con hora en el nombre — es la red de seguridad de una operación
     destructiva, así que no puede depender de si el diario ya corrió (un diario de
     la mañana NO contiene las altas ABM del día). El 'T' del timestamp ordena el
@@ -69,10 +71,13 @@ def backup_db(db_path: _PathLike, backup_dir: _PathLike, *, keep: int = 7,
     bdir.mkdir(parents=True, exist_ok=True)
 
     if tag is None:
-        existing = list_backups(bdir)
-        if any(p.name.startswith(f"{_PREFIX}{stamp}") for p in existing):
-            return None  # ya hay backup de hoy — uno por día
+        # Dedup SOLO contra el pool diario. Con `startswith` a secas el prefijo
+        # también matchea los tagged (`catalog-<fecha>T<hora>-<tag>.db`), así que un
+        # snapshot pre-op de la mañana cancelaba el diario de TODO el día — y el
+        # tagged es, por definición, el estado PREVIO a esa operación.
         out = bdir / f"{_PREFIX}{stamp}{_SUFFIX}"
+        if out.exists():
+            return None  # ya hay backup diario de hoy — uno por día
     else:
         out = bdir / f"{_PREFIX}{stamp}T{ts.strftime('%H%M%S')}-{tag}{_SUFFIX}"
     try:
