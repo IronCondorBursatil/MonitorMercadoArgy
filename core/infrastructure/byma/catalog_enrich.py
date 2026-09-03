@@ -19,6 +19,7 @@ from typing import Dict, Optional
 
 from sqlalchemy import select
 
+from core.infrastructure._tls import should_verify
 from core.infrastructure.db.catalog_repository import init_db
 from core.infrastructure.db.engine import SessionLocal
 from core.infrastructure.db.models import InstrumentORM
@@ -71,12 +72,30 @@ def enrich_isin_from_byma(csv_path: Optional[Path] = None) -> int:
                 continue
             isin = meta.get("isin") or None
             byma_meta = {k: v for k, v in meta.items() if k != "isin" and v}
-            want_byma = byma_meta or None
             new_raw = dict(o.raw_fields or {})
-            prev_byma = new_raw.get("byma")
-            if o.isin == isin and prev_byma == want_byma:
+            prev_byma = new_raw.get("byma") or None
+            # MERGE, no asignación: la semilla manda sobre SUS 3 campos
+            # (emisor/tipoEspecie/securityType) pero no puede borrar las sub-claves
+            # que puso el enriquecimiento en vivo — sobre todo `ficha`
+            # (enrich_ficha_meta). Pisar el sub-dict entero borraba la ficha de toda
+            # fila que matchee el CSV en CADA arranque, y como el short-circuit
+            # comparaba el sub-dict completo, la rama de escritura corría siempre
+            # (idempotencia rota + re-scrapeo de cientos de fichas por boot).
+            want_byma = {**(prev_byma or {}), **byma_meta} or None
+            # El ISIN de la DB MANDA. `data/byma/titulos_final.csv` es SEMILLA y
+            # SQLite es la fuente de verdad (invariante de CLAUDE.md): la semilla solo
+            # RELLENA el hueco, nunca pisa un ISIN ya cargado. Dos bugs distintos acá:
+            #  1) el original (`want_isin = isin`) degradaba a None el ISIN puesto por
+            #     el ABM, porque `load_byma_catalog` incluye los símbolos sin
+            #     `codigoIsin` con isin='';
+            #  2) el parche intermedio (`isin or o.isin`) tapaba (1) pero seguía
+            #     dejando que un CSV regenerado PISARA con otro valor un ISIN
+            #     editado a mano — la semilla ganándole al editor de runtime.
+            # Misma regla que la hermana `enrich_isin_from_ficha` (`if o.isin: continue`).
+            want_isin = o.isin or isin
+            if o.isin == want_isin and prev_byma == want_byma:
                 continue  # ya enriquecido → no reescribir (idempotente)
-            o.isin = isin
+            o.isin = want_isin
             if want_byma is not None:
                 new_raw["byma"] = want_byma
             else:
@@ -100,6 +119,26 @@ _FICHA_HEADERS = {
     "Token": "dc826d4c2dde7519e882a250359a23a7", "Options": "technical-details",
     "Origin": "https://open.bymadata.com.ar", "Referer": "https://open.bymadata.com.ar/",
 }
+
+
+def _ficha_session():
+    """`requests.Session` para la ficha técnica BYMA, con la política TLS ÚNICA del
+    repo (`_tls.should_verify`).
+
+    Antes acá había `import truststore; truststore.inject_into_ssl()` bajo un
+    `except ImportError: pass`. `truststore` NUNCA estuvo instalado ni declarado
+    (no está en requirements.txt / requirements.lock / requirements-dev.txt), así
+    que era código muerto permanente que el `except` disimulaba: parecía que el
+    módulo resolvía su TLS y en realidad no hacía nada. Se saca en vez de declarar
+    la dependencia porque ya no hace falta: verificado en vivo el 2026-09-03 con
+    trust store certifi-only (el del droplet Linux), open.bymadata.com.ar encadena
+    OK contra 'GlobalSign RSA OV SSL CA 2018'. Sumar una dependencia nueva a prod
+    para un problema que no existe es peor que borrar el workaround."""
+    import requests
+    session = requests.Session()
+    session.headers.update(_FICHA_HEADERS)
+    session.verify = should_verify(_FICHA_URL)
+    return session
 
 
 def _ficha_raw(session, symbol: str):
@@ -161,14 +200,7 @@ def enrich_ficha_meta(max_fetch: int = 800, fetch_fn=None) -> int:
     vacía. Solo persiste fichas NO vacías → no late fallos transitorios."""
     own_session = fetch_fn is None
     if own_session:
-        try:
-            import truststore  # TLS de BYMA (cadena incompleta)
-            truststore.inject_into_ssl()
-        except ImportError:
-            pass
-        import requests
-        session = requests.Session()
-        session.headers.update(_FICHA_HEADERS)
+        session = _ficha_session()
         fetch_fn = lambda sym: _ficha_raw(session, sym)  # noqa: E731
 
     from concurrent.futures import ThreadPoolExecutor
@@ -226,12 +258,6 @@ def enrich_isin_from_ficha(max_fetch: int = 600) -> int:
     """Para los instrumentos del catálogo curado SIN isin, busca el ISIN en la ficha
     técnica BYMA (autoritativo) probando cada pata. Concurrente. Devuelve cuántos se
     completaron. Requiere red (corre en to_thread al arranque); falla suave."""
-    try:
-        import truststore  # TLS de BYMA (cadena incompleta)
-        truststore.inject_into_ssl()
-    except ImportError:
-        pass
-    import requests
     from concurrent.futures import ThreadPoolExecutor
 
     init_db()
@@ -243,8 +269,7 @@ def enrich_isin_from_ficha(max_fetch: int = 600) -> int:
     if not targets:
         return 0
 
-    session = requests.Session()
-    session.headers.update(_FICHA_HEADERS)
+    session = _ficha_session()
 
     def _fetch(item):
         primary, legs = item

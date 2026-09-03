@@ -188,38 +188,44 @@ class BCRAIndicesProvider:
         return topup_days
 
     def _fetch_all(self):
+        # I/O de red FUERA del lock (misma forma que `prefetch()`; regla de
+        # agents.md §BEI). El lock es de CLASE y `prefetch()` lo toma de forma
+        # bloqueante desde el hilo del event loop: retenerlo a través de los 4
+        # httpx.get (10s c/u) congelaba la app entera hasta que BCRA respondiera.
         with self._lock:
             if not self._disk_loaded:
                 self._hydrate_from_disk()
             if self._last_attempt == _ar_today():
                 return
             type(self)._last_attempt = _ar_today()
-
             cer_days = self._fetch_window(self._cache_cer, self._CER_BOOTSTRAP_DAYS, self._CER_TOPUP_DAYS)
-            cer_new = _fetch_series(30, days=cer_days)
+            tamar_days = self._TAMAR_TOPUP_DAYS if self._cache_tamar else self._TAMAR_BOOTSTRAP_DAYS
+            a3500_days = self._fetch_window(self._cache_a3500, self._A3500_BOOTSTRAP_DAYS, self._A3500_TOPUP_DAYS)
+
+        cer_new      = _fetch_series(30, days=cer_days)
+        tamar_new    = _fetch_series(44, days=tamar_days)
+        a3500_new    = _fetch_series(5, days=a3500_days)
+        reservas_new = _fetch_series(1, days=self._RESERVAS_FETCH_DAYS)
+
+        with self._lock:
             if cer_new:
                 added = len(set(cer_new) - set(self._cache_cer))
                 self._cache_cer.update(cer_new)
                 _save_csv(_CER_CSV, self._cache_cer)
                 logger.info(f"CER: +{added} new points, {len(self._cache_cer)} total.")
 
-            tamar_days = self._TAMAR_TOPUP_DAYS if self._cache_tamar else self._TAMAR_BOOTSTRAP_DAYS
-            tamar_new = _fetch_series(44, days=tamar_days)
             if tamar_new:
                 added = len(set(tamar_new) - set(self._cache_tamar))
                 self._cache_tamar.update(tamar_new)
                 _save_csv(_TAMAR_CSV, self._cache_tamar)
                 logger.info(f"TAMAR: +{added} new points, {len(self._cache_tamar)} total.")
 
-            a3500_days = self._fetch_window(self._cache_a3500, self._A3500_BOOTSTRAP_DAYS, self._A3500_TOPUP_DAYS)
-            a3500_new = _fetch_series(5, days=a3500_days)
             if a3500_new:
                 added = len(set(a3500_new) - set(self._cache_a3500))
                 self._cache_a3500.update(a3500_new)
                 _save_csv(_A3500_CSV, self._cache_a3500)
                 logger.info(f"A3500: +{added} new points, {len(self._cache_a3500)} total.")
 
-            reservas_new = _fetch_series(1, days=self._RESERVAS_FETCH_DAYS)
             if reservas_new:
                 added = len(set(reservas_new) - set(self._cache_reservas))
                 self._cache_reservas.update(reservas_new)

@@ -24,6 +24,7 @@ from typing import Dict, Optional
 
 import httpx
 
+from core.infrastructure._tls import should_verify
 from core.infrastructure.byma.sources import BymaOpenSource
 
 logger = logging.getLogger(__name__)
@@ -49,9 +50,10 @@ def _request_closes(url: str, symbol: str, *, max_days: int, resolution: str,
     today = dt.date.today()
     since = today - dt.timedelta(days=max(1, max_days))
     own = client is None
-    # verify=False: el host BYMA usa una cadena que httpx no valida out-of-the-box
-    # (igual que BymaOpenSource / series_historicas). Data pública read-only.
-    cli = client or httpx.Client(verify=False, timeout=40.0)
+    # TLS por la política única del repo (_tls.should_verify): el host de BYMA open
+    # sigue en la allowlist de cadena-rota, así que el comportamiento default no
+    # cambia — pero el override MONITOR_TLS_NO_VERIFY_HOSTS deja de ser inerte acá.
+    cli = client or httpx.Client(verify=should_verify(url), timeout=40.0)
     try:
         r = cli.get(url, params={"symbol": symbol, "resolution": resolution,
                                  "from": _unix(since), "to": _unix(today)},

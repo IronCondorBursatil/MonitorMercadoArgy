@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from core.infrastructure._tls import should_verify
 from core.infrastructure.byma.sources import BymaOpenSource
 
 logger = logging.getLogger(__name__)
@@ -122,9 +123,12 @@ def fetch_history(symbol: str, *, max_days: int = 400,
     today = dt.date.today()
     since = today - dt.timedelta(days=max(1, max_days))
     own = client is None
-    # verify=False: el host BYMA usa una cadena que httpx no valida out-of-the-box
-    # (igual que BymaRealtimeSource). Es data pública read-only.
-    cli = client or httpx.Client(verify=False, timeout=40.0)
+    # TLS por la política única del repo (`_tls.should_verify`): verify por defecto,
+    # allowlist de cadena-rota por `MONITOR_TLS_NO_VERIFY_HOSTS`. Antes iba
+    # `verify=False` hardcodeado, que dejaba el override INERTE en este camino (y el
+    # comentario de "cadena que httpx no valida" ya no es cierto: verificado en vivo
+    # el 2026-09-03 con trust store certifi-only, open.bymadata.com.ar encadena OK).
+    cli = client or httpx.Client(verify=should_verify(_BASE), timeout=40.0)
     try:
         for mat in _MATURITIES:
             try:
