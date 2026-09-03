@@ -33,6 +33,18 @@ def server_running(host: str, port: int, timeout_s: float = 1.0) -> bool:
         return False
 
 
+def guard_write_snapshot(tag: str, *, force: bool = False) -> tuple[int, Path | None]:
+    """Igual que `guard_write`, pero además DEVUELVE el snapshot que creó.
+
+    Lo necesitan los scripts que mutan N bonos en loop y hacen rollback explícito
+    (`restore_db(bkp, ...)`) cuando la verificación posterior no cierra: con el
+    `backup_db(...)` inline y el retorno descartado, un snapshot fallido dejaba
+    `bkp=None` y el propio rollback explotaba (`Path(None)` → TypeError), con el
+    catálogo mutado a medias, sin restore y sin backup.
+    """
+    return _preflight(tag, force=force)
+
+
 def guard_write(tag: str, *, force: bool = False) -> int:
     """Preflight de un script que va a ESCRIBIR sobre la catalog.db.
 
@@ -50,22 +62,27 @@ def guard_write(tag: str, *, force: bool = False) -> int:
 
     `force` saltea ambos, para el operador que sabe lo que hace (mismo `--force`
     que `ingest_master`)."""
+    return _preflight(tag, force=force)[0]
+
+
+def _preflight(tag: str, *, force: bool) -> tuple[int, Path | None]:
+    """Implementación única de los dos guards (ver `guard_write`)."""
     if not force and server_running(settings.host, settings.port):
         print(f"ABORTADO: el monitor está corriendo en {settings.host}:{settings.port}.")
         print("Pará el server primero: la escritura no se vería hasta reiniciar (el")
         print("catálogo vive cacheado en memoria). Para forzar: --force")
-        return 2
+        return 2, None
 
     snap = backup_db(settings.catalog_db, settings.backup_dir,
                      keep=settings.backup_keep, tag=tag)
     if snap:
         print(f"backup pre-op: {snap.name}")
-        return 0
+        return 0, snap
     if not Path(settings.catalog_db).is_file():
-        return 0   # bootstrap: no hay estado previo que respaldar
+        return 0, None   # bootstrap: no hay estado previo que respaldar
     print(f"ABORTADO: no se pudo crear el backup de seguridad '{tag}' "
           "(la escritura quedaría sin red).")
     if not force:
-        return 3
+        return 3, None
     print("(--force: continuando SIN backup de seguridad)")
-    return 0
+    return 0, None

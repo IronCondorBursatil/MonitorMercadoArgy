@@ -1,6 +1,6 @@
 """Levanta la app FastAPI en :8001 para verificación (no toca el :8000 productivo).
 
-    & "$env:LOCALAPPDATA\\Microsoft\\WindowsApps\\python3.12.exe" scripts/run_server_test.py
+    py -3.12 scripts/run_server_test.py
 """
 import os
 import sys

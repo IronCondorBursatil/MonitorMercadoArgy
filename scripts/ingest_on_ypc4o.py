@@ -29,12 +29,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.op_guards import guard_write  # noqa: E402
+
 SHEET = "Obligaciones_Negociables"
 
 FIELDS = {
     "ticker_ars": "YPC4O", "ticker_mep": "YPC4D", "ticker_ccl": "YPC4C",
     "isin": "US984245AF78", "short_name": "YPF S.A. - YPF 2028 u$s 10%",
-    "serie_clase": "Internacional", "tipo": "HARD DOLLAR", "ley_aplicable": "NY",
+    "serie_clase": "Internacional", "tipo": "HARD DOLLAR", "ley_aplicable": "Extranjera",   # ley NY -> pata pesos contra CCL
     "fecha_emision": "1998-11-02",        # dated-date (ancla la grilla al día 02), no el 12/11 del informe
     "fecha_vencimiento": "2028-11-02",
     "cupon anual %": "10", "frecuencia pagos": "2",
@@ -51,7 +53,7 @@ def _fmt(v, nd=2):
     return f"{v:.{nd}f}" if isinstance(v, (int, float)) else "—"
 
 
-def main(dry_run: bool) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
     from apps.web.instruments_abm import _safe_synth
 
     synth = _safe_synth(FIELDS)
@@ -65,14 +67,11 @@ def main(dry_run: bool) -> int:
         print("== DRY RUN (no escribe) ==")
         return 0
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
     from apps.web.instruments_abm import save_instrument
     from scripts.load_bond import verify
 
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-ypc4o")
-    print(f"backup pre-op: {snap}")
+    if (rc := guard_write("pre-ypc4o", force=force)):
+        return rc
     res = save_instrument(SHEET, FIELDS, cashflows=None)  # bullet → synth
     print(f"{res['action']}: {', '.join(res['tickers'])}\n")
 
@@ -100,4 +99,5 @@ def main(dry_run: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))

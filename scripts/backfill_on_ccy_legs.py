@@ -25,6 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.op_guards import guard_write  # noqa: E402
+
 SHEET = "Obligaciones_Negociables"
 
 
@@ -48,7 +50,7 @@ async def _live_symbols() -> set:
     return {s for s, r in snap.items() if getattr(r, "c", None)}
 
 
-def main(dry_run: bool = False) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
     from sqlalchemy import select
 
     from core.infrastructure.db.engine import SessionLocal
@@ -94,12 +96,8 @@ def main(dry_run: bool = False) -> int:
         print("\nNada para completar.")
         return 0
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
-
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-on-legs")
-    print("\nbackup pre-op: %s" % snap)
+    if (rc := guard_write("pre-on-legs", force=force)):
+        return rc
 
     with SessionLocal.begin() as s:
         for t, (m, c) in plan.items():
@@ -122,4 +120,5 @@ def main(dry_run: bool = False) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))

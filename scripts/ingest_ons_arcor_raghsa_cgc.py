@@ -30,6 +30,8 @@ from dateutil.relativedelta import relativedelta
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.op_guards import guard_write  # noqa: E402
+
 SHEET = "Obligaciones_Negociables"
 
 
@@ -119,7 +121,7 @@ def _fmt(v: Optional[float], nd: int = 2) -> str:
     return f"{v:.{nd}f}" if isinstance(v, (int, float)) else "—"
 
 
-def main(dry_run: bool) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
     from apps.web.instruments_abm import _safe_synth
 
     print("== cashflows futuros (>settle 16/06/2026) ==")
@@ -145,14 +147,11 @@ def main(dry_run: bool) -> int:
         print("\n== DRY RUN (no escribe) ==")
         return 0
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
     from apps.web.instruments_abm import save_instrument, get_instrument
     from scripts.load_bond import verify
 
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-arcor-raghsa-cgc")
-    print(f"\nbackup pre-op: {snap}\n")
+    if (rc := guard_write("pre-arcor-raghsa-cgc", force=force)):
+        return rc
     for b in BONDS:
         pre = "ya existía" if get_instrument(b["tickers"][0]) else "nuevo"
         res = save_instrument(SHEET, _fields(b), cashflows=b["cashflows"])
@@ -198,4 +197,5 @@ def main(dry_run: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))

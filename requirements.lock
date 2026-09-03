@@ -17,13 +17,34 @@ python-dateutil==2.9.0.post0
 holidays==0.44
 pandas-market-calendars==5.3.2
 openpyxl==3.1.5
-websockets==16.0
+websockets==16.0          # futures_provider (Matba/Rofex) Y el extra [standard] de uvicorn
+                          # (ws_protocol 'auto' → websockets_impl). Un solo pin sirve a los dos.
 
 # --- web / async ---
 fastapi==0.136.3
-uvicorn==0.48.0
+uvicorn[standard]==0.48.0   # el extra es el que trae httptools (parser HTTP de prod)
+# Transitivas del extra [standard]. Pinearlas NO es cosmético: `uvicorn[standard]==0.48.0`
+# a secas deja que pip resuelva httptools/watchfiles/PyYAML/python-dotenv a lo que haya el
+# día del bootstrap — o sea, justamente el parser HTTP del hot-path queda sin fijar,
+# mientras el header de este archivo promete "las transitivas que afectan runtime".
+# Verificado en vivo con estas versiones: `Config.load()` resuelve
+# http_protocol_class=HttpToolsProtocol y ws_protocol_class=WebSocketProtocol.
+httptools==0.8.0          # parser HTTP en C — la RAZÓN de ser del extra (http='auto')
+watchfiles==1.2.0         # --reload (no se usa en prod, pero entra con el extra)
+python-dotenv==1.2.2      # --env-file de uvicorn (la app usa su propio loader en settings)
+PyYAML==6.0.3             # --log-config .yaml de uvicorn
+# uvloop: NO se pinea a propósito. Su marker es `sys_platform != 'win32'`, así que en esta
+# máquina (Windows, sin venv) no se instala y no hay versión verificada que fijar; en el
+# droplet entra por `uvicorn[standard]` de requirements.txt, que es lo que instala deploy.sh
+# (el lock es para el bootstrap local reproducible, ver docs/plan-optimizacion-2026-08-31).
+# colorama (marker sys_platform == 'win32', 0.4.6 acá): solo colorea el log de consola,
+# no afecta el runtime servido — se deja libre a propósito.
 httpx==0.28.1
-requests==2.33.1          # ficha técnica BYMA (catalog_enrich.py): Session + truststore
+# requests: ficha técnica BYMA — `requests.Session` en byma/catalog_enrich.py (la corre el
+# _startup_reconcile del lifespan) y en scripts/byma_enrich_seed_isin.py. Las dos sesiones
+# verifican TLS con la política ÚNICA del repo (core/infrastructure/_tls.py::should_verify),
+# no con un trust store propio. Dependencia de runtime → el pin queda.
+requests==2.33.1
 jinja2==3.1.6
 python-multipart==0.0.29
 sse-starlette==3.4.4

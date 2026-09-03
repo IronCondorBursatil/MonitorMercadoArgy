@@ -21,6 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.op_guards import guard_write  # noqa: E402
+
 SHEET = "Obligaciones_Negociables"
 
 CASHFLOWS = [
@@ -44,7 +46,10 @@ FIELDS = {
     "isin":                 "AR0787528089",
     "short_name":           "Aluar Aluminio Argentino S.A.I.C.",
     "tipo":                 "HARD DOLLAR",
-    "ley_aplicable":        "AR",
+    # Vocabulario canonico (agents.md / select del ABM): `is_ley_argentina` es
+    # "ARGENTIN" in ley.upper(), asi que "AR" caia como ley EXTRANJERA y la pata
+    # pesos se valuaba contra CCL en vez de MEP.
+    "ley_aplicable":        "Argentina",
     "serie_clase":          "Serie 8",
     "fecha_emision":        "2024-03-21",
     "fecha_vencimiento":    "2027-03-21",
@@ -55,7 +60,7 @@ FIELDS = {
 }
 
 
-def main(dry_run: bool) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
     print("== LMS8O cashflows ==")
     today_str = date.today().isoformat()
     fut = [x for x in CASHFLOWS if x["date"] > today_str]
@@ -68,14 +73,11 @@ def main(dry_run: bool) -> int:
         print("\n== DRY RUN (no escribe) ==")
         return 0
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
     from apps.web.instruments_abm import save_instrument, get_instrument
     from scripts.load_bond import verify
 
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-lms8o")
-    print(f"\nbackup pre-op: {snap}\n")
+    if (rc := guard_write("pre-lms8o", force=force)):
+        return rc
 
     pre = "ya existía" if get_instrument("LMS8O") else "nuevo"
     res = save_instrument(SHEET, FIELDS, cashflows=CASHFLOWS)
@@ -103,4 +105,5 @@ def main(dry_run: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))

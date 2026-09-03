@@ -18,7 +18,10 @@ websockets               # futures_provider
 fastapi
 uvicorn[standard]
 httpx
-requests                 # ficha técnica BYMA (catalog_enrich) — Session + truststore
+# requests: ficha técnica BYMA — requests.Session en byma/catalog_enrich (la corre el
+# _startup_reconcile del lifespan) + scripts/byma_enrich_seed_isin. Las dos sesiones sacan
+# su verificación TLS de core/infrastructure/_tls.py (política única del repo).
+requests
 jinja2
 python-multipart
 sse-starlette

@@ -19,11 +19,10 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-import truststore  # noqa: E402
-truststore.inject_into_ssl()
 import requests  # noqa: E402
 
 from config.settings import settings  # noqa: E402
+from core.infrastructure._tls import should_verify  # noqa: E402
 
 BASE = "https://open.bymadata.com.ar/vanoms-be-core/rest/api/bymadata/free"
 H = {"User-Agent": "Mozilla/5.0", "Accept": "application/json", "Content-Type": "application/json",
@@ -31,6 +30,25 @@ H = {"User-Agent": "Mozilla/5.0", "Accept": "application/json", "Content-Type": 
      "Origin": "https://open.bymadata.com.ar", "Referer": "https://open.bymadata.com.ar/"}
 FIELDS = ("codigoIsin", "tipoEspecie", "insType", "emisor")
 _MON_ORDER = {"ARS": 0, "MEP": 1, "cable": 2}
+
+
+def _session():
+    """`requests.Session` de la ficha BYMA con la política TLS ÚNICA del repo
+    (`core.infrastructure._tls.should_verify`) — igual que
+    `byma/catalog_enrich.py::_ficha_session`, que es el camino de producción de esta
+    misma ficha.
+
+    Acá arriba había `import truststore; truststore.inject_into_ssl()` (primero suelto,
+    después bajo un `except ImportError: pass`). `truststore` no está declarado en
+    requirements.txt / .lock / -dev.txt ni instalado, así que el guard sólo disimulaba
+    código muerto: parecía que el script resolvía su TLS y no hacía nada. Se saca por el
+    mismo motivo que en `catalog_enrich` (verificado en vivo el 2026-09-03:
+    open.bymadata.com.ar encadena OK contra un trust store certifi-only) y se reemplaza
+    por la perilla que SÍ existe, `MONITOR_TLS_NO_VERIFY_HOSTS`."""
+    session = requests.Session()
+    session.headers.update(H)
+    session.verify = should_verify(BASE)
+    return session
 
 
 def ficha(session, symbol, retries=4):
@@ -66,7 +84,7 @@ def main():
         todo[g] = [r["symbol"] for r in cands][:3]
     print(f"grupos sin ISIN a consultar: {len(todo)} (de {len(groups)})")
 
-    session = requests.Session(); session.headers.update(H)
+    session = _session()
 
     def fetch(item):
         g, syms = item

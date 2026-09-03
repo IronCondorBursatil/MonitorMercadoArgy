@@ -20,8 +20,10 @@ from core.domain.services import FinancialEngine as New
 
 try:
     from tests._legacy_engine import FinancialEngine as Old
-except Exception:  # pragma: no cover
+    _LEGACY_IMPORT_ERROR = None
+except Exception as _exc:  # pragma: no cover
     Old = None
+    _LEGACY_IMPORT_ERROR = _exc
 
 from core.infrastructure.repositories import ExcelInstrumentsRepository
 from config.settings import settings
@@ -90,6 +92,20 @@ def _frozen_clock_and_clean_caches(monkeypatch):
     yield
 
 
+def test_legacy_engine_importable():
+    """Guard SIN skipif: si `tests/_legacy_engine.py` no importa, los tres
+    comparativos de abajo se auto-skipean y el invariante #1 de CLAUDE.md
+    ("cualquier cambio de pricing debe dejar la equivalencia verde") deja de
+    correr con el gate en VERDE. Que el apagón sea RUIDOSO es el punto:
+    el motor congelado importa símbolos vivos (`_xirr_from_years`,
+    `days_30_360`, `core.domain.pricing.metrics`) y cualquier renombre —o
+    cualquier excepción en import-time— lo rompe en silencio."""
+    assert Old is not None, (
+        "tests/_legacy_engine.py NO importa → la red de equivalencia del motor está "
+        f"APAGADA (los 3 comparativos se skipean solos): {_LEGACY_IMPORT_ERROR!r}"
+    )
+
+
 def test_both_engines_see_frozen_today():
     """Guard del congelamiento: si alguien des-congela un motor, esto falla antes
     de que la equivalencia se vuelva date-dependent en silencio."""
@@ -113,6 +129,32 @@ def _close(a, b, tol=1e-7):
     return abs(a - b) <= tol * max(1.0, abs(a), abs(b))
 
 
+_FALLBACK_PRICES = (95.0, 130.0, 158.2)
+
+
+def _test_prices(inst, idx, fx, ref):
+    """Precios de prueba ANCLADOS al V.Téc de cada instrumento.
+
+    Hardcodear 95/130/158.2 dejaba comparaciones VACÍAS (None==None en los dos
+    motores, y `_close(None, None)` es True): con el CER del mock, el precio de
+    DICP/DIP0/CUAP deflactado por el ratio CER daba ~0.06 y el solver no convergía
+    — justo los únicos instrumentos con `capital_factor > 1`, o sea la rama de
+    normalización a base-100 de `pricing/base.py` que nadie más ejercita. Idem
+    TZV26 (dólar linked). Anclando al V.Téc los dos motores comparan TIR real.
+    Fallback a los precios fijos si el V.Téc no existe (bonos vencidos / hard $)."""
+    snap = MarketSnapshot(instrument=inst, price=100.0, last_update=ref)
+    vt = New.calculate_technical_value(snap, idx, fx, ref_date=ref)
+    if vt is None or vt != vt or vt <= 0:
+        return _FALLBACK_PRICES
+    return (vt * 0.8, vt, vt * 1.2)
+
+
+def _has_future_flows(inst, settle):
+    """¿El instrumento sigue vivo a la fecha de liquidación? (los vencidos no
+    tienen TIR y su comparación vacía es legítima)."""
+    return any(cf.date > settle for cf in (inst.cashflows or []))
+
+
 @pytest.fixture(scope="module")
 def instruments():
     return ExcelInstrumentsRepository(str(settings.master_xlsx)).get_all_instruments()
@@ -124,9 +166,11 @@ def test_pricing_equivalence_all_instruments(instruments):
     settle = ref_date() + timedelta(days=1)
     ref = ref_date()
     mismatches = []
+    vacuous = []   # instrumentos VIVOS cuya TIR dio None en AMBOS motores a todo precio
 
     for inst in instruments:
-        for price in (95.0, 130.0, 158.2):
+        tir_compared = 0
+        for price in _test_prices(inst, idx, fx, ref):
             snap = MarketSnapshot(instrument=inst, price=price, last_update=ref_date())
 
             checks = {
@@ -139,6 +183,10 @@ def test_pricing_equivalence_all_instruments(instruments):
                     New.calculate_technical_value(snap, idx, fx, ref_date=ref),
                 ),
             }
+            # `_close(None, None)` es True: una comparación con None de los DOS lados
+            # no prueba NADA. Se cuentan las que sí comparan un número.
+            if checks["tir"] != (None, None):
+                tir_compared += 1
             # duration: misma TIR para ambos (la nueva).
             tir_dur = checks["tir"][1]
             if tir_dur is not None and tir_dur == tir_dur:  # not nan
@@ -157,8 +205,18 @@ def test_pricing_equivalence_all_instruments(instruments):
                 if not _close(o, n):
                     mismatches.append((inst.ticker, inst.instrument_type, name, price, o, n))
 
+        if not tir_compared and _has_future_flows(inst, settle):
+            vacuous.append((inst.ticker, inst.instrument_type))
+
     assert not mismatches, f"{len(mismatches)} mismatches; first 15:\n" + "\n".join(
         f"  {t}/{ty} {nm} @px{px}: legacy={o!r} new={n!r}" for t, ty, nm, px, o, n in mismatches[:15]
+    )
+    # Piso de cobertura: un instrumento con flujos futuros cuya TIR es None en AMBOS
+    # motores a los 3 precios no está "verde", está SIN COMPARAR (None==None pasa).
+    assert not vacuous, (
+        f"{len(vacuous)} instrumentos VIVOS sin una sola comparación de TIR real "
+        "(None==None en ambos motores → la equivalencia no cubre su rama de pricing): "
+        + ", ".join(f"{t}/{ty}" for t, ty in vacuous)
     )
 
 

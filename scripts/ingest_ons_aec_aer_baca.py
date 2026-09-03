@@ -37,6 +37,8 @@ from dateutil.relativedelta import relativedelta
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.op_guards import guard_write  # noqa: E402
+
 SHEET = "Obligaciones_Negociables"
 
 
@@ -147,7 +149,7 @@ def _fmt(v: Optional[float], nd: int = 2) -> str:
     return f"{v:.{nd}f}" if isinstance(v, (int, float)) else "—"
 
 
-def main(dry_run: bool) -> int:
+def main(dry_run: bool = False, force: bool = False) -> int:
     if dry_run:
         print("== DRY RUN (no escribe) ==\n")
         for b in BONDS:
@@ -164,14 +166,11 @@ def main(dry_run: bool) -> int:
                 print(f"    residual (Σ amort futura) = {sum(x['amortization'] for x in fut):.4f}")
         return 0
 
-    from config.settings import settings
-    from core.infrastructure.db.backup import backup_db
     from scripts.load_bond import verify
     from apps.web.instruments_abm import save_instrument
 
-    snap = backup_db(settings.catalog_db, settings.backup_dir,
-                     keep=settings.backup_keep, tag="pre-aec-aer-baca")
-    print(f"backup pre-op: {snap}\n")
+    if (rc := guard_write("pre-aec-aer-baca", force=force)):
+        return rc
 
     for b in BONDS:
         res = save_instrument(SHEET, _fields(b), cashflows=b["cashflows"])
@@ -220,4 +219,5 @@ def main(dry_run: bool) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv,
+                          force="--force" in sys.argv))
