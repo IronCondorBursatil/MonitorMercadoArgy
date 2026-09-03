@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.domain.currency import ccy_from_suffix
 from core.domain.models import Instrument, MarketSnapshot
+from core.domain.portfolio import position_currency
 from core.domain.clock import today as _domain_today
 from core.domain.services import FinancialEngine, _is_cer_type, _cer_reference_date
 from core.holiday_engine import settlement_byma, date_range_habil
@@ -49,12 +50,16 @@ def _safe(v) -> Any:
 
 
 def _is_usd_quoted(instrument: Instrument) -> bool:
-    """Bonos cuyo precio se cotiza en USD (no en pesos) — Soberanos y BOPREALES
-    con sufijo D. Dolar Linked cotiza en pesos pese a ser USD-linked."""
-    return (
-        instrument.instrument_type in ("BONAR", "GLOBAL", "BOPREAL", "HARD DOLLAR", "DOLLAR LINKED")
-        and ccy_from_suffix(instrument.ticker) == "MEP"
-    )
+    """¿El precio de esta especie cotiza en USD (no en pesos)?
+
+    DELEGA en `portfolio.position_currency` — la fuente ÚNICA del concepto, la
+    misma que usan cartera, escenarios y la curva. Antes había acá una tercera
+    copia divergente (lista propia de tipos + sufijo `D`) que dejaba en "ARS":
+    toda pata **CABLE** (…C cotiza en dólar cable) y todas las
+    **PROVINCIAL HARD DOLLAR** …D (el tipo no figuraba en la lista). Cualquier
+    ajuste del concepto va en `core/domain/portfolio.py`, no acá.
+    """
+    return position_currency(instrument.instrument_type, instrument.ticker) == "USD"
 
 
 _TAMAR_TYPES = frozenset({"PURO", "DUAL", "DUAL_CER_TAMAR"})
@@ -623,9 +628,37 @@ def calculate(
 _CER_ANCHOR_HABIL = 10  # el CER se ancla en el 10º día hábil de cada mes (BCRA)
 
 
+# Memo de `_build_anchors` por (mes corriente, start, end). `cer_projection`
+# construye las anclas y después llama a `cer_return_scenarios`, que las vuelve a
+# construir con los MISMOS argumentos → dos barridos completos del calendario BYMA
+# (`date_range_habil` sobre ~2-3 años) por request del popup. El calendario es
+# estático dentro del día, así que el segundo barrido es puro desperdicio.
+# Clave: (año, mes) de hoy + los args. El (año, mes) es la invalidación —
+# `start` ya deriva del mes corriente, pero dejarlo explícito hace que el memo
+# caduque solo si alguien pasa un `start` fijo. Tamaño acotado: una entrada por
+# vencimiento distinto, y se vacía al cambiar de mes.
+_ANCHORS_MEMO: Dict[Tuple[Tuple[int, int], date, date], Dict[Tuple[int, int], date]] = {}
+_ANCHORS_MEMO_LOCK = threading.Lock()
+
+
 def _build_anchors(start: date, end: date) -> Dict[Tuple[int, int], date]:
     """{(año, mes): 10º día hábil del mes} para el rango [start, end]. Una sola
-    llamada al calendario BYMA (date_range_habil) — evita miles de is_habil."""
+    llamada al calendario BYMA (date_range_habil) — evita miles de is_habil.
+    Memoizado por (mes corriente, start, end): ver `_ANCHORS_MEMO`.
+
+    El dict devuelto se comparte entre callers: es de sólo lectura para todos
+    ellos (`anchors.get(...)`), no lo mutes."""
+    hoy = _domain_today()
+    mes = (hoy.year, hoy.month)
+    key = (mes, start, end)
+    with _ANCHORS_MEMO_LOCK:
+        hit = _ANCHORS_MEMO.get(key)
+        if hit is not None:
+            return hit
+        stale = [k for k in _ANCHORS_MEMO if k[0] != mes]
+    for k in stale:                      # cambió el mes → tirar lo viejo
+        _ANCHORS_MEMO.pop(k, None)
+
     anchors: Dict[Tuple[int, int], date] = {}
     by_month: Dict[Tuple[int, int], list] = {}
     for ts in date_range_habil(start.isoformat(), end.isoformat()):
@@ -634,6 +667,9 @@ def _build_anchors(start: date, end: date) -> Dict[Tuple[int, int], date]:
     for ym, days in by_month.items():
         if len(days) >= _CER_ANCHOR_HABIL:
             anchors[ym] = sorted(days)[_CER_ANCHOR_HABIL - 1]
+
+    with _ANCHORS_MEMO_LOCK:
+        _ANCHORS_MEMO[key] = anchors
     return anchors
 
 

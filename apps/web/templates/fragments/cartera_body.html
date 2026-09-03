@@ -5,7 +5,17 @@
 {% set s = pf.summary %}
 <div class="cards">
   <div class="card"><div class="k">Valor mercado (ARS)</div><div class="v">{{ money(s.total_market_value_ars) }}</div></div>
-  <div class="card"><div class="k">P&L (ARS)</div><div class="v {{ 'pos' if s.pnl_ars and s.pnl_ars>0 else ('neg' if s.pnl_ars and s.pnl_ars<0 else '') }}">{{ money(s.pnl_ars) }} <small>{{ pctd(s.pnl_pct) }}</small></div></div>
+  {# El P&L cubre SÓLO las posiciones con costo Y precio vivo (ver
+     portfolio.build_portfolio). `cost_coverage` dice qué fracción del valor del
+     libro es ésa: si no es el 100%, hay que decirlo — si no, el número no
+     reconcilia con "Valor mercado" y el usuario no tiene forma de saber por qué. #}
+  <div class="card"><div class="k">P&L (ARS)</div><div class="v {{ 'pos' if s.pnl_ars and s.pnl_ars>0 else ('neg' if s.pnl_ars and s.pnl_ars<0 else '') }}">{{ money(s.pnl_ars) }} <small>{{ pctd(s.pnl_pct) }}</small></div>
+    {% if s.cost_coverage is none %}
+    <div class="k" style="color:var(--warn,#b8860b)" title="Ninguna tenencia tiene precio de costo cargado">cubre 0% del libro (sin costo cargado)</div>
+    {% elif s.cost_coverage < 0.9995 %}
+    <div class="k" style="color:var(--warn,#b8860b)" title="Sólo las tenencias con costo Y precio vivo entran al P&amp;L">cubre {{ '%.0f'|format(s.cost_coverage * 100) }}% del libro</div>
+    {% endif %}
+  </div>
   <div class="card"><div class="k">TIR ponderada</div><div class="v">{{ pctu(s.weighted_tir) }}</div></div>
   <div class="card"><div class="k">MD cartera</div><div class="v">{{ num(s.portfolio_md) }}</div></div>
   <div class="card"><div class="k">Posiciones</div><div class="v">{{ s.n_positions }}</div></div>

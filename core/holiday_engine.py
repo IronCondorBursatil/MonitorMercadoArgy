@@ -144,10 +144,31 @@ def _ar_cobertura() -> tuple[int, int]:
     return (min(ys), max(ys)) if ys else (0, -1)
 
 
+@lru_cache(maxsize=None)
+def _xbue_ruedas_del_anio(year: int) -> frozenset:
+    """Días de rueda XBUE de un año entero, en UNA sola consulta a pandas.
+
+    Antes se pedía el schedule fecha por fecha (~2.6 ms cada una, porque arma un
+    DataFrame por llamada) contra ~1 µs del camino dentro de la cobertura del
+    Excel de feriados (2020-2029). `bond_detail._build_anchors` barre día por día
+    hasta el vencimiento + 40 d y `cer_projection` lo corre 2× por request, así
+    que el cajón "Proyección CER" de CUAP (vto 2045) tardaba ~30 s por apertura y
+    clavaba un worker del threadpool. Por año es ~1 consulta y el resultado queda
+    memoizado para todo el proceso (el calendario de un año no cambia)."""
+    try:
+        sched = _get_byma().schedule(f"{year}-01-01", f"{year}-12-31")
+        return frozenset(d.date() if hasattr(d, "date") else d for d in sched.index)
+    except Exception as e:   # calendario sin cobertura para ese año / pandas roto
+        log.warning(f"XBUE no pudo dar el schedule de {year}: {e}")
+        return frozenset()
+
+
 def _xbue_habil(d: date) -> bool:
-    """Fallback: ¿día de rueda según el calendario XBUE de pandas?"""
-    s = _get_byma().schedule(d.strftime("%Y-%m-%d"), d.strftime("%Y-%m-%d"))
-    return not s.empty
+    """Fallback: ¿día de rueda según el calendario XBUE de pandas? (por año, cacheado)."""
+    ruedas = _xbue_ruedas_del_anio(d.year)
+    if not ruedas:                      # sin cobertura → hábil = no fin de semana
+        return d.weekday() < 5
+    return d in ruedas
 
 
 def _es_habil(d: date) -> bool:

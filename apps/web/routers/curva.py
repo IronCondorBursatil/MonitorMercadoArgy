@@ -17,13 +17,20 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from apps.web.deps import get_state
 from apps.web.panels_rows import _fit_log_curve
 from apps.web.templates import TEMPLATES as _TEMPLATES
-from core.domain.portfolio import position_currency
+from core.domain.portfolio import position_fx_leg
 
 router = APIRouter()
 
-# clave -> (label, {types}, currency-filter|None)
+# clave -> (label, {types}, fx-leg-filter|None)
+#
+# El tercer campo filtra por **pata de FX** (`portfolio.position_fx_leg`), no por
+# moneda. Es deliberado: desde que `position_currency` reconoce como USD también a
+# las especies …C, filtrar por moneda metía en la curva la pata MEP **y** la CABLE
+# de cada bono → dos puntos casi superpuestos por bono, con peso doble en el ajuste
+# logarítmico frente a los sólo-MEP (AO27D/AO28D). La curva USD del panel es la de
+# MEP (dólar bolsa), que es la que cotiza el mercado local.
 _CURVA_GROUPS = {
-    "soberanos_usd": ("Soberanos USD", {"BONAR", "GLOBAL", "BOPREAL"}, "USD"),
+    "soberanos_usd": ("Soberanos USD", {"BONAR", "GLOBAL", "BOPREAL"}, "MEP"),
     "cer": ("CER (real)", {"CER", "LECER", "BONCER", "BONCER ZC", "CON CUPON", "STEP-UP"}, None),
     "tasa_fija": ("Tasa Fija (nominal)", {"LECAP", "BONCAP", "BONOFIJA"}, None),
     "tamar": ("TAMAR / Dual", {"PURO", "DUAL", "DUAL_CER_TAMAR"}, None),
@@ -40,7 +47,7 @@ def curva_page(request: Request):
 def curva_data(grupo: str = "soberanos_usd", state=Depends(get_state)):
     if grupo not in _CURVA_GROUPS:
         grupo = "soberanos_usd"
-    label, types, ccy = _CURVA_GROUPS[grupo]
+    label, types, fx_leg = _CURVA_GROUPS[grupo]
     metrics = []
     for m in state.metrics():
         inst = m.snapshot.instrument if m.snapshot else None
@@ -48,7 +55,7 @@ def curva_data(grupo: str = "soberanos_usd", state=Depends(get_state)):
             continue
         if m.duration is None or m.duration <= 0 or m.tir is None:
             continue
-        if ccy and position_currency(inst.instrument_type, inst.ticker) != ccy:
+        if fx_leg and position_fx_leg(inst.instrument_type, inst.ticker) != fx_leg:
             continue
         metrics.append(m)
 

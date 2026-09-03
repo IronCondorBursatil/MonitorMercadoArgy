@@ -203,6 +203,7 @@ def _avg_tamar_tna(
 def _tamar_dual_payoff_at(
     instrument, ref_date: date, indices_provider,
     *, tamar_forecast: Optional[float] = None, to_date: Optional[date] = None,
+    cer_settle_lag: Optional[int] = None,
 ) -> Optional[float]:
     """Valor per-100 del bono TAMAR PURO/DUAL/DUAL_CER_TAMAR a fecha `to_date`
     (default = maturity). Si `to_date == ref_date`, devuelve V.Téc al settle.
@@ -258,7 +259,16 @@ def _tamar_dual_payoff_at(
     # DUAL_CER_TAMAR: comparar contra rail CER al vencimiento.
     if _is_dual_cer_tamar_type(itype) and instrument.cer_base and instrument.cer_base > 0:
         cer_spread = instrument.cer_spread or 0.0
-        cer_at_end = _project_cer_at(end, indices_provider)
+        # Espejo EXACTO del contrato de `core/domain/pricing/tamar.py`:
+        # settlement T+N (`cer_settle_lag`, sólo camino V.Téc) → lag CER de 10
+        # días hábiles BYMA (NT8/2024) → spread → max de rieles. El motor original
+        # aplicaba los DOS escalones en la rama V.Téc de DUAL_CER_TAMAR (vía
+        # `settlement_byma` + `_cer_reference_date`) y NINGUNO en este payoff; al
+        # unificar los dos caminos la convención se centralizó acá.
+        cer_end = (end if cer_settle_lag is None
+                   else settlement_byma(end.strftime("%Y-%m-%d"), lag=cer_settle_lag).date())
+        cer_at_end = _project_cer_at(
+            _cer_reference_date(cer_end, instrument.cer_lag), indices_provider)
         if cer_at_end:
             years = (end - instrument.emission_date).days / _JULIAN_YEAR
             payoff_cer = 100.0 * (cer_at_end / instrument.cer_base) * (1.0 + cer_spread) ** years
@@ -378,14 +388,26 @@ class FinancialEngine:
                     return v
             return 100.0
 
-        # DUAL_CER_TAMAR (TXMJ series): VT como bono CER ZC — 100 × CER_ref / cer_base.
-        if _is_dual_cer_tamar_type(inst.instrument_type) and indices_provider and inst.cer_base:
-            settle = settlement_byma(ref.strftime("%Y-%m-%d"), lag=1).date()
-            target_date = _cer_reference_date(settle, inst.cer_lag)
-            cer_val = indices_provider.get_cer(target_date)
-            if cer_val:
-                return 100.0 * cer_val / inst.cer_base
-            return 100.0
+        # DUAL_CER_TAMAR (TXMJ series): V.Téc = MAX DE RIELES devengado al settle
+        # (agents.md: "DUAL_CER_TAMAR (max rails)"). Antes devolvía el riel CER puro
+        # (100 × CER_ref/cer_base), sin devengar `cer_spread` ni comparar contra el
+        # riel TAMAR. Espejo de `DualCerTamarStrategy.technical_value`.
+        if _is_dual_cer_tamar_type(inst.instrument_type):
+            if indices_provider and inst.emission_date and inst.emission_date < ref:
+                # `cer_settle_lag=1`: escalón de liquidación T+1 del riel CER —
+                # el mismo `settlement_byma(ref, lag=1)` que usa el fallback de
+                # abajo (y que el motor original aplicaba SIEMPRE acá).
+                v = _tamar_dual_payoff_at(inst, ref, indices_provider, to_date=ref,
+                                          cer_settle_lag=1)
+                if v is not None:
+                    return v
+            if indices_provider and inst.cer_base:
+                settle = settlement_byma(ref.strftime("%Y-%m-%d"), lag=1).date()
+                target_date = _cer_reference_date(settle, inst.cer_lag)
+                cer_val = indices_provider.get_cer(target_date)
+                if cer_val:
+                    return 100.0 * cer_val / inst.cer_base
+                return 100.0
 
         all_cfs = sorted(inst.cashflows or [], key=lambda cf: cf.date)
         past_cfs = [cf for cf in all_cfs if cf.date <= ref]      # ex-cupón (espejo del nuevo motor)
@@ -482,8 +504,11 @@ class FinancialEngine:
         # OPTIMIZACIÓN: TAMAR bullets tienen 1 sólo flow → TIR cerrada,
         # `tir = (payback/price)^(1/years) − 1`. Salta el Newton de xirr
         # (~10-25x más rápido en este branch).
+        # DUAL_CER_TAMAR entra por acá: su TIR también es la TEA nominal contra el
+        # payoff de max-rieles (ver `DualCerTamarStrategy` en pricing/strategies.py).
         if (_is_tamar_puro_type(inst.instrument_type)
-                or _is_dual_tamar_type(inst.instrument_type)) \
+                or _is_dual_tamar_type(inst.instrument_type)
+                or _is_dual_cer_tamar_type(inst.instrument_type)) \
                 and indices_provider and inst.emission_date \
                 and inst.maturity_date and inst.maturity_date > settle_date:
             expected_payback = _tamar_dual_payoff_at(
@@ -500,20 +525,11 @@ class FinancialEngine:
             except (ValueError, OverflowError, ZeroDivisionError):
                 return None
 
-        # DUAL_CER_TAMAR (TXMJ series): TIR real como bono CER ZC.
-        # real_price = price / (CER_ref / cer_base); TIR = (100/real_price)^(1/years) − 1.
+        # DUAL_CER_TAMAR sin fecha utilizable: no se inventa TIR (guarda original).
+        # La rama vieja calculaba una TIR REAL contra un redemption fijo de 100 →
+        # ignoraba `cer_spread` y el riel TAMAR, y rompía el round-trip contra
+        # `price_from_tir` (que descuenta el payoff NOMINAL).
         if _is_dual_cer_tamar_type(inst.instrument_type) and indices_provider and inst.cer_base:
-            if inst.maturity_date and inst.maturity_date > settle_date:
-                target_s = _cer_reference_date(settle_date, inst.cer_lag)
-                cer_s = indices_provider.get_cer(target_s)
-                if cer_s:
-                    real_price = snapshot.price / (cer_s / inst.cer_base)
-                    years = inst.year_fraction_to(inst.maturity_date, settle_date)
-                    if years > 0 and real_price > 0:
-                        try:
-                            return (100.0 / real_price) ** (1.0 / years) - 1.0
-                        except (ValueError, OverflowError, ZeroDivisionError):
-                            pass
             return None
 
         # USD TIR for DOLAR LINKED bonds — espejo de DolarLinkedStrategy:
@@ -587,12 +603,12 @@ class FinancialEngine:
         )
         if is_bullet and inst.maturity_date and inst.maturity_date > settle_date:
             years = inst.year_fraction_to(inst.maturity_date, settle_date)
-            # TAMAR: monthly compounding → m=12. DL and DUAL_CER_TAMAR: annual → m=1.
-            m_bullet = 12 if (
-                _is_tamar_puro_type(inst.instrument_type)
-                or _is_dual_tamar_type(inst.instrument_type)
-            ) else 1
-            return years / (1 + tir) ** (1.0 / m_bullet)
+            # Los TRES bullets de la familia TAMAR capitalizan MENSUALMENTE → m=12
+            # (agents.md: "MD bullet TAMAR/DUAL usa m=12"). DUAL_CER_TAMAR usaba
+            # m=1 de cuando su TIR era una tasa REAL de BONCER ZC; al unificar la
+            # TIR contra el payoff de max-rieles (TEA nominal) quedó alineado.
+            # Espejo de `DualCerTamarStrategy.duration`.
+            return years / (1 + tir) ** (1.0 / 12.0)
 
         future_cfs, yfs = _metrics.discount_year_fractions(inst, settle_date)
         if not future_cfs:

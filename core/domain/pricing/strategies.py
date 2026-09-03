@@ -10,7 +10,7 @@ el fall-through del código original.
 | CerStrategy          | CER / LECER / BONCER | TIR real (deflactar por CER ratio)     |
 | DolarLinkedStrategy  | DOLAR_LINKED         | V.Téc/precio en pesos; TIR en USD      |
 | TamarStrategy        | PURO / DUAL          | payoff BONTE TAMAR; TIR cerrada; m=12  |
-| DualCerTamarStrategy | DUAL_CER_TAMAR       | V.Téc/TIR CER ZC; precio vía payoff    |
+| DualCerTamarStrategy | DUAL_CER_TAMAR       | payoff max-rieles; TIR cerrada; m=12   |
 
 El day-count 30/360 (BOPREAL y bonos CER marcados 30/360) NO es un tipo aparte:
 en el `services.py` original es un chequeo inline (`is_30_360`) dentro del camino
@@ -221,13 +221,53 @@ class TamarStrategy(VanillaStrategy):
 
 
 class DualCerTamarStrategy(VanillaStrategy):
-    """DUAL CER/TAMAR (TXMJ* series). V.Téc y TIR se computan como bono CER ZC
-    (100 × CER/base; TIR real ZC); el precio_from_tir usa el payoff TAMAR
-    (idéntico al agrupamiento del código original)."""
+    """DUAL CER/TAMAR (serie TXMJ*). Bullet que paga a vencimiento
+    ``max(riel TAMAR, 100 × CER_vto/cer_base × (1+cer_spread)^años)`` —
+    exactamente lo que computa `tamar.tamar_dual_payoff_at`.
+
+    CONVENCIÓN: **TIR nominal (TEA)** contra ese payoff proyectado
+    (`(payoff/precio)^(1/años) − 1`) y **V.Téc = max de rieles devengado al
+    settle**, igual que TAMAR PURO/DUAL. `price_from_tir` (que ya descontaba el
+    payoff nominal) queda como inversa exacta → el round-trip cierra por
+    construcción.
+
+    Por qué nominal y no real (había que unificar: los dos lados usaban unidades
+    distintas):
+
+    - Es la convención que `price_from_tir` YA implementaba y que documenta
+      agents.md para este tipo ("payback / (1+tir)^t"). Elegir la pata real
+      obligaba a re-derivar el precio deflactando por el CER **proyectado al
+      vencimiento**, no por el del settle.
+    - Deja la columna "TIR (TEA)" del panel DUAL/TAMAR comparable: los DUAL TAMAR
+      que conviven en el mismo panel publican TEA nominal.
+    - Es la que asume el docstring de `tamar.project_cer_at` ("su TIR queda
+      acotada por el rail TAMAR") — sólo tiene sentido si la TIR sale del payoff
+      de max-rieles.
+
+    Lo que estaba mal antes: `tir` deflactaba el precio por CER_settle/cer_base y
+    lo comparaba contra un redemption FIJO de 100 → ignoraba `inst.cer_spread`
+    (la TIR salía idéntica con spread 0.00 y 0.04) y también el riel TAMAR;
+    `technical_value` devolvía `100 × CER/cer_base` sin devengar el spread ni
+    tomar el max de rieles; y el round-trip `tir → price_from_tir` devolvía ~1,95×
+    el precio de entrada porque un lado era real y el otro nominal.
+    """
 
     def technical_value(self, inst, ctx: PricingContext):
         ref = ctx.settle
         indices = ctx.indices
+        if indices and inst.emission_date and inst.emission_date < ref:
+            # `cer_settle_lag=ctx.settle_lag`: el ESCALÓN DE LIQUIDACIÓN T+N del
+            # riel CER (paso 1 del contrato en `pricing/tamar.py`). `ref` acá es la
+            # fecha de RUEDA (`calculate_technical_value` no la liquida), así que
+            # sin esto el V.Téc se indexa por el CER de la rueda y no por el de la
+            # liquidación — es lo que hacía la rama vieja vía
+            # `cer_reference_date(settlement_byma_date(ref, settle_lag), cer_lag)`
+            # y lo que sigue haciendo el fallback de abajo y todo `pricing/base.py`.
+            v = tamar_dual_payoff_at(inst, ref, indices, to_date=ref,
+                                     cer_settle_lag=ctx.settle_lag)
+            if v is not None:
+                return v
+        # Fallback (bono aún no emitido / sin serie TAMAR utilizable): riel CER puro.
         if indices and inst.cer_base:
             settle = settlement_byma_date(ref, lag=ctx.settle_lag)
             target_date = cer_reference_date(settle, inst.cer_lag)
@@ -240,28 +280,51 @@ class DualCerTamarStrategy(VanillaStrategy):
     def tir(self, inst, price, ctx: PricingContext):
         indices = ctx.indices
         settle = ctx.settle
+        if (indices and inst.emission_date
+                and inst.maturity_date and inst.maturity_date > settle):
+            payoff = tamar_dual_payoff_at(
+                inst, settle, indices,
+                tamar_forecast=ctx.tamar_forecast, to_date=inst.maturity_date,
+            )
+            if payoff is None or payoff <= 0:
+                return None
+            years = inst.year_fraction_to(inst.maturity_date, settle)
+            if years <= 0 or price <= 0:
+                return None
+            try:
+                return (payoff / price) ** (1.0 / years) - 1.0
+            except (ValueError, OverflowError, ZeroDivisionError):
+                return None
         if indices and inst.cer_base:
-            if inst.maturity_date and inst.maturity_date > settle:
-                target_s = cer_reference_date(settle, inst.cer_lag)
-                cer_s = indices.get_cer(target_s)
-                if cer_s:
-                    real_price = price / (cer_s / inst.cer_base)
-                    years = inst.year_fraction_to(inst.maturity_date, settle)
-                    if years > 0 and real_price > 0:
-                        try:
-                            return (100.0 / real_price) ** (1.0 / years) - 1.0
-                        except (ValueError, OverflowError, ZeroDivisionError):
-                            pass
-            return None
+            return None   # guarda original: sin fecha utilizable, no se inventa TIR
         return super().tir(inst, price, ctx)
 
     def duration(self, inst, tir, ctx: PricingContext):
+        """MD bullet con **m=12**, igual que TAMAR PURO/DUAL.
+
+        agents.md › "Bonos TAMAR (PURO, DUAL, DUAL_CER_TAMAR)": *"MD bullet
+        TAMAR/DUAL usa m=12 (capitalización mensual) → MD = years/(1+TEA)^(1/12).
+        DL usa m=1"* — la excepción m=1 es Dólar Linked, no este tipo. Antes acá
+        había un m=1 heredado de cuando la TIR era una tasa REAL de BONCER ZC;
+        al unificar la TIR contra el payoff de max-rieles (TEA nominal, la misma
+        que publican los DUAL TAMAR con los que comparte el panel `dual_tamar` y
+        el eje X de la curva 'tamar') el m=1 quedó fuera de convención.
+
+        Confirmación cruzada: `bond_detail._TAMAR_TYPES` ya incluye
+        DUAL_CER_TAMAR, o sea que el popup viene publicando su "Tir Nominal" con
+        m=12 (`tea_to_tna_monthly`) desde antes — la MD era la única pieza fuera
+        de convención.
+
+        Nota: el movimiento de MD que trajo esa unificación (TXMJ8: 1.8048 →
+        1.2506 con m=1, 1.7646 con m=12) es consecuencia de la TIR, NO del lag
+        CER — ver `tests/test_rem_R1_financiero_dual_md.py`.
+        """
         settle = ctx.settle
         if tir is None or not np.isfinite(tir) or tir <= -1.0:
-            return None   # (1+tir) ≤ 0 → división por cero / duration sin sentido
+            return None   # (1+tir)^(1/12) sería complejo con base ≤ 0
         if inst.maturity_date and inst.maturity_date > settle:
             years = inst.year_fraction_to(inst.maturity_date, settle)
-            return years / (1 + tir) ** 1.0
+            return years / (1 + tir) ** (1.0 / 12.0)
         return super().duration(inst, tir, ctx)
 
     def price_from_tir(self, inst, tir, ctx: PricingContext):
