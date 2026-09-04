@@ -733,6 +733,13 @@ def health(repo=Depends(get_repo), state=Depends(get_state)):
         "age_seconds": st["age_seconds"],
         "last_refresh": st["last_refresh"],
         "degraded_loops": st["degraded_loops"],
+        # Cuenta de caidas de loops en 24hs. `degraded_loops` sólo dura la ventana de
+        # retención (300s) y un probe externo que poléa cada 5 min la pierde entre
+        # polls; el contador de 24hs sobrevive a esa granularidad, que es de lo único
+        # de lo que un monitor sin infraestructura puede colgar una alerta. Va la
+        # CUENTA, no la lista: cada entrada lleva el motivo crudo de la excepción
+        # (URLs y params de los providers) y este endpoint es público.
+        "loop_crashes_24h": len(st["loop_crashes"]),
         # Salud del CATÁLOGO: cuántos bonos quedaron invisibles (tipo huérfano),
         # cuántos tienen el tipo ASUMIDO por un default ambiguo y si la siembra de
         # bootstrap falló. Sólo CUENTAS y un booleano — el motivo crudo del fallo

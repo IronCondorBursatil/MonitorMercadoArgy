@@ -227,3 +227,33 @@ def test_el_lifespan_encamina_la_caida_de_un_loop_lateral_al_canal_por_loop(monk
     assert visto["last_error"] is None, (
         "la caída del loop de ratings apagó el semáforo de los precios: %s"
         % visto["last_error"])
+
+
+# ── /api/health: la caída de un loop lateral tiene que ser VISIBLE para un probe ──
+#
+# `degraded_loops` sólo dura la ventana de retención (300s). Un monitor externo que
+# poléa cada 5 min la pierde casi siempre: entre dos polls hay 300s exactos. El
+# contador de 24hs sí sobrevive a esa granularidad — es el único dato del que un
+# UptimeRobot/curl puede colgar una alerta de "se cayó un loop y no me enteré".
+
+def test_health_publica_el_contador_de_caidas_de_24hs():
+    with TestClient(app) as c:
+        assert c.get("/api/health").json()["loop_crashes_24h"] == 0
+        _marcar(app.state.app_state, "ratings")
+        body = c.get("/api/health").json()
+    assert body["loop_crashes_24h"] == 1, (
+        "una caída de loop no se ve en /api/health: `degraded_loops` dura 300s y un "
+        "probe de 5 min la pierde entre polls")
+    # …y sigue sin degradar el semáforo de los PRECIOS (invariante de este archivo).
+    assert body["status"] == "ok"
+
+
+def test_health_no_filtra_el_motivo_crudo_de_la_caida():
+    """`loop_crashes` lleva el string de la excepción (URLs y params de providers).
+    El endpoint es PÚBLICO: sale la CUENTA, nunca el motivo."""
+    secreto = "HTTPStatusError: https://open.bymadata.com.ar/interno?token=SECRETO"
+    with TestClient(app) as c:
+        _marcar(app.state.app_state, "bei", secreto)
+        crudo = c.get("/api/health").text
+    assert "SECRETO" not in crudo and "bymadata" not in crudo
+    assert "loop_crashes_24h" in crudo
