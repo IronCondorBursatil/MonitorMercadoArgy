@@ -108,6 +108,54 @@ async def _refresh_loop(app: FastAPI) -> None:
             await app.state.app_state.record_error(f"{type(e).__name__}: {e}")
 
 
+def _crear_pool_de_opciones():
+    """Pool de procesos para la chain de opciones, o `None` si esta desactivado.
+
+    `spawn` y NO `fork`: este proceso es multithread (el threadpool de anyio, los
+    `to_thread`, SQLite, httpx) y forkear desde ahi arrastra locks tomados por otros
+    hilos — Python 3.12 avisa del riesgo de deadlock. El pool es persistente, asi que
+    el costo del spawn (~0,5-1s por worker, en paralelo, al arrancar) se paga una vez.
+
+    OPENBLAS/OMP en 1 ANTES de crear el pool: los hijos heredan el env, y en el
+    initializer ya seria tarde si numpy se importa durante el bootstrap. El codigo es
+    elementwise (CRR/XIRR), no llama BLAS: 4 threads ociosos por proceso serian ruido
+    en `top` y en el p95 de CPU.
+    """
+    if not settings.options_workers or os.environ.get("MONITOR_DISABLE_LOOPS"):
+        return None
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    try:
+        return ProcessPoolExecutor(
+            max_workers=settings.options_workers,
+            mp_context=multiprocessing.get_context("spawn"),
+            initializer=_init_worker_de_opciones,
+        )
+    except Exception:  # noqa: BLE001 — sin pool el camino serial sigue andando
+        logger.warning("no se pudo crear el pool de opciones; sigue en serie",
+                       exc_info=True)
+        return None
+
+
+def _init_worker_de_opciones() -> None:
+    """Corre en cada worker al arrancar.
+
+    Bajo `spawn` el hijo re-importa el modulo `__main__` — que con `python run.py` es
+    run.py — y eso vuelve a ejecutar `setup_logging()`, abriendo un SEGUNDO
+    RotatingFileHandler sobre el mismo archivo. Dos procesos rotando el mismo log se
+    pisan. Los workers no tienen nada que decir: se les saca todo handler.
+    """
+    import logging as _logging
+
+    raiz = _logging.getLogger()
+    for h in list(raiz.handlers):
+        raiz.removeHandler(h)
+    raiz.addHandler(_logging.NullHandler())
+
+
 async def _options_loop(app: FastAPI) -> None:
     """Loop dedicado de la chain de opciones (pesado: parser + CRR + griegos de
     ~1000 contratos, ~5-20s). Separado del `_refresh_loop` para no arrastrar el
@@ -126,7 +174,9 @@ async def _options_loop(app: FastAPI) -> None:
             # underlyingSymbol/optionType/maturityDate autoritativos; Data912 de
             # fallback). El hub elige la fuente y resuelve los subyacentes.
             opt_rows, stk_rows = await app.state.hub.fetch_options(settings.options_source)
-            items = await asyncio.to_thread(build_options, opt_rows, stk_rows)
+            items = await asyncio.to_thread(
+                build_options, opt_rows, stk_rows,
+                executor=getattr(app.state, "options_pool", None))
             app.state.app_state.set_options(items)
             _lvl = logging.WARNING if (time.perf_counter() - _t0) > settings.refresh_sec else logging.INFO
             logger.log(_lvl, "options cycle: %.2fs (%d opts)",
@@ -587,6 +637,7 @@ async def lifespan(app: FastAPI):
     # si una CancelledError es legítima (apagando) o espuria (hay que reiniciar).
     stopping = asyncio.Event()
     app.state.stopping = stopping
+    app.state.options_pool = _crear_pool_de_opciones()
     if not os.environ.get("MONITOR_DISABLE_LOOPS"):
         _on_crash = _crash_reporter(app)
         # `_startup_reconcile` NO se supervisa: corre una vez y terminar es su contrato.
@@ -615,6 +666,11 @@ async def lifespan(app: FastAPI):
                 await task
             except asyncio.CancelledError:
                 pass
+        pool = getattr(app.state, "options_pool", None)
+        if pool is not None:
+            # `wait=False`: el `to_thread` del ciclo en curso puede estar a mitad de
+            # camino y no vale la pena demorar el shutdown por el.
+            pool.shutdown(wait=False, cancel_futures=True)
         await app.state.client.aclose()
 
 

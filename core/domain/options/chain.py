@@ -18,7 +18,9 @@ desde el refresh de precios, que es de 5s — y se publica con
 """
 from __future__ import annotations
 
+import functools
 import logging
+import math
 from dataclasses import dataclass
 from datetime import date
 from typing import Iterable, Optional
@@ -109,17 +111,129 @@ class OptionItem:
         }
 
 
+# Debajo de esto el reparto entre procesos cuesta mas que el calculo.
+_MIN_PARA_PARALELIZAR = 24
+
+
+@dataclass(frozen=True)
+class _Prep:
+    """Un contrato listo para valuar: SOLO primitivos.
+
+    Es el limite entre el proceso padre y los workers. Que no haya un `Data912Row`
+    (pydantic) aca no es un detalle de estilo: es lo que hace que el pickle sea barato
+    y que los workers no tengan que importar el modelo de ingesta."""
+    ticker: str
+    root: str
+    underlying: str
+    kind: str
+    strike: float
+    month: str
+    month_code: str
+    expiry: date
+    spot: float
+    bid: float
+    ask: float
+    last: float
+    mid: Optional[float]
+    volume: float
+    open_interest: float
+    pct_change: Optional[float]
+    t_days: int
+    T: float
+
+
+def _enriquecer(p: "_Prep", r: float, q: float, N: int) -> OptionItem:
+    """La parte CARA: ~20 valuaciones CRR para la IV + 6 para los griegos.
+
+    Pura: no lee globals, no toca disco ni red. Por eso puede correr en otro proceso.
+    """
+    iv = iv_implied(p.mid, p.spot, p.strike, r, q, p.T, p.kind, N=N) if p.mid else None
+    greeks = (compute_greeks(p.spot, p.strike, r, q, iv, p.T, p.kind, N=N)
+              if iv else Greeks(None, None, None, None, None))
+    rates = compute_rates(p.bid, p.spot, p.strike, p.kind, p.t_days, last=p.last)
+    contract = OptionContract(
+        ticker=p.ticker, root=p.root, underlying=p.underlying, kind=p.kind,
+        strike=p.strike, month=p.month, month_code=p.month_code, expiry=p.expiry,
+    )
+    return OptionItem(
+        contract=contract, spot=p.spot, bid=p.bid, ask=p.ask, last=p.last, mid=p.mid,
+        volume=p.volume, open_interest=p.open_interest, pct_change=p.pct_change,
+        iv=iv, greeks=greeks, rates=rates, t_days=p.t_days,
+    )
+
+
+def _enriquecer_lote(lote, r: float, q: float, N: int) -> list:
+    """Punto de entrada de los workers. Module-level para que sea picklable por nombre."""
+    return [_enriquecer(p, r, q, N) for p in lote]
+
+
+def _enriquecer_en_paralelo(preps, r, q, N, executor, chunk_size):
+    """Reparte en lotes contiguos y concatena preservando el ORDEN de entrada.
+
+    `executor.map` respeta el orden de los argumentos, asi que el resultado es
+    identico al serial — hay un test que compara los dos con `==` exacto.
+
+    Si el pool se rompe (worker muerto, timeout), NO se pierde el ciclo: se recalcula
+    en serie. El resultado es el mismo, solo tarda lo que tardaba antes.
+    """
+    n = len(preps)
+    if not chunk_size:
+        workers = getattr(executor, "_max_workers", 3) or 3
+        chunk_size = max(8, math.ceil(n / (workers * 4)))
+    lotes = [preps[i:i + chunk_size] for i in range(0, n, chunk_size)]
+    try:
+        return [item for lote in executor.map(
+            functools.partial(_enriquecer_lote, r=r, q=q, N=N), lotes) for item in lote]
+    except Exception:  # noqa: BLE001 — incluye BrokenProcessPool y TimeoutError
+        logger.warning("options: el pool fallo, recalculando en serie", exc_info=True)
+        raise _PoolRoto([_enriquecer(p, r, q, N) for p in preps])
+
+
+class _PoolRoto(Exception):
+    """Lleva el resultado ya recalculado en serie, para que el caller sepa que el pool
+    hay que recrearlo sin perder el ciclo."""
+
+    def __init__(self, items):
+        super().__init__("pool de opciones roto")
+        self.items = items
+
+
 def build_options(options_rows: dict, stocks_rows: dict,
                   r: float = 0.40, q: float = 0.0,
                   today: Optional[date] = None,
-                  N: int = 80) -> list[OptionItem]:
+                  N: int = 80, *,
+                  executor=None,
+                  chunk_size: Optional[int] = None) -> list[OptionItem]:
     """Pipeline completo: filas crudas → OptionItem enriquecido.
 
     `options_rows` y `stocks_rows` son {symbol: Data912Row} (el hub ya los validó).
     `r` y `q` en decimales anuales. `N` = pasos del árbol CRR.
     """
     today = today or date.today()
-    out: list[OptionItem] = []
+    preps, skipped_root = _preparar(options_rows, stocks_rows, today)
+
+    if executor is None or len(preps) < _MIN_PARA_PARALELIZAR:
+        out = [_enriquecer(p, r, q, N) for p in preps]
+    else:
+        try:
+            out = _enriquecer_en_paralelo(preps, r, q, N, executor, chunk_size)
+        except _PoolRoto as roto:
+            out = roto.items
+
+    if skipped_root:
+        logger.debug("options: %d roots desconocidos (skipped): %s",
+                     len(skipped_root), sorted(skipped_root))
+    return out
+
+
+def _preparar(options_rows: dict, stocks_rows: dict, today: date):
+    """Filas crudas -> `[_Prep]` + roots descartados. PURO y BARATO (~10 ms para 458).
+
+    Corre siempre en el proceso padre: `_Prep` es una dataclass de primitivos, asi que
+    NINGUN `Data912Row` (pydantic) cruza el limite de proceso. Esa es la razon de que
+    el split exista y no sea cosmetico.
+    """
+    preps: list[_Prep] = []
     skipped_root: set[str] = set()
 
     for sym, row in options_rows.items():
@@ -172,31 +286,19 @@ def build_options(options_rows: dict, stocks_rows: dict,
         else:
             mid = None
 
-        iv = iv_implied(mid, spot, strike, r, q, T, kind, N=N) if mid else None
-        greeks = (compute_greeks(spot, strike, r, q, iv, T, kind, N=N)
-                  if iv else Greeks(None, None, None, None, None))
-        rates = compute_rates(bid, spot, strike, kind, t_days, last=last)
-
-        contract = OptionContract(
-            ticker=meta.ticker, root=meta.root, underlying=underlying,
-            kind=kind, strike=strike, month=meta.month,
-            month_code=meta.month_code, expiry=expiry,
-        )
         # Open interest: el REAL de BYMA (`oi`) si vino; si no, el q_op de Data912
         # (nº de trades — proxy histórico, no OI verdadero).
         oi_val = getattr(row, "oi", None)
         open_interest = float(oi_val) if oi_val is not None else float(row.q_op or 0.0)
-        out.append(OptionItem(
-            contract=contract, spot=spot, bid=bid, ask=ask, last=last, mid=mid,
+        preps.append(_Prep(
+            ticker=meta.ticker, root=meta.root, underlying=underlying, kind=kind,
+            strike=strike, month=meta.month, month_code=meta.month_code, expiry=expiry,
+            spot=spot, bid=bid, ask=ask, last=last, mid=mid,
             volume=float(row.v or 0.0), open_interest=open_interest,
-            pct_change=row.pct_change,
-            iv=iv, greeks=greeks, rates=rates, t_days=t_days,
+            pct_change=row.pct_change, t_days=t_days, T=T,
         ))
 
-    if skipped_root:
-        logger.debug("options: %d roots desconocidos (skipped): %s",
-                     len(skipped_root), sorted(skipped_root))
-    return out
+    return preps, skipped_root
 
 
 def underlyings_summary(items: Iterable[OptionItem]) -> list[dict]:

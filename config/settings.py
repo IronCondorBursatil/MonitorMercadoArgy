@@ -284,6 +284,11 @@ class Settings(BaseSettings):
     # puro (mantiene el GIL en `to_thread`), así que mientras corre ralentiza los
     # ciclos de precios; espaciarlo a 60s achica esa ventana de interferencia.
     options_refresh_sec: int = 60
+    # Procesos para la chain de opciones. El calculo es CPU puro bajo el GIL (medido:
+    # 6,08s para 458 contratos en el ARM del servidor) y cada contrato es
+    # independiente, asi que es lo unico del sistema que se beneficia de tener 4
+    # cores. Se deja uno libre para el event loop y el pricing. 0 = serial.
+    options_workers: int = min(3, max(0, (os.cpu_count() or 1) - 1))
     # TTL de los paneles de renta variable de BYMA open que NINGUN panel del monitor
     # consume en vivo (`btnGeneral`, `btnCedears`): solo alimentan el reconcile del
     # catalogo y el sidebar del ABM. Son los dos POST mas pesados (page_size=5000,

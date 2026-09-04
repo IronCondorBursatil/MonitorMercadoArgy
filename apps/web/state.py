@@ -62,6 +62,10 @@ class AppState:
     def __init__(self, crash_sticky_s: float = _CRASH_STICKY_S) -> None:
         self._metrics: List[InstrumentMetrics] = []
         self._by_ticker: Dict[str, InstrumentMetrics] = {}
+        # Huella del ciclo anterior (ver `update`). `None` y no `{}`: el PRIMER update
+        # tiene que notificar aunque venga vacío — si no, un arranque sin datos deja a
+        # los clientes esperando para siempre.
+        self._huella_previa: Optional[dict] = None
         self._last_refresh: Optional[datetime] = None
         # Observabilidad (O1): último error del refresh loop, como UN par (msg, ts).
         # Un solo atributo = asignación atómica bajo el GIL → los lectores sync
@@ -93,15 +97,38 @@ class AppState:
         self._revision = 0
         self._cond = asyncio.Condition()
 
+    @staticmethod
+    def _huella(by_ticker: dict) -> dict:
+        """Los campos que un panel MUESTRA, por ticker. Si esto no cambia, un cliente
+        que refresque sus 14 fragmentos ve exactamente lo mismo que ya tiene."""
+        return {
+            t: (m.snapshot.price, m.snapshot.bid, m.snapshot.ask, m.snapshot.volume,
+                m.snapshot.operations, m.snapshot.change_pct,
+                m.tir, m.duration, m.technical_value, m.parity,
+                m.variance_7d, m.variance_30d, m.variance_90d,
+                m.variance_ytd, m.variance_1y)
+            for t, m in by_ticker.items()
+        }
+
     async def update(self, metrics: List[InstrumentMetrics]) -> None:
         by_ticker = {
             m.snapshot.instrument.ticker: m
             for m in metrics
             if m.snapshot and m.snapshot.instrument
         }
+        # Gating de la revisión: sólo se bumpea si cambió ALGO que se muestra. Medido
+        # con el mercado abierto (`bench_churn`): al intervalo de 5s se mueve el precio
+        # del 1,2% de los instrumentos y algún campo del 6%. Fuera de rueda —el 75% del
+        # tiempo— no se mueve nada, y cada ciclo igual despertaba a todos los clientes
+        # SSE, que disparan ~14 `hx-get` cada uno, cada uno con su sesión de SQLite
+        # para resolver los permisos. La frescura NO depende de esto: `_last_refresh`
+        # y el badge se actualizan siempre.
+        huella = self._huella(by_ticker)
+        cambio = huella != self._huella_previa
         async with self._lock:
             self._metrics = metrics
             self._by_ticker = by_ticker
+            self._huella_previa = huella
             self._last_refresh = datetime.now()
             # Un refresh exitoso limpia el error del PROPIO ciclo, pero no la marca
             # de una caída CRÍTICA reciente: el badge poll-ea cada 15s y el refresh
@@ -109,7 +136,8 @@ class AppState:
             # caídas de loops laterales ni siquiera llegan acá (viven en
             # `_loop_crashes`, que `update()` no toca).
             self._error = self._keep_error(self._error, self._last_refresh)
-        await self._notify()
+        if cambio:
+            await self._notify()
 
     def _keep_error(self, error: Optional[tuple], now: datetime) -> Optional[tuple]:
         """Qué sobrevive a un ciclo de refresh exitoso: nada, salvo la marca de una
