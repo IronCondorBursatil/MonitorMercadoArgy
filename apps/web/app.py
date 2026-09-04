@@ -7,8 +7,9 @@
     pesado fuera del event loop; `_bei_loop` hace lo mismo con compute_bei_tables.
   - lifespan + asyncio.create_task reemplazan los daemon threads + _SHUTDOWN_EVENT
     del http.server (shutdown explícito al cancelar las tasks).
-  - ResilientClient + ProviderHub (async) en app.state, listos para cuando los
-    providers migren a async (hoy corren sync vía to_thread).
+  - ResilientClient + ProviderHub (async) en app.state: la ingesta de la fuente
+    live corre async, y FX/indices/REM tienen `prefetch(client)` cableado en el
+    refresh loop. Quedan sync CAFCI y argentinadatos (deliberado, ver CLAUDE.md).
 
 Routers en apps/web/routers/, templates Jinja+HTMX en apps/web/templates/.
 Bajo pytest (MONITOR_DISABLE_LOOPS=1) los loops no arrancan (aíslan el cache de

@@ -252,11 +252,6 @@ class Settings(BaseSettings):
     # ~10k filas entre ambos) y salian cada 5s. `btnLideres` NO entra en el cache
     # (lo consume `panel_lider`), ni los 3 de renta fija. 0 desactiva el cache.
     equities_refresh_sec: int = 30
-    # Workers del thread pool del motor de pricing (por ciclo). El trabajo es
-    # mayormente CPU (XIRR/root-finding) con algo de I/O cacheado; con el GIL, más
-    # threads que cores rinde poco y en laptops chicas genera thrashing. Acotado a los
-    # cores disponibles (antes era un 20 fijo). Override por MONITOR_ENGINE_WORKERS.
-    engine_workers: int = min(8, (os.cpu_count() or 4))
     bei_refresh_sec: int = 300
     # Mantenimiento del store de precios: prime 1× + acumula cierre del feed. Diario
     # alcanza (la historia cambia 1×/rueda); la última escritura del día ≈ cierre.

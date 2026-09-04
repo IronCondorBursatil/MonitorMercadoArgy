@@ -63,7 +63,7 @@ usarían esa fecha, no la real).
 | Estado / frescura | `GET /api/health` (`status` ok/degraded + `is_stale`/`last_error`) y el badge del header (verde/ámbar/rojo). |
 | Re-sembrar catálogo del Excel | `py -3.12 scripts/ingest_master.py` (solo si editaste el master a mano) |
 | Crear el primer usuario | `MONITOR_ADMIN_PASSWORD=... py -3.12 scripts/init_admin.py` — no hay bootstrap automático (ni el server ni `deploy.sh` lo hacen). |
-| HTTPS en el droplet | `bash deploy/setup-https.sh <dominio> <email>` (como root, en el droplet; **requiere** un dominio con A a la IP — Let's Encrypt no emite para IP desnuda). Recién después: `MONITOR_COOKIE_SECURE=true` + uvicorn con `--proxy-headers --forwarded-allow-ips=127.0.0.1`. |
+| HTTPS en el droplet | `bash deploy/setup-https.sh <dominio> <email>` (como root, en el droplet; **requiere** un dominio con A a la IP — Let's Encrypt no emite para IP desnuda). Recién después: `MONITOR_COOKIE_SECURE=true` (uvicorn 0.48 ya trae `proxy_headers=True` y `forwarded_allow_ips="127.0.0.1"` por default — no hay que pasarle flags). |
 
 La `catalog.db` es la **fuente de verdad viva** (altas de la ABM): la evolución de
 schema es **forward-only** (nunca se dropea; ver `catalog_repository.init_db`).
@@ -89,7 +89,6 @@ credenciales BYMA realtime van en `.env` (gitignored). Variables útiles:
   del login (default `127.0.0.1,::1`; vacío = no confiar en ningún XFF). Si el server
   queda detrás de un proxy distinto de nginx local, hay que declararlo acá o el limiter
   agrupa a todo el mundo en un bucket único.
-- `MONITOR_ENGINE_WORKERS` — workers del pricing (default `min(8, cpu_count)`).
 - `MONITOR_TLS_NO_VERIFY_HOSTS` — hosts que saltean verificación TLS. Default **vacío**:
   desde 2026-09 se verifica TODO (los hosts BYMA que antes tenían la cadena rota se
   re-verificaron en vivo y encadenan bien). Ver `core/infrastructure/_tls.py`.

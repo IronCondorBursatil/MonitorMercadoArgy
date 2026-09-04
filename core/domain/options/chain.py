@@ -11,8 +11,10 @@ mapeado (roots.py) o cuyo subyacente no tiene quote en `stocks_rows` se
 descartan silenciosamente.
 
 El costo total es O(N) en el número de opciones; para ~1050 contratos con
-N=80 pasos CRR, ~5-8 segundos en una CPU moderna. Por eso este cómputo corre
-en `to_thread` desde el refresh loop async y se cachea en `AppState.options`.
+N=80 pasos CRR, ~5-8 segundos (medido: 6,08s / 458 contratos en el ARM del
+servidor). Por eso corre en `to_thread` desde su propio `_options_loop` — NO
+desde el refresh de precios, que es de 5s — y se publica con
+`AppState.set_options`.
 """
 from __future__ import annotations
 

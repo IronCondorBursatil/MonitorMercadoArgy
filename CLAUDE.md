@@ -193,9 +193,12 @@ En prod hay que setear:
 - **TLS**: hoy el droplet sirve por HTTP (nginx catch-all sin `server_name`; Let's Encrypt no
   emite para IP desnuda), así que `cookie_secure` queda en `False` **a propósito**: activarlo sin
   HTTPS hace que el browser descarte la cookie de sesión → login en loop. Cuando haya dominio con
-  A a la IP: `bash deploy/setup-https.sh <dominio> <email>` (como root, en el droplet) y recién
-  entonces `MONITOR_COOKIE_SECURE=true` + uvicorn con `--proxy-headers
-  --forwarded-allow-ips=127.0.0.1` (sin eso `request.url.scheme` nunca es https).
+  A a la IP: `bash deploy/setup-https.sh <dominio> <email>` (como root) y recién entonces
+  `MONITOR_COOKIE_SECURE=true`. **NO** hace falta agregarle `--proxy-headers
+  --forwarded-allow-ips` a uvicorn: 0.48 ya resuelve `proxy_headers=True` y
+  `forwarded_allow_ips="127.0.0.1"` por default (verificado con `inspect.signature`
+  sobre `uvicorn.Config`), así que `request.url.scheme` sigue el `X-Forwarded-Proto`
+  que manda nginx. Esta guía decía lo contrario y mandaba a tocar el `ExecStart` al pedo.
 - El **primer admin** no lo crea nadie automáticamente: `deploy.sh` no toca `UserORM`. En un
   droplet nuevo, `venv/bin/python scripts/init_admin.py` con `MONITOR_ADMIN_PASSWORD`.
 

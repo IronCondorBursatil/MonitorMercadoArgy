@@ -3,16 +3,20 @@
 Las opciones argentinas son **americanas** (early exercise posible). Black-Scholes
 modela solo europeas → no alcanza. Implementamos Cox-Ross-Rubinstein:
 
-  - Árbol binomial recombinante con N pasos (default 100).
+  - Árbol binomial recombinante con N pasos (`crr_american` default 100; la chain
+    llama con N=80, ver `chain.py`).
   - dt = T/N, u = exp(σ√dt), d = 1/u, p = (exp((r-q)·dt) − d) / (u − d).
   - Backward induction: en cada nodo el valor es max(intrinsic, discounted_expectation).
 
-IV implícita: Brent's method (scipy.optimize.brentq) sobre f(σ) = CRR(σ) − price_market.
-Bracket [0.01, 5.0]. Si el precio queda fuera del rango legal [intrinsic, S] devuelve None.
+IV implícita: **bisección** sobre f(σ) = CRR(σ) − price_market, bracket [1e-3, 5.0],
+corte por `|f| < 1e-4` o `hi-lo < 1e-5` (~20 evaluaciones en la práctica, tope 50).
+Este módulo NO importa scipy — el docstring decía `brentq` y mandaba a buscar un uso
+que no existe. Si el precio queda fuera del rango legal [intrinsic, S] devuelve None.
 
-Performance: una opción ~1-2ms con N=100. Para chains de ~30 strikes ~30ms. La capa
-superior (`chain.py`) vectoriza llamando a este módulo para cada contrato (no se
-amortiza un árbol compartido porque cada strike requiere su propio backward pass).
+Performance: una valuación ~0,4ms con N=80. Una chain real son ~450-1050 contratos y
+cada uno paga ~25 valuaciones (IV + 6 de los griegos): ~6s medidos en el ARM del
+servidor. La capa superior (`chain.py`) llama a este módulo por contrato — no se
+amortiza un árbol compartido porque cada strike requiere su propio backward pass.
 """
 from __future__ import annotations
 
@@ -68,9 +72,10 @@ def iv_implied(price: float, S: float, K: float, r: float, q: float,
                T: float, kind: str, N: int = 80) -> Optional[float]:
     """Resuelve σ tal que CRR(σ) = price. None si no converge / precio fuera de rango.
 
-    Usa bisección + Newton hybrid simple (suficientemente robusto para los rangos
-    típicos AR: σ ∈ [0.05, 3.0]). Para chains masivas (~1050 opciones) el costo
-    total es ~5s con N=80 — aceptable en el refresh loop async (corre en to_thread).
+    Bisección pura (sin Newton, sin scipy): robusta para los rangos típicos AR
+    (σ ∈ [0.05, 3.0]) y el bracket es el que fija el rango legal del precio. Para
+    chains masivas (~1050 opciones) el costo total es ~5s con N=80 — corre en
+    `to_thread` desde `_options_loop`, no desde el refresh de precios.
     """
     if price <= 0 or T <= 0 or S <= 0 or K <= 0:
         return None

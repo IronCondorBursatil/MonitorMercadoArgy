@@ -6,9 +6,10 @@ Used for:
   - Dolar mayorista (venta) -> deflator for DOLAR_LINKED bond TIRs
   - All quotes -> header strip in the web dashboard
 
-Class-level cache shared across instances (DolarAPIProvider() is created
-~8× per refresh cycle inside use_case.execute). TTL coalesces all those
-calls into a single network round-trip. El refresco real lo hace `prefetch()`
+Class-level cache shared across instances: hoy el provider es un singleton
+inyectado desde el lifespan, pero el cache de clase se mantiene porque los
+scripts y los tests instancian el suyo. TTL coalesces those calls into a
+single network round-trip. El refresco real lo hace `prefetch()`
 (1× por ciclo del hub, sin TTL); `TTL_SECONDS` gatea SOLO el fallback síncrono
 `_fetch()` — no tiene que ser menor que `settings.refresh_sec` (hoy 60 vs 5).
 """
