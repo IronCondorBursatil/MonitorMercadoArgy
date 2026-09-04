@@ -16,6 +16,11 @@ from apps.web import cartera_store
 @pytest.fixture(autouse=True)
 def _isolate_path(tmp_path, monkeypatch):
     monkeypatch.setattr(cartera_store, "_PATH", str(tmp_path / "cartera.json"))
+    # `_LEGACY_PATH` también: desde que la cartera se mudó a `db_dir` hay una migración
+    # 1× que copia la ubicación vieja si la nueva no existe. Sin taparla, estos tests
+    # arrancan con las tenencias REALES de `data/cartera.json` — que es exactamente lo
+    # que el docstring de este archivo dice que no puede pasar.
+    monkeypatch.setattr(cartera_store, "_LEGACY_PATH", str(tmp_path / "no-hay-legacy.json"))
     return tmp_path
 
 

@@ -94,6 +94,13 @@ _DB_DERIVED: dict[str, str] = {
     "fci_history_db": "fci_history.db",
     "ratings_history_db": "ratings_history.db",
     "index_history_db": "index_history.db",
+    # Datos de runtime del usuario y log. Vivían en el working tree: `cartera.json`
+    # (las TENENCIAS) se lo lleva un `git clean -xfd` sin preguntar, y el log rota con
+    # rename EN LA RAÍZ del repo, que es lo que impide `ProtectSystem=strict` en el
+    # unit de systemd. Al colgar de `_DB_DERIVED` los reubica `MONITOR_DB_DIR` y los
+    # cubre `_check_db_paths` — gratis, sin enumerar env vars nuevas.
+    "cartera_json": "cartera.json",
+    "log_file": "monitores_global.log",
 }
 
 
@@ -182,6 +189,15 @@ class Settings(BaseSettings):
     # Cierres diarios de índices BYMA p/ la franja de 5 ruedas del catálogo. M/G se
     # backfillean del chart; los 16 acumulan el cierre de /index-price — ver index_history.py.
     index_history_db: Path | None = None
+    # Tenencias de la cartera del usuario (JSON). → db_dir/cartera.json
+    cartera_json: Path | None = None
+    # Log rotativo de la app (WARNING+). → db_dir/monitores_global.log
+    log_file: Path | None = None
+    # Ventana que se CONSERVA en fci_history. Era el único store sin poda y se carga
+    # ENTERO en RAM (~4.700 filas por día de uptime). El read-path usa 12 meses
+    # (`monthly_net_flows(n=12)`) más un punto previo para el primer delta: 400 días
+    # dejan margen para meses de 31 y para un hueco de días sin corte.
+    fci_history_keep_days: int = 400
     index_ruedas: int = 5               # ventana del sparkline de índices (ruedas)
     # Guard "nada de .db dentro del proyecto": por default DENUNCIA (ERROR al boot,
     # ver `_check_db_paths`) pero deja arrancar, porque un droplet desplegado antes
@@ -353,7 +369,7 @@ apply_timezone()
 # --------------------------------------------------------------------------- #
 LOG_LEVEL = logging.INFO
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-_LOG_FILE = str(settings.base_dir / "monitores_global.log")
+_LOG_FILE = str(settings.log_file)
 
 
 class _ConsoleFilter(logging.Filter):

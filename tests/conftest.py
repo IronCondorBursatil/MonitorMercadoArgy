@@ -110,7 +110,8 @@ if _REPO_ROOT not in sys.path:
 # Manual = se desactualiza: el `history_state_dir` faltó acá durante toda una ronda de
 # auditoría y la suite estuvo reescribiendo los CSV reales del usuario sin que nada
 # avisara. Por eso el guard prefiere la fuente única de `Settings`.
-_STORES_FALLBACK = ("catalog_db", "backup_dir", "history_state_dir", "price_history_db",
+_STORES_FALLBACK = ("cartera_json", "log_file",
+                    "catalog_db", "backup_dir", "history_state_dir", "price_history_db",
                     "fci_history_db", "ratings_history_db", "index_history_db")
 
 

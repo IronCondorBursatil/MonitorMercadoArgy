@@ -98,6 +98,32 @@ class FCIHistoryStore:
                 return {}
             return {d: dict(v) for d, v in self._cache.get(k, {}).items()}
 
+    def prune(self, before: date) -> int:
+        """Borra los cortes anteriores a `before` y baja el cache. Devuelve las filas
+        borradas.
+
+        Era el ÚNICO de los cuatro stores sin ventana: `_ensure_cache` carga la tabla
+        ENTERA en RAM y acá entran ~4.700 filas por día de uptime. El read-path usa 12
+        meses (`monthly_net_flows(n=12)`) más un punto previo para el primer delta, así
+        que todo lo anterior era RAM y disco que nadie leía.
+
+        Espejo exacto de `PriceHistoryStore.prune`, incluido el contrato de no lanzar:
+        corre adentro del `_price_history_loop`, y un error de SQLite acá no puede
+        tumbar el loop que además mantiene el store de precios."""
+        with self._lock:
+            try:
+                with closing(self._connect()) as con, con:
+                    cur = con.execute("DELETE FROM fci_history WHERE day < ?",
+                                      (before.isoformat(),))
+                    n = cur.rowcount or 0
+            except sqlite3.Error as e:
+                logger.warning("fci_history: prune failed (%s)", e)
+                return 0
+            self._cache = None          # se recarga en el proximo read
+        if n:
+            logger.info("fci_history: podadas %d filas anteriores a %s", n, before)
+        return n
+
     def record_snapshot(self, rows: List[dict], on_date: date) -> int:
         """Acumula un corte diario: filas `{fondo, vcp, ccp, patrimonio}`. Descarta
         las que no sirven para flujos (sin nombre o sin `ccp`). Idempotente por

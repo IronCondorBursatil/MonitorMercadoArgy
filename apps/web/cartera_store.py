@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import threading
 from datetime import date
 from typing import Dict, List, Optional
@@ -20,10 +21,30 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 _LOCK = threading.RLock()
-_PATH = os.path.join(str(settings.data_dir), "cartera.json")
+_PATH = str(settings.cartera_json)
+# Ubicación VIEJA (dentro del working tree). Se migra sola en la primera lectura:
+# sin eso, al mover la ruta el usuario abre el panel y no tiene tenencias.
+_LEGACY_PATH = os.path.join(str(settings.data_dir), "cartera.json")
+
+
+def _migrar_legacy_si_hace_falta() -> None:
+    """Copia la cartera vieja a la ubicación nueva, 1×, si la nueva no existe.
+
+    COPIA y no mueve a propósito: si hay que volver a una versión anterior del código,
+    esa versión busca el archivo donde estaba y tiene que encontrarlo. El costo es un
+    JSON duplicado de unos KB hasta que alguien borre el viejo."""
+    if os.path.isfile(_PATH) or not os.path.isfile(_LEGACY_PATH):
+        return
+    try:
+        os.makedirs(os.path.dirname(_PATH) or ".", exist_ok=True)
+        shutil.copy2(_LEGACY_PATH, _PATH)
+        logger.info("cartera: migrada de %s a %s", _LEGACY_PATH, _PATH)
+    except OSError as e:
+        logger.warning("no se pudo migrar la cartera desde %s (%s)", _LEGACY_PATH, e)
 
 
 def _read() -> List[dict]:
+    _migrar_legacy_si_hace_falta()
     if not os.path.isfile(_PATH):
         return []
     try:

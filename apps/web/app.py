@@ -380,6 +380,14 @@ async def _price_history_loop(app: FastAPI) -> None:
             await asyncio.to_thread(store.prune, cutoff)
         except Exception:  # noqa: BLE001 — la poda no debe tumbar el loop
             logger.warning("poda de price_history falló", exc_info=True)
+        # Misma higiene para fci_history, que era el único store sin ventana: se carga
+        # ENTERO en RAM y entran ~4.700 filas por día de uptime. El read-path usa 12
+        # meses. `try` propio: que una poda no se lleve puesta a la otra.
+        try:
+            corte_fci = _date.today() - timedelta(days=settings.fci_history_keep_days)
+            await asyncio.to_thread(fci_store.prune, corte_fci)
+        except Exception:  # noqa: BLE001 — la poda no debe tumbar el loop
+            logger.warning("poda de fci_history falló", exc_info=True)
         await asyncio.sleep(settings.price_history_sec)
 
 

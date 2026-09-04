@@ -156,3 +156,32 @@ def test_el_sudoers_alcanza_para_lo_que_hace_el_deploy():
                   "systemctl daemon-reload",
                   "systemctl reload nginx"):
         assert verbo in txt, f"falta: {verbo}"
+
+
+# ── fase 2 del hardening ───────────────────────────────────────────────────
+PHASE2 = ROOT / "deploy" / "systemd" / "phase2-protectsystem.conf"
+
+
+def test_la_fase2_no_se_instala_sola():
+    """`ProtectSystem=strict` rompe la app hasta que el log y `cartera.json` salgan del
+    working tree (el RotatingFileHandler rota con rename en la raíz del repo). Por eso
+    vive en un drop-in aparte que `install-config.sh` NO toca: instalarlo es un paso
+    posterior al deploy del código que los mueve."""
+    instalador = (ROOT / "deploy" / "bin" / "install-config.sh").read_text(encoding="utf-8")
+    assert "phase2" not in instalador, (
+        "el instalador aplicaría la fase 2 sin que el código que la habilita esté "
+        "desplegado — la app se rompe en la primera rotación de log")
+
+
+def test_la_fase2_usa_ProtectHome_read_only_y_no_yes():
+    """`ProtectHome=yes` haría inaccesible /home/ubuntu, donde vive el repo: el
+    servicio no arrancaría. La diferencia entre las dos palabras es que el sitio ande."""
+    txt = _efectivo(PHASE2)
+    assert "ProtectHome=read-only" in txt
+    assert "ProtectHome=yes" not in txt
+
+
+def test_la_fase2_deja_escribir_el_env():
+    """La UI de credenciales BYMA reescribe `.env` en el repo; con el árbol read-only
+    hay que exceptuarlo explícitamente o guardar credenciales tira PermissionError."""
+    assert ".env" in _efectivo(PHASE2) and "ReadWritePaths" in _efectivo(PHASE2)
