@@ -36,6 +36,7 @@ from apps.web.deps_auth import (
     get_current_user, get_current_user_html,
 )
 from apps.web.routers import auth as auth_router, users_abm
+from apps.web.security_web import SecurityHeadersMiddleware, reject_cross_site
 
 
 from apps.web.deps import get_bondterminal, get_repo, get_state
@@ -630,7 +631,15 @@ app = FastAPI(
     docs_url="/docs" if _DOCS else None,
     redoc_url="/redoc" if _DOCS else None,
     openapi_url="/openapi.json" if _DOCS else None,
+    # Validacion de origen (CSRF) a nivel de APP: FastAPI la antepone al arbol de
+    # dependencias de TODA ruta, asi que un POST cruzado se corta antes de abrir una
+    # sesion de base o mirar la cookie. Ver apps/web/security_web.py.
+    dependencies=[Depends(reject_cross_site)],
 )
+# Headers de seguridad. ASGI puro, no BaseHTTPMiddleware: ese envuelve el `receive`
+# del scope y `routers/stream.py` documenta que el listener de desconexion de
+# sse-starlette depende de el.
+app.add_middleware(SecurityHeadersMiddleware)
 # GZip: el dataset de /fci/data es grande (~varios MB en JSON) → comprime ~6-7×.
 # compresslevel=6 (default de Starlette = 9): mismo tamaño de salida en la práctica,
 # ~mitad de CPU por request (medido sobre 4 MB: 107ms→43ms) — para TODA la app.

@@ -1,3 +1,4 @@
+import logging
 import time
 from collections import defaultdict
 
@@ -101,6 +102,22 @@ def _landing_url(user: UserORM):
     return None
 
 
+# Auditoria: al journal (stdout) via el filtro de consola de settings, que deja pasar
+# INFO solo si viene con `console=True`. Sin esto, un login exitoso o fallido no queda
+# registrado en NINGUN lado: el handler de archivo es WARNING+ y el filtro de consola
+# descarta los access 2xx/3xx de uvicorn.
+_audit = logging.getLogger("monitor.audit")
+
+
+def _limpio(v) -> str:
+    """Un campo del usuario, apto para una linea de log.
+
+    Sin esto, un usuario con `
+` en el nombre parte el registro en dos y puede
+    fabricar una linea de auditoria falsa (log injection)."""
+    return "".join(ch for ch in str(v) if ch.isprintable())[:64]
+
+
 def _dummy_hash() -> str:
     global _DUMMY_HASH
     if _DUMMY_HASH is None:
@@ -120,6 +137,8 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     recent = [t for t in _login_attempts[key] if now - t < _LOGIN_WINDOW_SEC]
     _login_attempts[key] = recent
     if len(recent) >= _MAX_LOGIN_ATTEMPTS:
+        _audit.info("auth login=ratelimited user=%s ip=%s", _limpio(username),
+                    _limpio(key[0]), extra={"console": True})
         return _TEMPLATES.TemplateResponse(
             request, "pages/login.html",
             {"error": "Demasiados intentos. Esperá unos minutos."}, status_code=429)
@@ -129,9 +148,13 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     ok = verify_password(password, user.hashed_password) if user else verify_password(password, _dummy_hash())
     if not user or not ok:
         _login_attempts[key].append(now)
+        _audit.info("auth login=fail user=%s ip=%s", _limpio(username), _limpio(key[0]),
+                    extra={"console": True})
         return _TEMPLATES.TemplateResponse(request, "pages/login.html", {"error": "Usuario o contraseña incorrectos"})
 
     _login_attempts.pop(key, None)   # login OK → limpiar el contador
+    _audit.info("auth login=ok user=%s ip=%s", _limpio(user.username), _limpio(key[0]),
+                extra={"console": True})
 
     landing = _landing_url(user)
     if landing is None:

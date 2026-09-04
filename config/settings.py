@@ -234,6 +234,25 @@ class Settings(BaseSettings):
     # Cookie de sesión con flag Secure (solo viaja por HTTPS). Default False porque el
     # droplet sirve por HTTP (443 cerrado); poné MONITOR_COOKIE_SECURE=true en cuanto
     # tengas TLS (certbot/CF) — con Secure la cookie no se filtra en una request HTTP.
+    # Hosts extra aceptados por la validacion de origen, ademas del `Host` del
+    # request (CSV). Valvula de escape para un proxy que no reenvie `Host`.
+    csrf_trusted_hosts: str = ""
+    # Content-Security-Policy. Vacio la desactiva (perilla de emergencia por env sin
+    # necesidad de un deploy). `unsafe-eval` es obligatorio: htmx compila los filtros
+    # de trigger con `Function`. `unsafe-inline` lo exigen los 20 bloques <script> y
+    # los 107 handlers on*= de los templates. Ver apps/web/security_web.py.
+    csp_policy: str = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; "
+        "font-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    )
     cookie_secure: bool = False
     # Frontera de confianza del reverse proxy para el rate-limit del login: SÓLO se lee
     # el header X-Forwarded-For (que escribe el CLIENTE) si el peer TCP está en esta
@@ -253,7 +272,10 @@ class Settings(BaseSettings):
     # ya es el día siguiente. La aplica `apply_timezone()` al importar este módulo.
     timezone: str = "America/Argentina/Buenos_Aires"
 
-    host: str = "0.0.0.0"
+    # Loopback por default: el unico que habla con internet es nginx. Antes era
+    # 0.0.0.0, o sea que cualquier despliegue sin firewall exponia uvicorn directo.
+    # Para probar desde otro dispositivo de la LAN: MONITOR_HOST=0.0.0.0
+    host: str = "127.0.0.1"
     port: int = 8000
     refresh_sec: int = 5
     # Chain de opciones (parser + CRR + griegos de ~1000 contratos): ~5-20s según CPU

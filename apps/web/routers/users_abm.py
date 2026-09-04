@@ -1,3 +1,4 @@
+import logging
 from typing import List
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
@@ -44,6 +45,34 @@ def list_users(request: Request, db: Session = Depends(get_db)):
     users = db.query(UserORM).all()
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users})
 
+# Auditoria de las acciones de admin: quien le hizo que a quien. No habia NADA — ni
+# un logger en este modulo — asi que un alta, un borrado o un reset de contrasena no
+# dejaban rastro en ningun lado.
+_audit = logging.getLogger("monitor.audit")
+
+
+def _limpio(v) -> str:
+    return "".join(ch for ch in str(v) if ch.isprintable())[:64]
+
+
+# Minimo de contrasena. El generador de la UI hace 12 chars; esto acota lo que se
+# tipea a mano. El maximo es el limite REAL de bcrypt: pasados 72 bytes trunca EN
+# SILENCIO (passlib con truncate_error=False), o sea que "misuperclave...<80 chars>"
+# y sus primeros 72 bytes serian la misma contrasena.
+_PASSWORD_MIN = 10
+_PASSWORD_MAX_BYTES = 72
+
+
+def _password_invalida(pw: str):
+    """Motivo por el que `pw` no sirve, o None si esta bien."""
+    if len(pw or "") < _PASSWORD_MIN:
+        return f"La contrasena tiene que tener al menos {_PASSWORD_MIN} caracteres."
+    if len((pw or "").encode("utf-8")) > _PASSWORD_MAX_BYTES:
+        return ("La contrasena supera los 72 bytes: bcrypt trunca en silencio a partir "
+                "de ahi, asi que el resto no protegeria nada.")
+    return None
+
+
 @router.post("/users/add", response_class=HTMLResponse)
 def add_user(
     request: Request,
@@ -51,9 +80,10 @@ def add_user(
     password: str = Form(...),
     is_admin: bool = Form(False),
     tabs: List[str] = Form(default=[]),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: UserORM = Depends(get_admin_user_html),
 ):
-    invalido = _username_invalido(username)
+    invalido = _username_invalido(username) or _password_invalida(password)
     if invalido:
         return _users_page(request, db, status_code=400, error=invalido)
 
@@ -71,12 +101,16 @@ def add_user(
     )
     db.add(new_user)
     db.commit()
+    _audit.info("users action=add by=%s target=%s is_admin=%s tabs=%s",
+                _limpio(getattr(admin, "username", "?")), _limpio(username),
+                bool(is_admin), _limpio(",".join(tabs or [])), extra={"console": True})
 
     users = db.query(UserORM).all()
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "success": f"Usuario {username} creado exitosamente."})
 
 @router.post("/users/delete/{user_id}", response_class=HTMLResponse)
-def delete_user(request: Request, user_id: int, db: Session = Depends(get_db)):
+def delete_user(request: Request, user_id: int, db: Session = Depends(get_db),
+                admin: UserORM = Depends(get_admin_user_html)):
     user = db.query(UserORM).filter(UserORM.id == user_id).first()
     if not user:
         return _no_existe(request, db, user_id)
@@ -86,6 +120,7 @@ def delete_user(request: Request, user_id: int, db: Session = Depends(get_db)):
     if user.is_admin and admins <= 1:
         return _users_page(request, db, error="No puedes borrar al último administrador.")
 
+    borrado = user.username        # antes del delete: despues el objeto esta expirado
     db.delete(user)
     db.commit()
     # El usuario resuelto por la dependencia de auth queda publicado en `request.state`
@@ -98,16 +133,29 @@ def delete_user(request: Request, user_id: int, db: Session = Depends(get_db)):
     actual = getattr(request.state, "current_user", None)
     if actual is not None and getattr(actual, "id", None) == user_id:
         request.state.current_user = None
+    _audit.info("users action=delete by=%s target=%s",
+                _limpio(getattr(admin, "username", "?")), _limpio(borrado),
+                extra={"console": True})
     return _users_page(request, db, success="Usuario borrado.")
 
 @router.post("/users/reset-password/{user_id}", response_class=HTMLResponse)
-def reset_password(request: Request, user_id: int, password: str = Form(...), db: Session = Depends(get_db)):
+def reset_password(request: Request, user_id: int, password: str = Form(...),
+                   db: Session = Depends(get_db),
+                   admin: UserORM = Depends(get_admin_user_html)):
     user = db.query(UserORM).filter(UserORM.id == user_id).first()
     if not user:
         return _no_existe(request, db, user_id)
+    # La validacion va DESPUES del lookup a proposito: un id inexistente tiene que dar
+    # 404 aunque la contrasena tambien sea invalida (lo fija test_aud_D1).
+    invalida = _password_invalida(password)
+    if invalida:
+        return _users_page(request, db, status_code=400, error=invalida)
 
     user.hashed_password = get_password_hash(password)
     db.commit()
+    _audit.info("users action=reset_password by=%s target=%s",
+                _limpio(getattr(admin, "username", "?")), _limpio(user.username),
+                extra={"console": True})
     return _users_page(request, db,
                        success=f"Contraseña actualizada para {user.username}.")
 

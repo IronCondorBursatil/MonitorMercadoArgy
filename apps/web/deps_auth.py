@@ -62,13 +62,12 @@ def _publish(request: Request, user: Optional[UserORM]) -> Optional[UserORM]:
 
 
 def _get_user_from_token(request: Request, db: Session) -> Optional[UserORM]:
+    # SOLO la cookie. Habia un fallback por `Authorization: Bearer` sin un solo
+    # consumidor en el repo (el unico "Bearer" que queda es saliente, hacia BYMA):
+    # una segunda puerta de entrada a la sesion que nadie usaba y que ningun test
+    # cubria. Si algun dia hace falta scriptear la API, se vuelve a agregar a
+    # sabiendas y con su propio test.
     token = request.cookies.get("access_token")
-    if not token:
-        # Check authorization header as fallback for API clients
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-
     if not token:
         return _publish(request, None)
 
