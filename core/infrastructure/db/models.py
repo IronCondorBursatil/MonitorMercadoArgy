@@ -107,6 +107,22 @@ Index("ix_instr_isin", InstrumentORM.isin)
 
 
 class CashflowORM(Base):
+    """Una fila = un evento de pago per-100-VN, en términos BASE (ver agents.md).
+
+    `es_ancla` marca una fila que NO es un pago: es el **vencimiento declarado** de un
+    instrumento cuyo payoff es de FÓRMULA CERRADA (TAMAR PURO / DUAL / DUAL_CER_TAMAR
+    — ver `instrument_groups.ANALYTIC_PAYOFF_TYPES`). Esos bonos no tienen —ni pueden
+    tener— schedule nominal: su pago sale de `tamar.tamar_dual_payoff_at` sobre la
+    TAMAR observada+proyectada, así que materializar un schedule sería *incorrecto*.
+    Sin ninguna fila, en cambio, quedan indistinguibles de un bono a medio cargar y son
+    invisibles en `/cashflows`.
+
+    El ancla resuelve las dos cosas: existe en la DB (auditable, visible) y
+    `catalog_repository._orm_to_domain` la FILTRA — nunca entra al dominio. Por eso la
+    marca vive acá y no en `core.domain.models.Cashflow`: cero superficie nueva en el
+    hot-path de pricing, que sigue viendo `cashflows=()` para esos 14 bonos. Cambiarla
+    de lado (marcarla en el dominio) reabriría el riesgo que este diseño cierra."""
+
     __tablename__ = "cashflows"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -114,5 +130,8 @@ class CashflowORM(Base):
     fecha_pago: Mapped[date] = mapped_column()
     amortizacion: Mapped[float] = mapped_column(default=0.0)
     cupon_interes: Mapped[float] = mapped_column(default=0.0)
+    # Forward-only: `init_db` la agrega con ALTER ADD COLUMN sobre las DBs existentes
+    # (default 0 = flujo real), nunca dropea. Ver `_migrate_table_add_columns`.
+    es_ancla: Mapped[bool] = mapped_column(default=False)
 
     instrument: Mapped["InstrumentORM"] = relationship(back_populates="cashflows")

@@ -79,24 +79,38 @@ class TestParseCashflows:
 # save_instrument transaccional (row + cashflows en una sola txn SQLAlchemy)
 # --------------------------------------------------------------------------- #
 
+# Fase 9: el write-path del ABM ya NO sintetiza (el synth leía el reloj → el schedule
+# persistido dependía del día del alta). El schedule lo manda el caller — el form lo toma
+# del preview. Los tests de abajo que sólo necesitaban "un bono guardado" pasan este
+# bullet mínimo; los que ejercen el CONTRATO están en test_perf_W1_cashflows_ancla.py.
+_CF_BULLET = [{"date": "2030-01-01", "amortization": 100, "interest": 0}]
+
+
 class TestSaveInstrumentTransactional:
-    def test_save_row_only_no_cashflows(self, abm_db):
-        """Sin cashflows kwarg → solo escribe la fila (synth on-the-fly)."""
-        result = save_instrument(
-            "Soberanos",
-            {
-                "ticker": "TESTROW",
-                "short_name": "TESTROW",
-                "tipo": "BONAR",
-                "fecha_emision": "2025-01-01",
-                "fecha_vencimiento": "2030-01-01",
-                "cupon anual %": "1.5",
-                "frecuencia pagos": "2",
-            },
-        )
+    def test_save_row_only_sin_cashflows_es_rechazado(self, abm_db):
+        """CONTRATO NUEVO (Fase 9): sin flujos NO se guarda.
+
+        Antes esto sintetizaba on-the-fly al guardar — y `cashflow_synth` lee el reloj
+        para el step-up del cupón, así que el schedule que quedaba en la DB dependía del
+        día del alta. Ahora el synth es sólo PREVIEW y el schedule viaja en el POST; un
+        alta sin flujos se rechaza en vez de dejar un bono impriceable."""
+        fields = {
+            "ticker": "TESTROW",
+            "short_name": "TESTROW",
+            "tipo": "BONAR",
+            "fecha_emision": "2025-01-01",
+            "fecha_vencimiento": "2030-01-01",
+            "cupon anual %": "1.5",
+            "frecuencia pagos": "2",
+        }
+        with pytest.raises(ValueError, match="sin FLUJO DE FONDOS"):
+            save_instrument("Soberanos", fields)
+        assert get_instrument("TESTROW") is None
+
+        result = save_instrument("Soberanos", fields, cashflows=_CF_BULLET)
         assert result["action"] == "created"
         assert result["ticker"] == "TESTROW"
-        assert "cashflows" not in result
+        assert result["cashflows"] == 1
 
     def test_save_with_cashflows_atomic(self, abm_db):
         """Con cashflows, row + cashflows persisten juntos."""
@@ -150,7 +164,7 @@ class TestSaveInstrumentTransactional:
             "short_name": "ZZ9", "tipo": "BONAR",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "1.0", "frecuencia pagos": "2",
-        })
+        }, cashflows=_CF_BULLET)
         for t in ("ZZ9", "ZZ9D", "ZZ9C"):
             assert get_instrument(t) is not None
         # cashflows idénticos entre especies
@@ -168,14 +182,14 @@ class TestSaveInstrumentTransactional:
             "short_name": "ZZ8", "tipo": "GLOBAL",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "1.0", "frecuencia pagos": "2",
-        })
+        }, cashflows=_CF_BULLET)
         # re-guardar sin CABLE → ZZ8C debe desaparecer; ARS/MEP permanecen
         save_instrument("Soberanos", {
             "ticker_ars": "ZZ8", "ticker_mep": "ZZ8D", "ticker_ccl": "",
             "short_name": "ZZ8", "tipo": "GLOBAL",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "1.0", "frecuencia pagos": "2",
-        })
+        }, cashflows=_CF_BULLET)
         assert get_instrument("ZZ8") is not None
         assert get_instrument("ZZ8D") is not None
         assert get_instrument("ZZ8C") is None
@@ -186,7 +200,7 @@ class TestSaveInstrumentTransactional:
             "short_name": "ZZ7", "tipo": "BONAR",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "1.0", "frecuencia pagos": "2",
-        })
+        }, cashflows=_CF_BULLET)
         result = delete_instrument("ZZ7")  # key = grupo
         assert result["action"] == "deleted"
         assert set(result["tickers"]) == {"ZZ7", "ZZ7D"}
@@ -198,12 +212,12 @@ class TestSaveInstrumentTransactional:
             "ticker": "UPDT1", "short_name": "UPDT1", "tipo": "BONAR",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "1.0", "frecuencia pagos": "2",
-        })
+        }, cashflows=_CF_BULLET)
         result = save_instrument("Soberanos", {
             "ticker": "UPDT1", "short_name": "UPDT1", "tipo": "BONAR",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "2.5", "frecuencia pagos": "2",
-        })
+        }, cashflows=_CF_BULLET)
         assert result["action"] == "updated"
         loaded = get_instrument("UPDT1")
         assert str(loaded["fields"]["cupon anual %"]) in ("2.5", "2,5")
@@ -356,7 +370,7 @@ class TestLookupPerformance:
             "short_name": "ZZ6", "tipo": "BONAR",
             "fecha_emision": "2025-01-01", "fecha_vencimiento": "2030-01-01",
             "cupon anual %": "1.0", "frecuencia pagos": "2",
-        })
+        }, cashflows=_CF_BULLET)
 
         def _run():
             with SessionLocal() as s:
@@ -403,7 +417,8 @@ class TestSectorCategory:
 
     def test_derived_sector_shows_monitor_short_label(self, abm_db):
         save_instrument("Obligaciones_Negociables",
-                        {**self._BASE, "ticker_ars": "ZZSEC0", "short_name": "YPF SA"})
+                        {**self._BASE, "ticker_ars": "ZZSEC0", "short_name": "YPF SA"},
+                        cashflows=_CF_BULLET)
         r = {x["key"]: x for x in
              list_instruments_coverage(sheet="Obligaciones_Negociables")}["ZZSEC0"]
         assert r["sector_auto"] is True
@@ -413,7 +428,8 @@ class TestSectorCategory:
     def test_manual_override_shown_with_short_label(self, abm_db):
         save_instrument("Obligaciones_Negociables",
                         {**self._BASE, "ticker_ars": "ZZSEC1", "short_name": "Frobnicate SA",
-                         "sector_override": "Servicios Financieros"})
+                         "sector_override": "Servicios Financieros"},
+                        cashflows=_CF_BULLET)
         r = {x["key"]: x for x in
              list_instruments_coverage(sheet="Obligaciones_Negociables")}["ZZSEC1"]
         assert r["sector_auto"] is False
@@ -436,7 +452,8 @@ class TestSectorCategory:
         """El precio de la fila ABM toma la pata MEP (…D, en USD), no la pata pesos (…O)."""
         save_instrument("Obligaciones_Negociables",
                         {**self._BASE, "ticker_ars": "ZZP0O", "ticker_mep": "ZZP0D",
-                         "short_name": "PRICE TEST"})
+                         "short_name": "PRICE TEST"},
+                        cashflows=_CF_BULLET)
         prices = {"ZZP0O": 150990.0, "ZZP0D": 98.5}
         r = {x["key"]: x for x in list_instruments_coverage(
             price_of=prices.get, sheet="Obligaciones_Negociables")}["ZZP0O"]

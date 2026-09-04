@@ -6,6 +6,23 @@ from fastapi.testclient import TestClient
 
 from apps.web.app import app
 
+# Fase 9: el POST de /abm/save lleva el SCHEDULE (la tabla del cajón). El backend ya no
+# sintetiza al guardar —leía el reloj, así que el schedule persistido dependía del día
+# del alta— y rechaza un alta sin flujos. Estos helpers arman ese POST como lo arma el form.
+_CF_BULLET = {"cf_date": ["2027-07-22"], "cf_amort": ["100"], "cf_interest": ["0"]}
+
+
+def _con_preview(fields: dict) -> dict:
+    """`fields` + el schedule que el preview propone para ellos (lo que hace el usuario:
+    ⟳ Previsualizar → Guardar)."""
+    from apps.web import instruments_abm as abm_store
+    cfs = abm_store.preview_cashflows(fields)
+    assert cfs, "el preview no propuso ningún flujo: el alta no sería guardable"
+    return {**fields,
+            "cf_date": [c["date"] for c in cfs],
+            "cf_amort": [str(c["amortization"]) for c in cfs],
+            "cf_interest": [str(c["interest"]) for c in cfs]}
+
 
 def test_abm_page_renders():
     with TestClient(app) as c:
@@ -96,9 +113,11 @@ def test_abm_save_internal_attribute_error_propagates_not_swallowed():
             "fecha_vencimiento": "2030-01-01", "cupon anual %": "5.0",
             "frecuencia pagos": "2",
         }
-        with mock.patch("core.domain.cashflow_synth.synth_cashflows",
+        # `build_instrument` (no el synth: desde la Fase 9 el save no sintetiza) es el
+        # símbolo interno del camino de escritura.
+        with mock.patch("apps.web.instruments_abm.build_instrument",
                         side_effect=AttributeError("bug interno simulado")):
-            r = c.post("/abm/save", data=fields)
+            r = c.post("/abm/save", data=_con_preview(fields))
         assert r.status_code == 500   # propaga: el router solo atrapa ValueError/KeyError
 
 
@@ -117,7 +136,7 @@ def test_abm_on_list_adaptive_table_shows_fields():
     }
     with TestClient(app) as c:
         try:
-            r = c.post("/abm/save", data=fields)
+            r = c.post("/abm/save", data={**fields, **_CF_BULLET})
             assert r.status_code == 200 and "No se guardó" not in r.text
             assert "TSZ9O" in r.text                   # ticker pesos
             assert "TEST DL" in r.text                 # emisor (short_name) como columna
@@ -163,7 +182,8 @@ def test_abm_cashflows_editable_roundtrip():
                "cf_amort": ["0", "100"], "cf_interest": ["4", "4"]}
     with TestClient(app) as c:
         try:
-            assert "No se guardó" not in c.post("/abm/save", data=fields).text
+            assert "No se guardó" not in c.post("/abm/save",
+                                                 data={**fields, **_CF_BULLET}).text
             r = c.post("/abm/cashflows", data=cf_data)
             assert r.status_code == 200 and "flujos guardados" in r.text
             inst = get_repo().get_instrument_by_ticker("TSC1D")
@@ -187,7 +207,9 @@ def test_abm_save_alta_visible_sin_reiniciar():
         "base calculo": "ACT/365", "tipo amortizacion": "bullet",
     }
     with TestClient(app) as c:
-        r = c.post("/abm/save", data=fields)
+        # el camino real del cajón: ⟳ Previsualizar propone el schedule y el submit lo
+        # manda. El save NO lo sintetiza (dependía del reloj) — ver Fase 9.
+        r = c.post("/abm/save", data=_con_preview(fields))
         assert r.status_code == 200 and "No se guardó" not in r.text
         assert "TST8O" in r.text                       # ya está en la lista
         # visible para el MOTOR sin reinicio: el singleton (el del refresh loop)

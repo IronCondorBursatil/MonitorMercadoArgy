@@ -2,8 +2,15 @@
 
 GET    /abm                     → lista + selector de hoja + form.
 GET    /abm/form                → form schema-driven de una hoja (prefill si ticker).
+POST   /abm/preview_cashflows   → schedule PROPUESTO desde los campos del form (no persiste).
 POST   /abm/save                → alta/edición (SQLAlchemy txn) + refresh del cache.
 DELETE /abm/instrument/{ticker} → baja + refresh.
+
+Fase 9 — el POST de `/abm/save` lleva el SCHEDULE (`cf_date`/`cf_amort`/`cf_interest`,
+la tabla editable del cajón). Antes llamaba `save_instrument(sheet, fields)` sin flujos y
+el store sintetizaba al guardar; como `cashflow_synth` lee el reloj para el step-up del
+cupón, el schedule que quedaba en la DB dependía del día del alta. Ahora la síntesis vive
+sólo acá, en `/abm/preview_cashflows`: el operador la ve, la corrige y la manda de vuelta.
 
 Escribe el catálogo SQLite vía `apps.web.instruments_abm` (transaccional) y
 refresca el cache en memoria del `CatalogRepository` desde SQLite (sin re-leer
@@ -238,17 +245,59 @@ def abm_calc(request: Request, ticker: str = Form(...),
     return _TEMPLATES.TemplateResponse(request, "fragments/calc_result.html", {"res": res})
 
 
+# Claves de la tabla de flujos del cajón: viajan en el MISMO POST que el resto del form
+# (la tabla vive dentro del <form> de /abm/save) pero NO son campos del instrumento.
+_CF_FORM_KEYS = ("cf_ticker", "cf_date", "cf_amort", "cf_interest")
+
+
+def _form_fields(form) -> dict:
+    """Campos del instrumento: todo el form menos `sheet` y la tabla de flujos."""
+    return {k: v for k, v in form.items()
+            if k != "sheet" and k not in _CF_FORM_KEYS}
+
+
+def _form_cashflows(form):
+    """Schedule que manda el form, o **None** si no vino ninguna fila.
+
+    None ≠ [] a propósito: None significa "el form no trae schedule" y deja que
+    `save_instrument` conserve el que el bono ya tenía (edición que sólo toca los
+    términos). Una tabla presente pero con todas las filas en blanco también da None —
+    vaciar el flujo de fondos es una operación destructiva y tiene su propio botón
+    (`POST /abm/cashflows`), no puede ser el efecto colateral de un submit."""
+    dates = form.getlist("cf_date")
+    if not dates:
+        return None
+    amorts, ints = form.getlist("cf_amort"), form.getlist("cf_interest")
+    rows = [{"date": d, "amortization": a or 0, "interest": i or 0}
+            for d, a, i in zip(dates, amorts, ints) if (d or "").strip()]
+    return rows or None
+
+
+@router.post("/abm/preview_cashflows", response_class=HTMLResponse)
+async def abm_preview_cashflows(request: Request):
+    """Schedule PROPUESTO desde los campos del form (síntesis pura, no persiste nada).
+    Devuelve las filas de la tabla editable; el operador las revisa y el submit de
+    `/abm/save` las manda. Es el ÚNICO consumidor del synth desde la ABM: así el reloj
+    que lee `cashflow_synth` no puede contaminar lo que queda en la DB."""
+    form = await request.form()
+    # to_thread: la síntesis de un bullet a 30 años son cientos de relativedelta.
+    cfs = await asyncio.to_thread(abm_store.preview_cashflows, _form_fields(form))
+    return _TEMPLATES.TemplateResponse(request, "fragments/abm_cf_rows.html",
+                                       {"cashflows": cfs})
+
+
 @router.post("/abm/save", response_class=HTMLResponse)
 async def abm_save(request: Request, sheet: str = Form(...),
                    repo=Depends(get_repo), state=Depends(get_state)):
     form = await request.form()
-    fields = {k: v for k, v in form.items() if k != "sheet"}
+    fields = _form_fields(form)
+    cashflows = _form_cashflows(form)
     try:
         # to_thread: SQLite + repo.reload() (relee ~550 instrumentos con sus cashflows)
         # son ~130-200 ms de I/O+CPU sincrónico. En la corrutina frenaban el event loop
         # y con él todos los SSE. CLAUDE.md ya decía que esto corría en to_thread.
         def _save():
-            abm_store.save_instrument(sheet, fields)  # cashflows=None → preserva/synth
+            abm_store.save_instrument(sheet, fields, cashflows)
             repo.reload()                              # refresca el cache desde SQLite
         await asyncio.to_thread(_save)
     except (ValueError, KeyError) as e:

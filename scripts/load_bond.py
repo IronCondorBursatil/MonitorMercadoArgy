@@ -119,15 +119,23 @@ def load_bond(
     que quedó cargado (para comparar de un vistazo con la imagen)."""
     from apps.web.instruments_abm import save_instrument
 
+    # Fase 9: el schedule lo MATERIALIZA el caller. `save_instrument` ya no sintetiza
+    # (leía el reloj para el step-up del cupón → lo persistido dependía del día de la
+    # carga) y rechaza un bono normal sin flujos. En modo "synth" se manda acá el mismo
+    # schedule que `reconcile_synth_vs_explicit` acaba de comparar contra la imagen.
+    def _synth_rows() -> List[Dict[str, Any]]:
+        return [{"date": d.isoformat(), "amortization": a, "interest": i}
+                for d, a, i in synth_schedule(fields)]
+
     decision = ""
     if force_explicit and explicit_cfs:
         mode, chosen = "explicit", explicit_cfs
         decision = "force_explicit=True → EXPLÍCITO sin reconciliar."
     elif explicit_cfs:
         match, decision = reconcile_synth_vs_explicit(fields, explicit_cfs)
-        mode, chosen = ("synth", None) if match else ("explicit", explicit_cfs)
+        mode, chosen = ("synth", _synth_rows()) if match else ("explicit", explicit_cfs)
     else:
-        mode, chosen = "synth", None
+        mode, chosen = "synth", _synth_rows()
         decision = "sin cashflow explícito en la imagen → SYNTH (validar con verify())."
 
     bkp = _backup() if backup else None

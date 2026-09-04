@@ -16,7 +16,9 @@ from apps.web.instruments_abm import (
 )
 from core.infrastructure.db.catalog_repository import init_db
 from core.infrastructure.db.engine import SessionLocal
-from core.infrastructure.db.models import InstrumentORM
+from core.infrastructure.db.models import CashflowORM, InstrumentORM
+
+from datetime import date as _date
 
 _FICHA = {"ley": "Extranjera", "monto_residual": 100.0}
 
@@ -33,9 +35,12 @@ def _post(sheet: str, ticker: str, **overrides) -> dict:
 
 
 def _seed_on():
+    """Fila de ON como la dejan los ingest del IAMC. Lleva su schedule: desde la Fase 9
+    `save_instrument` RECHAZA guardar un bono normal sin flujo de fondos (antes lo
+    sintetizaba leyendo el reloj y dejaba el schedule a merced del día del alta)."""
     init_db()
     with SessionLocal.begin() as s:
-        s.add(InstrumentORM(
+        orm = InstrumentORM(
             ticker="BF39O", ticker_mep="BF39D", short_name="BBVA",
             instrument_type="HARD DOLLAR", sheet="Obligaciones_Negociables",
             isin="AR0914780439", day_count="ACT/365",
@@ -45,7 +50,10 @@ def _seed_on():
                 "origen": "IAMC 2026-08-28 (deuda corporativa)",
                 "cupon_anual_pct": 5.8,
                 "byma": {"emisor": "BANCO BBVA ARGENTINA S.A.", "ficha": _FICHA},
-            }))
+            })
+        orm.cashflows = [CashflowORM(ticker="BF39O", fecha_pago=_date(2026, 12, 5),
+                                     amortizacion=100.0, cupon_interes=2.9)]
+        s.add(orm)
 
 
 def _raw(ticker="BF39O"):
@@ -82,12 +90,16 @@ def test_save_preserva_ley_aplicable_en_hojas_sin_ese_campo(tmp_db):
     siempre al editar un Soberano/CER/TAMAR."""
     init_db()
     with SessionLocal.begin() as s:
-        s.add(InstrumentORM(ticker="AO29", short_name="AO29", instrument_type="BONAR",
+        orm = InstrumentORM(ticker="AO29", short_name="AO29", instrument_type="BONAR",
                             sheet="Soberanos",
                             raw_fields={"ticker_ars": "AO29", "tipo": "BONAR",
                                         "short_name": "AO29",
-                                        "ley_aplicable": "Argentina"}))
-    save_instrument("Soberanos", _post("Soberanos", "AO29"))
+                                        "ley_aplicable": "Argentina"})
+        orm.cashflows = [CashflowORM(ticker="AO29", fecha_pago=_date(2029, 6, 17),
+                                     amortizacion=100.0, cupon_interes=0.5)]
+        s.add(orm)
+    save_instrument("Soberanos", _post("Soberanos", "AO29"),
+                    get_instrument("AO29")["cashflows"])
     assert _raw("AO29")["ley_aplicable"] == "Argentina"
 
 
@@ -108,12 +120,16 @@ def test_save_consolida_patas_sin_perder_el_blob_de_ninguna(tmp_db):
     """Al consolidar filas-por-pata, el blob resultante hereda de TODAS las filas."""
     init_db()
     with SessionLocal.begin() as s:
-        s.add(InstrumentORM(ticker="ZZC1O", short_name="Z", instrument_type="HARD DOLLAR",
-                            sheet="Obligaciones_Negociables",
-                            raw_fields={"origen": "seed-O"}))
+        o1 = InstrumentORM(ticker="ZZC1O", short_name="Z", instrument_type="HARD DOLLAR",
+                           sheet="Obligaciones_Negociables",
+                           raw_fields={"origen": "seed-O"})
+        o1.cashflows = [CashflowORM(ticker="ZZC1O", fecha_pago=_date(2028, 1, 15),
+                                    amortizacion=100.0, cupon_interes=4.0)]
+        s.add(o1)
         s.add(InstrumentORM(ticker="ZZC1D", short_name="Z", instrument_type="HARD DOLLAR",
                             sheet="Obligaciones_Negociables",
                             raw_fields={"byma": {"ficha": _FICHA}}))
+    # sin `cashflows=` explícito: el save conserva los de la fila que ya los tenía
     save_instrument("Obligaciones_Negociables",
                     {"ticker_ars": "ZZC1O", "ticker_mep": "ZZC1D",
                      "short_name": "Z", "tipo": "HARD DOLLAR"})

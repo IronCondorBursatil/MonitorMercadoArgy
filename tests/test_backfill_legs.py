@@ -5,11 +5,18 @@ NO se tocan (serían fila basura). Reusa save_instrument (consolida + re-keya)."
 
 
 from config.settings import settings
-from core.domain.models import Instrument
+from datetime import date
+
+from core.domain.models import Cashflow, Instrument
 from core.infrastructure.db import engine as db_engine
 from core.infrastructure.db.catalog_repository import init_db, instrument_to_orm
 from core.infrastructure.db.engine import SessionLocal
 from core.infrastructure.db.models import BymaCatalogORM, CashflowORM, InstrumentORM
+
+
+# Desde la Fase 9 `save_instrument` (que reusa el backfill) rechaza un bono normal sin
+# flujo de fondos → los bonos sembrados acá llevan su schedule.
+_BULLET = [Cashflow(date=date(2028, 1, 15), amortization=100.0, interest=0.0)]
 
 
 def _uni(symbol, moneda, tp, cotiza=1, segmento=None, isin=None):
@@ -41,7 +48,8 @@ def test_backfill_adds_missing_cable_leg(tmp_path):
             ])
             # ON curada con O + D, FALTA cable
             s.add(instrument_to_orm(
-                Instrument(ticker="XX1O", short_name="ON X", instrument_type="HARD DOLLAR"),
+                Instrument(ticker="XX1O", short_name="ON X", instrument_type="HARD DOLLAR",
+                           cashflows=_BULLET),
                 sheet="Obligaciones_Negociables", ticker_mep="XX1D"))
 
         plan = backfill_legs_from_universe(dry_run=True)
@@ -80,7 +88,7 @@ def test_backfill_links_different_base_by_isin(tmp_path):
             # curado: solo MEP + cable, con el ISIN del activo
             s.add(instrument_to_orm(
                 Instrument(ticker="PFXD", short_name="BOPREAL", instrument_type="BOPREAL",
-                           isin="ARISIN0001"),
+                           isin="ARISIN0001", cashflows=_BULLET),
                 sheet="Soberanos", ticker_ccl="PFXC"))
         res = backfill_legs_from_universe(dry_run=False)
         assert any(r["ticker"] == "PFXD" and r["added"] == ["PFXO"] for r in res)

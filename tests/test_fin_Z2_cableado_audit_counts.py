@@ -23,6 +23,9 @@ from core.infrastructure.repositories import (
 )
 
 _ON_SHEET = "Obligaciones_Negociables"
+# Desde la Fase 9 el save NO sintetiza (leía el reloj) y rechaza un bono normal sin
+# flujos: los saves de acá van con un bullet mínimo, que no es lo que están probando.
+_CF_BULLET = [{"date": "2028-10-31", "amortization": 100, "interest": 0}]
 
 
 def _row(ticker, itype, sheet=_ON_SHEET, raw=None):
@@ -101,7 +104,8 @@ def test_guardar_una_on_sin_tipo_avisa_exactamente_una_vez(tmp_db, caplog):
     with caplog.at_level("WARNING"):
         res = save_instrument(_ON_SHEET, {"ticker_ars": "TESTO", "short_name": "X",
                                           "fecha_vencimiento": "2028-10-31",
-                                          "fecha_emision": "2024-04-30"})
+                                          "fecha_emision": "2024-04-30"},
+                                   _CF_BULLET)
     assert res["action"] == "created"
     msgs = _asumidos(caplog)
     assert len(msgs) == 1, msgs
@@ -114,7 +118,7 @@ def test_el_aviso_no_desaparecio(tmp_db, caplog):
 
     with caplog.at_level("WARNING"):
         save_instrument(_ON_SHEET, {"ticker_ars": "TESTO2", "short_name": "X",
-                                    "fecha_vencimiento": "2028-10-31"})
+                                    "fecha_vencimiento": "2028-10-31"}, _CF_BULLET)
     assert _asumidos(caplog), caplog.text
 
 
@@ -124,7 +128,7 @@ def test_guardar_una_on_con_tipo_no_avisa(tmp_db, caplog):
     with caplog.at_level("WARNING"):
         save_instrument(_ON_SHEET, {"ticker_ars": "TESTO3", "short_name": "X",
                                     "tipo": "DOLLAR LINKED",
-                                    "fecha_vencimiento": "2028-10-31"})
+                                    "fecha_vencimiento": "2028-10-31"}, _CF_BULLET)
     assert not _asumidos(caplog), caplog.text
 
 

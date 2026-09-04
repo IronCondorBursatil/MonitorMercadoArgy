@@ -34,6 +34,33 @@ def get_db():
     finally:
         db.close()
 
+# Centinela: distingue "no hay usuario" (None, resuelto) de "todavia no se resolvio".
+_UNRESOLVED = object()
+
+
+def user_can_tab(user: Optional[UserORM], tab: str) -> bool:
+    """Permiso por pestana. Fuente unica de la regla (la usan RequireTabPermission
+    y el `has_tab()` del contexto de los templates)."""
+    if user is None:
+        return False
+    if user.is_admin:
+        return True
+    tabs = user.allowed_tabs or []
+    return "*" in tabs or tab in tabs
+
+
+def _publish(request: Request, user: Optional[UserORM]) -> Optional[UserORM]:
+    """Publica el usuario resuelto en `request.state` para el resto del request.
+
+    Sin esto, `apps/web/templates.py` volvia a abrir una `SessionLocal()` y a
+    decodificar el JWT en CADA respuesta de template, ADEMAS de la que abrio esta
+    dependencia: 2 sesiones SQLite + 2 decodes por fragmento, y el dashboard pide
+    ~14 fragmentos cada 5s por cliente.
+    """
+    request.state.current_user = user
+    return user
+
+
 def _get_user_from_token(request: Request, db: Session) -> Optional[UserORM]:
     token = request.cookies.get("access_token")
     if not token:
@@ -43,18 +70,18 @@ def _get_user_from_token(request: Request, db: Session) -> Optional[UserORM]:
             token = auth_header.split(" ")[1]
 
     if not token:
-        return None
+        return _publish(request, None)
 
     payload = decode_access_token(token)
     if not payload:
-        return None
+        return _publish(request, None)
 
     username: str = payload.get("sub")
     if username is None:
-        return None
+        return _publish(request, None)
 
     user = db.query(UserORM).filter(UserORM.username == username).first()
-    return user
+    return _publish(request, user)
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> UserORM:
     """Para APIs: devuelve 401 si no está logueado."""
@@ -91,12 +118,10 @@ class RequireTabPermission:
         self.tab_name = tab_name
 
     def __call__(self, current_user: UserORM = Depends(get_current_user_html)):
-        if current_user.is_admin:
+        if user_can_tab(current_user, self.tab_name):
             return current_user
 
         tabs = current_user.allowed_tabs or []
-        if "*" in tabs or self.tab_name in tabs:
-            return current_user
 
         # Autenticado pero sin esta pestaña: 403 (no 302 a /login). Con el redirect,
         # tipear a mano una URL sin permiso te devolvía el FORMULARIO DE LOGIN estando

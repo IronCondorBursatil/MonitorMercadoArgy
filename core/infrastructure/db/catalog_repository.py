@@ -252,9 +252,15 @@ def _orm_to_domain(orm: InstrumentORM) -> Instrument:
     return Instrument(
         ticker=orm.ticker, short_name=orm.short_name, instrument_type=orm.instrument_type,
         maturity_date=orm.maturity_date, emission_date=orm.emission_date,
+        # FILTRO DEL ANCLA — único punto por el que los CashflowORM entran al dominio.
+        # Una fila `es_ancla` es el vencimiento declarado de un instrumento de payoff
+        # ANALÍTICO (TAMAR PURO/DUAL/DUAL_CER_TAMAR): existe en la DB para que el bono
+        # sea auditable y visible en /cashflows, pero NO es un pago. Dejándola afuera
+        # acá, esos bonos siguen llegando al motor con `cashflows=()` igual que hoy →
+        # el pricing es bit-idéntico POR CONSTRUCCIÓN (no por coincidencia numérica).
         cashflows=[
             Cashflow(date=cf.fecha_pago, amortization=cf.amortizacion, interest=cf.cupon_interes)
-            for cf in orm.cashflows
+            for cf in orm.cashflows if not cf.es_ancla
         ],
         cer_base=orm.cer_base, cer_lag=orm.cer_lag, category=orm.category,
         floor_rate_monthly=orm.floor_rate_monthly, spread_rate=orm.spread_rate,

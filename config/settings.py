@@ -246,6 +246,12 @@ class Settings(BaseSettings):
     # puro (mantiene el GIL en `to_thread`), así que mientras corre ralentiza los
     # ciclos de precios; espaciarlo a 60s achica esa ventana de interferencia.
     options_refresh_sec: int = 60
+    # TTL de los paneles de renta variable de BYMA open que NINGUN panel del monitor
+    # consume en vivo (`btnGeneral`, `btnCedears`): solo alimentan el reconcile del
+    # catalogo y el sidebar del ABM. Son los dos POST mas pesados (page_size=5000,
+    # ~10k filas entre ambos) y salian cada 5s. `btnLideres` NO entra en el cache
+    # (lo consume `panel_lider`), ni los 3 de renta fija. 0 desactiva el cache.
+    equities_refresh_sec: int = 30
     # Workers del thread pool del motor de pricing (por ciclo). El trabajo es
     # mayormente CPU (XIRR/root-finding) con algo de I/O cacheado; con el GIL, más
     # threads que cores rinde poco y en laptops chicas genera thrashing. Acotado a los

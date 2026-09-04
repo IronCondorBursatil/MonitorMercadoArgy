@@ -71,6 +71,62 @@ def _rows(resp) -> list:
 
 
 # --------------------------------------------------------------------------- #
+# Parseo de paneles BYMA — PURO y CPU-bound (~10k filas × ~6,7us de pydantic).
+# Vive module-level y sin `self` a propósito: `fetch()` lo corre en
+# `asyncio.to_thread`, porque hacerlo inline bloqueaba ~67ms por ciclo el MISMO
+# event loop que sirve el SSE y todos los requests HTTP del dashboard.
+# --------------------------------------------------------------------------- #
+
+# Un panel parseado: [(plazo, quote, bucket), ...] en el orden crudo de BYMA.
+ParsedPanel = list[Tuple[str, Data912Row, str]]
+
+
+def _parse_panel(data, bucket: str) -> ParsedPanel:
+    """PURO: filas crudas de UN panel → [(plazo, Data912Row, bucket)]."""
+    out: ParsedPanel = []
+    for raw in data:
+        q = byma_row_to_quote(raw)
+        if q is None:
+            continue
+        out.append((settle_of(raw), q, bucket))
+    return out
+
+
+def _parse_panel_rows(buckets, results) -> list[ParsedPanel]:
+    """PURO: parsea los N paneles y los devuelve POR SEPARADO (para cachearlos)."""
+    return [_parse_panel(data, bucket) for bucket, data in zip(buckets, results)]
+
+
+def _merge_panels(panels) -> FetchResult:
+    """Vuelca los paneles parseados al snapshot por plazo + el mapa symbol→bucket.
+
+    `panels` = [(filas_parseadas, es_fresco)] en el orden de `PANELS` (el último
+    gana, igual que el doble-for original). Única excepción: una entrada CACHEADA
+    (stale) no pisa un símbolo que ya escribió un panel fresco de este ciclo —
+    `btnGeneral` puede solapar con `btnLideres`, que va a ciclo completo y no debe
+    quedar servido con hasta 30s de atraso.
+    """
+    snaps = _empty_snaps()
+    smap: SourceMap = {}
+    fresh_keys: set = set()
+    for rows, fresh in panels:
+        for settle, q, bucket in rows:
+            key = (settle, q.symbol)
+            if not fresh and key in fresh_keys:
+                continue
+            snaps[settle][q.symbol] = q
+            smap[q.symbol] = bucket
+            if fresh:
+                fresh_keys.add(key)
+    return snaps, smap
+
+
+def _parse_panels(buckets, results) -> FetchResult:
+    """PURO: el doble-for original (parseo + merge) para el camino sin cache."""
+    return _merge_panels([(p, True) for p in _parse_panel_rows(buckets, results)])
+
+
+# --------------------------------------------------------------------------- #
 # Data912 (fallback) — la lógica que vivía en ProviderHub.fetch_data912.
 # --------------------------------------------------------------------------- #
 
@@ -137,6 +193,17 @@ class BymaOpenSource:
         ("btnObligNegociables", "renta-fija", ("T0", "T1"), "corp"),
     ]
 
+    # Paneles con TTL propio (`settings.equities_refresh_sec`): ningun panel del
+    # monitor los consume en vivo — solo alimentan el reconcile de catalogo y el
+    # sidebar del ABM — y son los dos POST mas pesados. `btnLideres` queda a ciclo
+    # completo (lo usa `panel_lider`), igual que los 3 de renta fija.
+    SLOW_PANELS = frozenset({"btnGeneral", "btnCedears"})
+
+    def __init__(self) -> None:
+        # flag → (filas YA parseadas del panel, monotonic del POST). Guardamos el
+        # parseo, no el crudo: asi el hit de cache tampoco paga pydantic.
+        self._panel_cache: Dict[str, Tuple[ParsedPanel, float]] = {}
+
     def _headers(self, segment: str) -> dict:
         return {
             "Token": self.APP_TOKEN,
@@ -168,19 +235,38 @@ class BymaOpenSource:
             return []
 
     async def fetch(self, client: ResilientClient) -> FetchResult:
+        now = time.monotonic()
+        ttl = max(0.0, float(getattr(settings, "equities_refresh_sec", 0) or 0))
+        cached: Dict[int, ParsedPanel] = {}
+        pending: list = []
+        for i, (flag, _seg, _plazos, _bucket) in enumerate(self.PANELS):
+            hit = self._panel_cache.get(flag) if (ttl and flag in self.SLOW_PANELS) else None
+            if hit is not None and (now - hit[1]) < ttl:
+                cached[i] = hit[0]
+            else:
+                pending.append(i)
+
         results = await asyncio.gather(
-            *[self._panel(client, flag, seg, plazos) for flag, seg, plazos, _ in self.PANELS]
+            *[self._panel(client, *self.PANELS[i][:3]) for i in pending]
         )
-        snaps = _empty_snaps()
-        smap: SourceMap = {}
-        for (flag, seg, plazos, bucket), data in zip(self.PANELS, results):
-            for raw in data:
-                q = byma_row_to_quote(raw)
-                if q is None:
-                    continue
-                snaps[settle_of(raw)][q.symbol] = q
-                smap[q.symbol] = bucket
-        return snaps, smap
+        # Parseo pydantic FUERA del event loop (ver `_parse_panel_rows`).
+        parsed = await asyncio.to_thread(
+            _parse_panel_rows, [self.PANELS[i][3] for i in pending], results)
+
+        fresh = dict(zip(pending, parsed))
+        for i, rows in fresh.items():
+            flag = self.PANELS[i][0]
+            # Un panel VACIO (POST caido, breaker abierto) NO se cachea: hacerlo
+            # serviria un panel en blanco durante todo el TTL en vez de reintentar.
+            if flag in self.SLOW_PANELS and rows:
+                self._panel_cache[flag] = (rows, now)
+        # Los paneles cacheados se re-mergean SIEMPRE: si desaparecieran del
+        # snapshot, el floor Data912 y la ventana K del hub verian una fuente que
+        # "dejo de listar" esos simbolos.
+        return _merge_panels([
+            (fresh[i], True) if i in fresh else (cached[i], False)
+            for i in range(len(self.PANELS))
+        ])
 
 
 # --------------------------------------------------------------------------- #
@@ -314,16 +400,9 @@ class BymaRealtimeSource:
         results = await asyncio.gather(
             *[self._panel(client, ep, body, plazos, token) for ep, body, plazos, _ in self.PANELS]
         )
-        snaps = _empty_snaps()
-        smap: SourceMap = {}
-        for (ep, body, plazos, bucket), data in zip(self.PANELS, results):
-            for raw in data:
-                q = byma_row_to_quote(raw)
-                if q is None:
-                    continue
-                snaps[settle_of(raw)][q.symbol] = q
-                smap[q.symbol] = bucket
-        return snaps, smap
+        # Parseo pydantic FUERA del event loop (ver `_parse_panels`).
+        return await asyncio.to_thread(
+            _parse_panels, [bucket for _, _, _, bucket in self.PANELS], results)
 
 
 # --------------------------------------------------------------------------- #

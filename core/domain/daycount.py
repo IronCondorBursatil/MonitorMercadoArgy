@@ -21,6 +21,7 @@ from __future__ import annotations
 import calendar
 from datetime import date
 from enum import Enum
+from functools import lru_cache
 from typing import Optional
 
 from core.domain.cashflow_synth import days_30_360  # noqa: F401  re-export (fuente única 30/360)
@@ -42,14 +43,8 @@ class DayCount(str, Enum):
 _DEFAULT = DayCount.ACT_365_25
 
 
-def parse_day_count(raw: Optional[str]) -> DayCount:
-    """Parsea el string de `base calculo` a un `DayCount`, tolerante a alias,
-    mayúsculas, espacios, coma decimal y basura. Desconocido/None → ACT/365.25
-    (el default soberano). NUNCA lanza.
-
-    Orden importante: chequear "365.25" ANTES de "365" (prefijo) y "ACT/ACT"
-    antes de "ACT/365".
-    """
+def _parse_day_count_impl(raw: Optional[str]) -> DayCount:
+    """Implementación (sin memo) de `parse_day_count`. Ver su docstring."""
     if raw is None:
         return _DEFAULT
     s = str(raw).strip().upper().replace(" ", "")
@@ -65,6 +60,38 @@ def parse_day_count(raw: Optional[str]) -> DayCount:
     if "365" in s:
         return DayCount.ACT_365
     return _DEFAULT
+
+
+# Memo: `Instrument.day_count_enum` llama acá POR CASHFLOW en cada `year_fraction_to`
+# (~13.300 parseos por ciclo de pricing) sobre un dominio REAL de 4-5 grafías. La
+# función es PURA (string → enum: sin estado, sin I/O, sin reloj) y el `DayCount` que
+# devuelve es un enum inmutable ⇒ memoizarla no puede mover un número.
+# `maxsize` acotado a propósito: la grafía viene de datos (Excel/ABM), así que un memo
+# sin techo sería un crecimiento dirigible por input.
+_parse_day_count_cached = lru_cache(maxsize=128)(_parse_day_count_impl)
+
+
+def parse_day_count(raw: Optional[str] = None) -> DayCount:
+    """Parsea el string de `base calculo` a un `DayCount`, tolerante a alias,
+    mayúsculas, espacios, coma decimal y basura. Desconocido/None → ACT/365.25
+    (el default soberano). NUNCA lanza.
+
+    Orden importante: chequear "365.25" ANTES de "365" (prefijo) y "ACT/ACT"
+    antes de "ACT/365".
+
+    Memoizada (ver `_parse_day_count_cached`). El wrapper existe para preservar el
+    contrato "NUNCA lanza": `lru_cache` pelado tira `TypeError: unhashable type` ante
+    un argumento no hasheable (una lista/dict que se cuele desde el ABM o un parser),
+    donde la implementación devolvía el default. Ese camino degrada al parseo directo.
+    """
+    try:
+        return _parse_day_count_cached(raw)
+    except TypeError:            # argumento no hasheable → sin memo, mismo resultado
+        return _parse_day_count_impl(raw)
+
+
+parse_day_count.cache_clear = _parse_day_count_cached.cache_clear
+parse_day_count.cache_info = _parse_day_count_cached.cache_info
 
 
 def _act_act_isda(start: date, end: date) -> float:

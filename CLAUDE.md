@@ -225,6 +225,24 @@ En prod hay que setear:
   explícita, no re-seed. El re-seed (`ingest_master.py`) tiene guards anti-pérdida: aborta con el
   server vivo, si borraría altas DB-only, o si el backup de seguridad pre-reseed falló
   (`--force` para override consciente; el snapshot pre-op es incondicional, `backup_db(tag=...)`).
+- **Payoff analítico ⇒ fila ANCLA, nunca schedule**: TAMAR PURO / DUAL / DUAL_CER_TAMAR
+  (`instrument_groups.ANALYTIC_PAYOFF_TYPES`, verificada CONTRA el registry por test) cobran
+  por fórmula cerrada (`pricing/tamar.tamar_dual_payoff_at`), así que materializarles un
+  schedule nominal es un ERROR de datos, no una optimización. En `cashflows` llevan UNA fila
+  con `es_ancla=1` (vencimiento, montos 0) que `_orm_to_domain` **filtra**: al motor le siguen
+  llegando con `cashflows=()` — el pricing es bit-idéntico POR CONSTRUCCIÓN, no por
+  coincidencia numérica — pero el bono queda auditable en la DB y visible en `/cashflows`
+  (el router sintetiza el evento de vencimiento desde `maturity_date`, con los montos en
+  em-dash porque el importe no se conoce hasta el vto). Las DOS puertas de escritura
+  (`save_instrument` y `save_cashflows`) rechazan cargarles flujos. Backfill de una DB ya
+  poblada: `scripts/backfill_tamar_anchor.py` (dry-run por default, forward-only, idempotente).
+- **La ABM ya NO sintetiza al guardar**: `cashflow_synth` lee el RELOJ para resolver el step-up
+  del cupón, así que el schedule que quedaba en la DB dependía del DÍA DEL ALTA (el mismo form
+  daba 0,63% en 2026 y 1,18% en 2028). La síntesis quedó como PREVIEW
+  (`POST /abm/preview_cashflows`, botón «⟳ Previsualizar»): el operador la revisa en la tabla
+  del cajón —que ahora vive DENTRO del `<form>` de `/abm/save`— y el POST la manda de vuelta.
+  Un tipo normal sin flujos se **rechaza** con un mensaje accionable (antes era un WARNING
+  silencioso que dejaba un bono impriceable en la DB).
 - **Intérprete Python**: usar `py -3.12` / `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`. Ver memoria `env_python_interpreter`. (El viejo "Store Python" ya no existe; sus deps se reinstalaron acá.)
 - **Nada de `.db` dentro del proyecto**: las bases viven en `settings.db_dir`
   (`%LOCALAPPDATA%\monitor` en Windows, `$XDG_DATA_HOME/monitor` o `~/.local/share/monitor`

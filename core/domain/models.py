@@ -24,9 +24,15 @@ from dataclasses import dataclass
 from datetime import date as _date
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
 
 _UNSET = object()
+
+# `core.domain.daycount` no se puede importar a nivel de módulo (ciclo
+# models→daycount→cashflow_synth→models), pero pagar el `from ... import` DENTRO de
+# `year_fraction_to` cuesta ~200 ns × ~13.300 llamadas por ciclo de pricing. Se cablea
+# UNA vez, perezosamente, en esta celda module-level.
+_YEAR_FRACTION = [None]
 
 
 class Cashflow(BaseModel):
@@ -79,6 +85,34 @@ class Instrument(BaseModel):
     serie_clase: Optional[str] = None  # ON: "Clase XXXI" / "Serie 13 Clase A"; display-only (vive en raw_fields)
     coupon_rate: Optional[float] = None  # cupón anual nominal % (raw_fields "cupon anual %"); display-only
     sector_override: Optional[str] = None  # ON: sector elegido a mano en ABM (raw_fields["sector_override"])
+
+    # ------------------------------------------------------------------ #
+    # Memos de pricing. Viven en `__pydantic_private__` (mutable aunque el modelo
+    # sea frozen) y mueren con el objeto → `CatalogRepository.reload()` los tira
+    # solo, sin ciclo de vida que gestionar.
+    #   `_pricing_memo`: resultados de las funciones puras de pricing/metrics.py
+    #                    keyed por (fn, ref_date, campos de los que dependen).
+    #   `_dc_memo`      : (instrument_type, day_count, DayCount) de `day_count_enum`.
+    # ------------------------------------------------------------------ #
+    _pricing_memo: dict = PrivateAttr(default_factory=dict)
+    _dc_memo: tuple = PrivateAttr(default=())
+
+    def model_copy(self, *, update=None, deep=False):
+        """`model_copy` COMPARTE los VALORES de `__pydantic_private__` con el original
+        (el dict externo se copia, los objetos de adentro no — verificado en
+        pydantic 2.13). Los clones de `recompute_as_tamar_puro` /
+        `bond_detail._apply_leg` cambian `instrument_type`, que SÍ mueve las métricas
+        (BOPREAL descuenta 30/360, su clon "PURO" no) → sin este reset el clon y el
+        original se envenenarían mutuamente por el memo compartido.
+
+        Las claves del memo incluyen igual `instrument_type`/`day_count` (defensa en
+        profundidad para clones hechos por otro camino, ej. `copy.copy`)."""
+        clone = super().model_copy(update=update, deep=deep)
+        priv = clone.__pydantic_private__
+        if priv is not None:
+            priv["_pricing_memo"] = {}
+            priv["_dc_memo"] = ()
+        return clone
 
     @field_validator("cashflows", mode="after")
     @classmethod
@@ -163,17 +197,32 @@ class Instrument(BaseModel):
     def day_count_enum(self) -> "DayCount":  # noqa: F821 — forward-ref (import function-local rompe ciclo)
         """Convención de día-count para DESCONTAR (TIR/duration/PV). BOPREAL fuerza
         30/360 (espeja el fallback de `is_30_360`). Import function-local: rompe el
-        ciclo models→daycount→cashflow_synth→models."""
+        ciclo models→daycount→cashflow_synth→models.
+
+        MEMOIZADA por instrumento: `year_fraction_to` la consulta POR CASHFLOW
+        (~13.300 veces por ciclo de pricing) y cada consulta pagaba el import, la
+        property `is_bopreal` (upper+strip del tipo) y el parseo del string. La clave
+        es `(instrument_type, day_count)` — los dos únicos campos de los que depende —
+        así un clon con otro tipo NUNCA lee la entrada del original."""
+        priv = self.__pydantic_private__
+        if priv is not None:
+            memo = priv.get("_dc_memo")
+            if memo and memo[0] == self.instrument_type and memo[1] == self.day_count:
+                return memo[2]
         from core.domain.daycount import DayCount, parse_day_count
-        if self.is_bopreal:
-            return DayCount.THIRTY_360
-        return parse_day_count(self.day_count)
+        dc = DayCount.THIRTY_360 if self.is_bopreal else parse_day_count(self.day_count)
+        if priv is not None:
+            priv["_dc_memo"] = (self.instrument_type, self.day_count, dc)
+        return dc
 
     def year_fraction_to(self, target: _date, ref: _date) -> float:
         """Fracción de año ref→target bajo la convención del instrumento. Es el
         único punto por el que las strategies/metrics descuentan."""
-        from core.domain.daycount import year_fraction
-        return year_fraction(ref, target, self.day_count_enum)
+        yf = _YEAR_FRACTION[0]
+        if yf is None:                       # 1× por proceso (ver _YEAR_FRACTION)
+            from core.domain.daycount import year_fraction as yf
+            _YEAR_FRACTION[0] = yf
+        return yf(ref, target, self.day_count_enum)
 
     def get_future_cashflows(self, reference_date: _date) -> List[Cashflow]:
         # Ex-cupón: un flujo que paga EXACTAMENTE en la fecha de referencia

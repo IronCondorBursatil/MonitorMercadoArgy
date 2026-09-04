@@ -51,6 +51,29 @@ PANEL_LIDER = [
 # --------------------------------------------------------------------------- #
 ACCIONES = ["ACCION"]
 
+# --------------------------------------------------------------------------- #
+# Tipos de PAYOFF ANALÍTICO (fórmula cerrada). Su pago a vencimiento NO sale de un
+# schedule materializado sino de `core/domain/pricing/tamar.tamar_dual_payoff_at`
+# sobre la TAMAR observada+proyectada (y, en DUAL_CER_TAMAR, el max contra el riel
+# CER). El registry los rutea a TamarStrategy / DualCerTamarStrategy, que no leen
+# `inst.cashflows` en su camino principal.
+#
+# Consecuencia operativa: persistirles un schedule nominal sería *incorrecto*, no
+# una optimización. En la DB llevan una sola fila ANCLA (`CashflowORM.es_ancla`)
+# con el vencimiento y monto 0, que `catalog_repository._orm_to_domain` filtra.
+#
+# La lista está verificada CONTRA el registry (no escrita de memoria):
+# `tests/test_perf_W1_cashflows_ancla.py::test_analytic_payoff_types_coincide_con_el_registry`
+# recorre BOND_TYPES y exige la equivalencia exacta con `strategy_for`. Si mañana
+# una familia nueva estrena payoff cerrado, ese test rompe hasta agregarla acá.
+ANALYTIC_PAYOFF_TYPES = frozenset({*TAMAR, *DUAL_TAMAR})   # PURO, DUAL, DUAL_CER_TAMAR
+
+
+def has_closed_form_payoff(instrument_type) -> bool:
+    """True si el payoff del tipo es de fórmula cerrada (ver ANALYTIC_PAYOFF_TYPES).
+    Normaliza igual que `is_known_type` (upper + strip, None/'' → False)."""
+    return str(instrument_type or "").upper().strip() in ANALYTIC_PAYOFF_TYPES
+
 BOND_TYPES = [*SOBERANOS, *BOPREALES, *TASA_FIJA, *CER, *DOLAR_LINKED, *TAMAR,
               *DUAL_TAMAR, *OBLIGACIONES_NEGOCIABLES, *PROVINCIALES]
 

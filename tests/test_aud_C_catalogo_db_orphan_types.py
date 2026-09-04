@@ -90,19 +90,24 @@ def test_abm_round_trip_preserva_el_instrument_type(tmp_db, itype, sheet, extra)
     from apps.web.instruments_abm import get_instrument, save_instrument
     from core.infrastructure.db.catalog_repository import init_db
     from core.infrastructure.db.engine import SessionLocal
-    from core.infrastructure.db.models import InstrumentORM
+    from core.infrastructure.db.models import CashflowORM, InstrumentORM
 
     init_db()
     primary = extra["ticker"]
     with SessionLocal.begin() as s:
-        s.add(InstrumentORM(
+        orm = InstrumentORM(
             short_name="EMISOR", instrument_type=itype, sheet=sheet,
             day_count="ACT/365",
             maturity_date=date(2028, 10, 31), emission_date=date(2024, 4, 30),
             # raw_fields SIN la clave `tipo`: así los dejan los ingest del IAMC.
             raw_fields={"origen": "IAMC", "ley_aplicable": "Argentina",
                         "cupon_anual_pct": 5.8},
-            **extra))
+            **extra)
+        # Con schedule: desde la Fase 9 el round-trip del ABM lo reenvía tal cual y un
+        # bono normal SIN flujos se rechaza (antes el save lo sintetizaba con el reloj).
+        orm.cashflows = [CashflowORM(ticker=primary, fecha_pago=date(2028, 10, 31),
+                                     amortizacion=100.0, cupon_interes=2.9)]
+        s.add(orm)
 
     payload = get_instrument(primary)
     assert payload is not None

@@ -26,7 +26,7 @@ from core.domain.on_classification import SECTORS as _ON_SECTORS, SECTOR_MAP, cl
 from core.infrastructure.db.catalog_repository import init_db, instrument_to_orm
 from core.infrastructure.db.engine import SessionLocal
 from core.infrastructure.db.models import CashflowORM, InstrumentORM
-from core.domain.instrument_groups import is_known_type
+from core.domain.instrument_groups import has_closed_form_payoff, is_known_type
 from core.infrastructure.repositories import (
     build_instrument, _currency_tickers, split_currency_tickers,
     _resolve_instrument_type, audit_catalog_types,
@@ -90,6 +90,17 @@ def _synth_cashflows_for_fields(fields: Dict[str, Any]) -> List[Dict[str, Any]]:
         }
         for cf in _safe_synth(fields)
     ]
+
+
+def preview_cashflows(fields: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Schedule PROPUESTO desde los params del form. **No persiste nada.**
+
+    Es el único consumidor legítimo del synth desde la ABM (junto con el fallback de
+    lectura de `get_instrument`): el operador lo revisa en la tabla del cajón y el POST
+    de `/abm/save` lo manda de vuelta. Ver el docstring de `save_instrument` — la
+    síntesis lee el reloj (step-up del cupón), así que fuera del write-path es una
+    propuesta reproducible y adentro era un schedule que dependía del día del alta."""
+    return _synth_cashflows_for_fields(fields)
 
 
 def _safe_synth(fields: Dict[str, Any]) -> List[Cashflow]:
@@ -649,8 +660,26 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
 
     Lee los tickers del form (ticker_ars/ticker_mep/ticker_ccl, o `ticker` único)
     → escribe UNA fila con primario + ticker_mep/ticker_ccl, consolidando cualquier
-    fila-por-pata pre-existente. Cashflows: explícitos > los del bono existente >
-    synth. Todo en una transacción (fail-fast)."""
+    fila-por-pata pre-existente. Todo en una transacción (fail-fast).
+
+    WRITE-PATH DETERMINISTA (Fase 9). El schedule que se persiste sale de
+    `cashflows` (lo que mostró el preview) o del bono que ya estaba; **acá NO se
+    sintetiza**. Antes se llamaba `_safe_synth` al guardar y `cashflow_synth` lee el
+    RELOJ para resolver el step-up del cupón (`_parse_coupon_rate(asof=...)`): el
+    schedule que quedaba en la DB dependía del DÍA en que se hizo el alta — el mismo
+    form daba 0,63% en 2026 y 1,18% en 2028. El synth queda como PREVIEW
+    (`_synth_cashflows_for_fields`, que usan `get_instrument` y `/abm/preview_cashflows`).
+
+    Dos reglas de cierre, por tipo:
+
+    · **Payoff analítico** (PURO / DUAL / DUAL_CER_TAMAR, ver
+      `instrument_groups.ANALYTIC_PAYOFF_TYPES`): se persiste SOLO la fila **ancla**
+      (`es_ancla=1`, monto 0 al vencimiento). Un schedule nominal sería *incorrecto*
+      para ellos —su pago sale de `tamar.tamar_dual_payoff_at`— y además llegaría al
+      dominio (no es ancla) cambiando el pricing de esos 14 bonos. Exige vencimiento.
+    · **Tipo normal sin flujos**: **rechazo**. Antes era un WARNING silencioso de
+      `_safe_synth` que dejaba un bono IMPRICEABLE (cashflows=()) en la DB.
+    """
     if sheet not in SHEET_SCHEMAS:
         raise ValueError(f"Unknown sheet '{sheet}'. Allowed: {list(SHEET_SCHEMAS)}")
     normalized = _normalize_fields(fields)
@@ -679,21 +708,31 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
             f"la hoja {sheet}.")
 
     parsed_cfs = _parse_cashflows(cashflows) if cashflows is not None else None
+    analitico = has_closed_form_payoff(itype)
+    if analitico and parsed_cfs:
+        logger.warning(
+            "ABM: %s es %s (payoff analítico) — se descartan los %d flujos del form y se "
+            "guarda solo la fila ancla del vencimiento.", primary, itype, len(parsed_cfs))
 
     init_db()
     with SessionLocal.begin() as s:
         existing = _find_bond_rows(s, tickers + all_tickers)
         action = "updated" if existing else "created"
 
-        if parsed_cfs is not None:
+        if analitico:
+            cfs: List[Cashflow] = []      # el schedule lo reemplaza la fila ancla (abajo)
+        elif parsed_cfs is not None:
             cfs = [Cashflow(date=d, amortization=a, interest=i) for d, a, i in parsed_cfs]
         else:
-            old = next((o for o in existing if o.cashflows), None)
-            if old is not None:
-                cfs = [Cashflow(date=cf.fecha_pago, amortization=cf.amortizacion,
-                                interest=cf.cupon_interes) for cf in old.cashflows]
-            else:
-                cfs = _safe_synth(normalized)
+            # Los flujos que ya tenía el bono (edición sin tocar el schedule). El ancla
+            # NO se arrastra: si el tipo dejó de ser analítico, sería un pago fantasma.
+            prev = next((o for o in existing if any(not cf.es_ancla for cf in o.cashflows)),
+                        None)
+            cfs = [] if prev is None else [
+                Cashflow(date=cf.fecha_pago, amortization=cf.amortizacion,
+                         interest=cf.cupon_interes)
+                for cf in prev.cashflows if not cf.es_ancla
+            ]
 
         # raw_fields: MERGE sobre el blob previo, no reemplazo. El form solo manda
         # las claves de SHEET_SCHEMAS[sheet]; asignar `normalized` entero borraba
@@ -712,8 +751,28 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
         inst = build_instrument(normalized, sheet, cfs)  # ticker = primario
         if inst is None:
             raise ValueError("ticker is required")
-        s.add(instrument_to_orm(inst, sheet=sheet, raw_fields={**prev_raw, **normalized},
-                                ticker_mep=mep, ticker_ccl=ccl))
+        if analitico and inst.maturity_date is None:
+            raise ValueError(
+                f"{primary}: un {itype} necesita fecha de VENCIMIENTO. Su pago no sale de "
+                f"un schedule sino de la fórmula cerrada TAMAR, así que en la DB se guarda "
+                f"una sola fila ancla con esa fecha. Completá «Vencimiento» y guardá de nuevo.")
+        if not analitico and not cfs:
+            raise ValueError(
+                f"{primary}: no se puede guardar un {itype} sin FLUJO DE FONDOS (quedaría "
+                f"cargado pero impriceable: sin TIR, sin MD y sin V.Téc). El schedule ya no "
+                f"se sintetiza al guardar —dependía del día del alta—: apretá «⟳ Previsualizar» "
+                f"en el cajón para generarlo desde los datos del form (emisión, vencimiento, "
+                f"cupón, frecuencia), revisá las filas —o cargalas a mano con «＋ fila» si el "
+                f"schedule es irregular— y volvé a Guardar.")
+        orm = instrument_to_orm(inst, sheet=sheet, raw_fields={**prev_raw, **normalized},
+                                ticker_mep=mep, ticker_ccl=ccl)
+        if analitico:
+            # FILA ANCLA: el vencimiento, marcado. Existe para que el bono sea auditable
+            # y visible en /cashflows; `_orm_to_domain` la filtra, así que el motor sigue
+            # viendo `cashflows=()` — pricing bit-idéntico por construcción.
+            orm.cashflows = [CashflowORM(ticker=inst.ticker, fecha_pago=inst.maturity_date,
+                                         amortizacion=0.0, cupon_interes=0.0, es_ancla=True)]
+        s.add(orm)
 
     logger.info("ABM: %s %s [%s] in %s%s", action, primary, ",".join(all_tickers), sheet,
                 f" · {len(parsed_cfs)} cashflows" if parsed_cfs is not None else "")
@@ -737,6 +796,17 @@ def save_cashflows(ticker: str, cashflows: List[Dict[str, Any]]) -> Dict[str, An
         orm = _find_bond_row(s, ticker_u)
         if orm is None:
             raise ValueError(f"{ticker_u} no existe")
+        # Misma regla que `save_instrument`: un tipo de payoff analítico no puede tener
+        # schedule. Sin este guard, ésta era la puerta de atrás — las filas entrarían sin
+        # marca de ancla, llegarían al dominio y le cambiarían el pricing a esos bonos.
+        # Incondicional (no sólo con filas nuevas): pasar [] tampoco es válido — borraría
+        # la fila ancla y devolvería el bono al estado invisible de antes de la Fase 9.
+        if has_closed_form_payoff(orm.instrument_type):
+            raise ValueError(
+                f"{orm.ticker} es {orm.instrument_type}: su pago sale de una fórmula cerrada "
+                f"(TAMAR observada + proyectada), no de un schedule. Cargarle flujos le "
+                f"cambiaría la TIR y el V.Téc. En la DB lleva una sola fila ancla con el "
+                f"vencimiento; para corregirla, editá «Vencimiento» en el form del bono.")
         orm.cashflows = [
             CashflowORM(ticker=orm.ticker, fecha_pago=d, amortizacion=a, cupon_interes=i)
             for d, a, i in parsed

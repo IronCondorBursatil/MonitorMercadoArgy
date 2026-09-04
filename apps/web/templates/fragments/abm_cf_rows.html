@@ -1,0 +1,12 @@
+{# Filas de la tabla editable de flujo de fondos. Fragmento propio porque lo renderizan
+   DOS caminos: el form completo (`abm_form.html`) y el refresh del preview
+   (`POST /abm/preview_cashflows` → hx-target="#abm-cf-body"). Los inputs se llaman
+   cf_date/cf_amort/cf_interest: viajan en el MISMO POST de /abm/save. #}
+{% for cf in cashflows %}
+<tr class="abm-cf-row">
+  <td><input type="date" name="cf_date" value="{{ cf.date }}"></td>
+  <td><input type="number" step="0.000001" name="cf_amort" value="{{ '%.6f'|format(cf.amortization) }}"></td>
+  <td><input type="number" step="0.000001" name="cf_interest" value="{{ '%.6f'|format(cf.interest) }}"></td>
+  <td><button type="button" class="cf-del" onclick="cfDel(this)" title="quitar fila">✕</button></td>
+</tr>
+{% endfor %}
