@@ -119,18 +119,70 @@ def test_un_ticker_que_desaparece_bumpea():
     assert revs[1] > revs[0]
 
 
-def test_el_memo_del_dataset_de_ON_sobrevive_un_ciclo_sin_cambios():
-    """`on_service` memoiza por `(revision, día)`. Mientras la revisión subía en cada
-    ciclo, ese memo se invalidaba cada 5 s y el primer `/on/data` de cada ciclo
-    reconstruía el dataset entero. Con el gateo, sobrevive gratis."""
+def test_el_dataset_de_ON_ve_una_edicion_del_ABM_al_ciclo_SIGUIENTE():
+    """REGRESION (auditoria 2026-09-04, severidad alta). El memo de `on_service` iba
+    por `(revision, dia)`. Mientras la revision subia en cada ciclo eso se daba vuelta
+    solo; con el gateo se congela apenas se quieta el mercado, y una edicion del ABM
+    --que NO toca un solo campo de `_huella`-- dejaba de verse hasta la medianoche.
+    `on.js` promete literalmente lo contrario ("si editaste en el ABM y volves a /on,
+    ves el cambio al instante") y `clear_cache()` no tiene ningun caller de produccion.
+
+    Por eso la clave es `last_refresh`, que avanza en TODOS los ciclos.
+    """
+    from apps.web import on_service
+
+    def _on(nombre="YPF 2026", sector=None):
+        inst = Instrument(ticker="YMCXO", short_name=nombre,
+                          instrument_type="HARD DOLLAR", sector_override=sector)
+        return InstrumentMetrics(snapshot=MarketSnapshot(instrument=inst, price=100.0))
+
+    async def run():
+        st = AppState()
+        await st.update([_on()])
+        antes = on_service.get_on_dataset(st)
+        # Una edicion del ABM: `reload()` deja Instrument NUEVOS y el ciclo siguiente
+        # del motor los trae. Ni el precio ni ningun campo de la huella cambia.
+        await st.update([_on(nombre="YPF 2026 (editado)", sector="Energia")])
+        return antes, on_service.get_on_dataset(st)
+
+    antes, despues = asyncio.run(run())
+
+    def emisores(ds):
+        return [b["emisor"] for b in ds["bonds"]]
+
+    assert emisores(antes) == ["YPF 2026"], "el bono de prueba no entro al dataset"
+    assert emisores(despues) == ["YPF 2026 (editado)"], (
+        "el dataset de /on sirvio la version vieja tras una edicion del ABM")
+
+
+def test_el_memo_de_ON_no_reconstruye_dos_veces_dentro_del_MISMO_ciclo():
+    """La otra mitad del contrato: el memo tiene que seguir sirviendo. Dos `/on/data`
+    del mismo ciclo (el panel y el PDF, por ejemplo) comparten el dataset."""
     from apps.web import on_service
 
     async def run():
         st = AppState()
         await st.update([_m()])
-        primero = on_service.get_on_dataset(st)
-        await st.update([_m()])             # idéntico
-        return primero, on_service.get_on_dataset(st)
+        return on_service.get_on_dataset(st), on_service.get_on_dataset(st)
 
     a, b = asyncio.run(run())
-    assert a is b, "el memo del dataset de ON se invalidó sin que cambiara nada"
+    assert a is b, "el memo se invalidó dentro del mismo ciclo"
+
+
+def test_el_memo_de_las_metricas_CI_tampoco_va_por_revision():
+    """Mismo defecto, otro memo: `_ci_metrics` corre el motor sobre el snapshot **CI**
+    del hub, pero `_huella` se arma del snapshot de **24hs** — que el hub guarda por
+    separado. La clave no rastreaba NINGUNO de los inputs de lo que cachea: con el
+    gateo, un movimiento de precios CI sin movimiento en 24hs servía métricas viejas.
+    """
+    import inspect
+
+    from apps.web.routers import panels
+
+    firma = inspect.signature(panels._ci_metrics)
+    assert "revision" not in firma.parameters, (
+        "el memo CI volvió a colgarse de la revisión, que no ve el snapshot CI")
+    assert "ciclo" in firma.parameters
+    fuente = inspect.getsource(panels.panel_rows)
+    assert "ciclo=state.last_refresh" in fuente, (
+        "el call site no le pasa el sello del ciclo")

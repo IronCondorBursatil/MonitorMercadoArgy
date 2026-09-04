@@ -26,6 +26,8 @@ APPLY=0
 # origen                                    destino                                              modo
 MAPA="
 deploy/systemd/monitores.service            /etc/systemd/system/monitores.service                644
+deploy/systemd/monitor-backup.service       /etc/systemd/system/monitor-backup.service           644
+deploy/systemd/monitor-backup.timer         /etc/systemd/system/monitor-backup.timer             644
 deploy/systemd/journald-monitor.conf        /etc/systemd/journald.conf.d/monitor.conf            644
 deploy/nginx/monitores.conf                 /etc/nginx/sites-available/monitores                 644
 deploy/profile.d/monitor.sh                 /etc/profile.d/monitor.sh                            644
@@ -80,5 +82,10 @@ else
     exit 1
 fi
 systemctl restart systemd-journald && echo "  journald: reiniciado"
+
+# El timer del backup: instalarlo no alcanza, hay que HABILITARLO. Un .timer copiado a
+# /etc y nunca `enable`ado es exactamente la clase de backup que uno cree que tiene.
+systemctl enable --now monitor-backup.timer && echo "  backup: timer habilitado"
+systemctl list-timers monitor-backup.timer --no-pager | sed -n '1,2p' | sed 's/^/     /'
 echo
 echo "Falta reiniciar la app para tomar el unit nuevo:  sudo systemctl restart monitores"

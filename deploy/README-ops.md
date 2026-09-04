@@ -78,11 +78,37 @@ Si algo falla, no toques nada: a los 5 minutos la red restaura la regla vieja.
 `backup_db` toma un snapshot online de `catalog.db` (1×/día al arrancar y en cada
 vuelta horaria del `_price_history_loop`) en `/var/lib/monitor/backups`, rotando 7.
 
-**Sigue pendiente el backup fuera de la caja** (plan §1.3): los 4 históricos
-(`price_history`, `fci_history`, `ratings_history`, `index_history`), el `jwt_secret`,
-el `.env` y `cartera.json` **no se respaldan nunca**, y todo vive en el mismo disco.
-Con una instancia Always Free que Oracle puede reclamar por inactividad, eso es la
-brecha más grande que queda.
+`scripts/backup_bundle.py` cubre lo que `backup_db` deja afuera: los 4 históricos
+(`price_history`, `fci_history`, `ratings_history`, `index_history`) —que se acumulan
+rueda a rueda y **no se backfillean**—, el `jwt_secret`, el `.env`, `cartera.json`,
+`dashboard_layout.json` e `history/`, más un `MANIFEST.json` con commit y sha256 por
+archivo. Es WAL-safe: corre **con la app viva**, que es cuando lo dispara el timer.
+
+Lo instala y habilita `deploy/bin/install-config.sh --apply`
+(`monitor-backup.timer`, Lun-Sáb 18:30 ART, `Persistent=true`, keep 3):
+
+```bash
+systemctl list-timers monitor-backup.timer --no-pager   # ¿cuándo dispara?
+sudo systemctl start monitor-backup.service             # a mano, ahora
+journalctl -u monitor-backup -n 30
+ls -l /var/lib/monitor/backups/offsite/                 # 0600: lleva secretos
+```
+
+**Simulacro** (mensual — un backup que no se probó no es un backup):
+
+```bash
+B=$(ls -t /var/lib/monitor/backups/offsite/monitor-*.tar.gz | head -1)
+rm -rf /tmp/drill && mkdir -p /tmp/drill && tar xzf "$B" -C /tmp/drill
+venv/bin/python scripts/db_fingerprint.py --db-dir /tmp/drill  > /tmp/copia.txt
+MONITOR_DB_DIR=/var/lib/monitor venv/bin/python scripts/db_fingerprint.py > /tmp/vivo.txt
+diff <(tail -n +2 /tmp/vivo.txt) <(tail -n +2 /tmp/copia.txt)   # sólo max(day) puede diferir
+```
+
+**Lo que sigue pendiente** (plan §1.3) es sacar el bundle DE LA CAJA: hoy queda en el
+mismo disco, así que cubre el borrado accidental y la corrupción, pero **no** el
+reclamo de la instancia. Falta el destino en Object Storage (bucket + dynamic group +
+policy sin DELETE) y la copia periódica a la laptop. Y el bundle **no está cifrado**:
+si va a un destino ajeno, `age -r <clave-pública>` antes de subirlo.
 
 ## Diagnóstico
 

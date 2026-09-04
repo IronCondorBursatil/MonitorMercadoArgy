@@ -94,10 +94,24 @@ async def reject_cross_site(request: Request) -> None:
     return
 
 
+def _recortado(v, tope: int = 128) -> str:
+    """Un header ajeno, apto para una linea de log: imprimible y acotado.
+
+    `_rechazar` corre ANTES del arbol de auth (por diseno: rechaza sin tocar la DB) y
+    nginx solo limita `POST /login`. O sea que el valor de `Origin`/`Referer` es texto
+    de largo arbitrario elegido por un anonimo que va a parar al `RotatingFileHandler`
+    (5 MB x 5) y al journal — el mismo journal donde vive la auditoria de §3.4. Sin
+    recorte, un puñado de requests con un header enorme rota los 5 archivos y se lleva
+    puesto el rastro de todo lo demas. Hallazgo de la auditoria 2026-09-04."""
+    txt = "".join(ch for ch in str(v) if ch.isprintable())
+    return txt[:tope] + "..." if len(txt) > tope else (txt or "-")
+
+
 def _rechazar(request: Request, motivo: str) -> None:
     logger.warning("CSRF: %s %s rechazado (%s; host=%s)",
-                   request.method, request.url.path, motivo,
-                   request.headers.get("host"))
+                   request.method, _recortado(request.url.path),
+                   _recortado(motivo, 160),
+                   _recortado(request.headers.get("host")))
     raise HTTPException(status_code=403, detail="Origen cruzado rechazado")
 
 

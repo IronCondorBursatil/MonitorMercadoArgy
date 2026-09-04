@@ -27,9 +27,18 @@ class _StubFx:
 
 
 class _StubState:
-    def __init__(self, metrics, revision=1):
+    def __init__(self, metrics, revision=1, ciclo=None):
         self._m = metrics
         self._rev = revision
+        # El memo de `on_service` va por `last_refresh` (el sello del ciclo del refresh
+        # loop), no por `revision`: la revision esta gateada por la huella de los campos
+        # de MERCADO y este dataset depende ademas del CATALOGO, asi que una edicion del
+        # ABM no la movia y el panel servia datos viejos por horas. Cada stub estrena
+        # sello para que dos datasets distintos no compartan entrada de cache.
+        _StubState._n += 1
+        self._ciclo = ciclo if ciclo is not None else ("test", _StubState._n)
+
+    _n = 0
 
     def metrics(self):
         return self._m
@@ -37,6 +46,10 @@ class _StubState:
     @property
     def revision(self):
         return self._rev
+
+    @property
+    def last_refresh(self):
+        return self._ciclo
 
 
 def _on(ticker, emisor, *, price=100.0, tir=0.07, md=2.0, vtec=100.0, parity=0.95,

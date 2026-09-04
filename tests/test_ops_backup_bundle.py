@@ -204,3 +204,53 @@ def test_el_bundle_no_lleva_sidecars_de_wal(db_dir, base_dir, tmp_path):
         con.close()
     sidecars = [n for n in dentro if n.endswith(("-wal", "-shm"))]
     assert not sidecars, f"el bundle lleva sidecars de WAL: {sidecars}"
+
+
+def test_un_bundle_cortado_a_la_mitad_NO_queda_con_nombre_valido(db_dir, base_dir,
+                                                                 tmp_path, monkeypatch):
+    """Escribir directo sobre `monitor-<sello>.tar.gz` dejaba, ante cualquier corte a
+    mitad del tar (disco lleno, OOM, un stop del timer), un archivo PARCIAL con nombre
+    valido. `rotar` sólo mira el glob y ordena por nombre: ese parcial ocupaba un slot
+    de retención y desalojaba un backup completo. Peor, el gzip queda cerrado, así que
+    el parcial ABRE bien — un chequeo de "¿se puede abrir?" no lo distingue de uno sano.
+
+    Hallazgo de la auditoría 2026-09-04 (severidad alta)."""
+    from scripts import backup_bundle
+
+    destino = tmp_path / "out"
+    destino.mkdir()
+    completo = destino / "monitor-20260101T000000.tar.gz"
+    completo.write_text("un backup sano", encoding="utf-8")
+
+    real = backup_bundle.tarfile.open
+
+    class _CortaAlSegundo:
+        """Un tar que escribe la primera entrada y revienta en la segunda."""
+
+        def __init__(self, *a, **kw):
+            self._tar = real(*a, **kw)
+            self._n = 0
+
+        def add(self, *a, **kw):
+            self._n += 1
+            if self._n > 1:
+                raise OSError(28, "No space left on device")
+            return self._tar.add(*a, **kw)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return self._tar.__exit__(*exc)
+
+    monkeypatch.setattr(backup_bundle.tarfile, "open", _CortaAlSegundo)
+    with pytest.raises(OSError):
+        backup_bundle.armar(db_dir, base_dir, destino)
+
+    quedan = sorted(p.name for p in destino.glob("monitor-*"))
+    assert quedan == ["monitor-20260101T000000.tar.gz"], (
+        f"un bundle cortado sobrevivió con nombre de backup válido: {quedan}")
+
+    # Y la rotación no lo cuenta ni deja restos.
+    assert backup_bundle.rotar(destino, 1) == 0
+    assert completo.is_file(), "la rotación se llevó puesto el backup sano"

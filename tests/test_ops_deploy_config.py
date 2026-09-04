@@ -185,3 +185,40 @@ def test_la_fase2_deja_escribir_el_env():
     """La UI de credenciales BYMA reescribe `.env` en el repo; con el árbol read-only
     hay que exceptuarlo explícitamente o guardar credenciales tira PermissionError."""
     assert ".env" in _efectivo(PHASE2) and "ReadWritePaths" in _efectivo(PHASE2)
+
+
+# ── el timer del backup (auditoría 2026-09-04) ───────────────────────────────
+BACKUP_SVC = ROOT / "deploy" / "systemd" / "monitor-backup.service"
+BACKUP_TIMER = ROOT / "deploy" / "systemd" / "monitor-backup.timer"
+INSTALADOR = ROOT / "deploy" / "bin" / "install-config.sh"
+
+
+def test_el_instalador_conoce_el_timer_del_backup():
+    """`install-config.sh` es el ÚNICO instalador de configuración de sistema del repo.
+    El unit y el timer del backup quedaron fuera de su MAPA: existían en `deploy/`,
+    pasaban el gate y nadie los copiaba a /etc. Un backup que nadie instala es
+    exactamente la clase de backup que uno cree que tiene."""
+    txt = _txt(INSTALADOR)
+    for archivo in ("monitor-backup.service", "monitor-backup.timer"):
+        assert archivo in txt, f"el instalador no conoce {archivo}"
+    assert "enable --now monitor-backup.timer" in txt, (
+        "el timer se copia a /etc pero nadie lo habilita: no dispara nunca")
+
+
+def test_el_unit_del_backup_no_deja_el_bundle_legible_por_cualquiera():
+    """El bundle lleva el `jwt_secret`, el `.env` con las credenciales BYMA y los
+    hashes de contraseña, y `backup_bundle.py` no hace ningún `chmod`. El unit copiaba
+    todo el hardening del servicio principal MENOS `UMask=0077` — justo la directiva
+    que gobierna el modo del artefacto que produce."""
+    txt = _efectivo(BACKUP_SVC)
+    assert "UMask=0077" in txt, "el bundle con los secretos se escribe 0644"
+    assert "User=ubuntu" in txt and "User=root" not in txt
+
+
+def test_el_timer_del_backup_sobrevive_a_la_caja_apagada():
+    """`Persistent=true`: sin eso, un reinicio a las 18:00 se come el backup del día
+    en silencio."""
+    txt = _efectivo(BACKUP_TIMER)
+    assert "Persistent=true" in txt
+    assert "OnCalendar=" in txt
+    assert "WantedBy=timers.target" in txt, "el timer no se puede habilitar"

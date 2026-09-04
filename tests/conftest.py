@@ -243,3 +243,27 @@ def _auth_bypass(request, monkeypatch):
     finally:
         for key in overrides:
             app.dependency_overrides.pop(key, None)
+
+
+@pytest.fixture(autouse=True)
+def _cartera_aislada(tmp_path_factory, monkeypatch):
+    """La cartera del usuario NUNCA entra a la suite.
+
+    `cartera_store` tiene dos rutas: `_PATH` (la nueva, en `db_dir`) y `_LEGACY_PATH`
+    (`data/cartera.json`, DENTRO del repo), con una migración 1× que copia la segunda
+    sobre la primera. `_purge_test_dbs` y el `db_dir` de test tapan sólo la primera:
+    el primer `GET /cartera` de la suite disparaba la migración y copiaba las
+    **tenencias reales** al sandbox de pytest, y de ahí los tests de router corrían
+    contra los datos del usuario. Hallazgo de la auditoría 2026-09-04.
+
+    Tapar las DOS acá —y no en cada archivo— es lo que hace que un test nuevo que
+    toque la cartera por el router nazca aislado sin tener que acordarse.
+    Un test que quiera ejercer la migración de verdad re-parchea las dos rutas
+    (ver `test_ops_runtime_fuera_del_arbol.py`), y ese parche gana sobre éste.
+    """
+    from apps.web import cartera_store
+
+    caja = tmp_path_factory.mktemp("cartera")
+    monkeypatch.setattr(cartera_store, "_PATH", str(caja / "cartera.json"))
+    monkeypatch.setattr(cartera_store, "_LEGACY_PATH", str(caja / "no-hay-legacy.json"))
+    yield

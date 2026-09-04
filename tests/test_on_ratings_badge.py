@@ -38,10 +38,24 @@ PAMPA = "Pampa Energía S.A."
 
 
 class _StubState:
-    """AppState mínimo: sólo `metrics()` + `revision` (lo que consume on_service)."""
+    """AppState minimo: `metrics()` + `revision` + `last_refresh`.
+
+    El memo de `on_service` va por `last_refresh` (el sello del ciclo del refresh loop)
+    y NO por `revision`: la revision esta gateada por la huella de los campos de
+    MERCADO, y este dataset depende ademas del CATALOGO — una edicion del ABM no movia
+    la huella y el panel servia datos viejos por horas. Cada stub estrena sello para
+    que dos datasets distintos no compartan entrada de cache."""
+
+    _n = 0
 
     def __init__(self, metrics, revision=1):
         self._m, self._rev = metrics, revision
+        _StubState._n += 1
+        self._ciclo = ("test", _StubState._n)
+
+    @property
+    def last_refresh(self):
+        return self._ciclo
 
     def metrics(self):
         return self._m

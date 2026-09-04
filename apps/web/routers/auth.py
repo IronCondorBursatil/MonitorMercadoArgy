@@ -114,8 +114,16 @@ def _limpio(v) -> str:
 
     Sin esto, un usuario con `
 ` en el nombre parte el registro en dos y puede
-    fabricar una linea de auditoria falsa (log injection)."""
-    return "".join(ch for ch in str(v) if ch.isprintable())[:64]
+    fabricar una linea de auditoria falsa (log injection).
+
+    Pero el salto de linea no alcanza: el formato es logfmt (`login=fail user=%s
+    ip=%s`) y el ESPACIO y el `=` tambien son `isprintable()`. Un login fallido con
+    usuario `x ip=1.2.3.4 login=ok` forjaba campos enteros dentro del registro —y el
+    username del login se loguea CRUDO, sin pasar por la validacion del alta. Los dos
+    delimitadores se reemplazan por `_`; el resto del valor se conserva legible.
+    Hallazgo de la auditoria 2026-09-04."""
+    limpio = "".join(ch for ch in str(v) if ch.isprintable())[:64]
+    return limpio.replace("=", "_").replace(" ", "_") or "-"
 
 
 def _dummy_hash() -> str:

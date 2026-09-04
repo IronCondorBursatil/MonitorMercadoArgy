@@ -141,19 +141,17 @@ def _crear_pool_de_opciones():
 
 
 def _init_worker_de_opciones() -> None:
-    """Corre en cada worker al arrancar.
+    """Inicializador de los workers del pool de opciones.
 
-    Bajo `spawn` el hijo re-importa el modulo `__main__` — que con `python run.py` es
-    run.py — y eso vuelve a ejecutar `setup_logging()`, abriendo un SEGUNDO
-    RotatingFileHandler sobre el mismo archivo. Dos procesos rotando el mismo log se
-    pisan. Los workers no tienen nada que decir: se les saca todo handler.
+    Delgado A PROPOSITO: el cuerpo vive en `core.domain.options.chain` porque
+    `multiprocessing` picklea el initializer por nombre calificado y cada worker
+    importa el modulo que lo define. Definirlo aca hacia que cada hijo `spawn`
+    importara FastAPI entero. Se conserva el nombre porque `_crear_pool_de_opciones`
+    y sus tests lo referencian.
     """
-    import logging as _logging
+    from core.domain.options.chain import init_worker
 
-    raiz = _logging.getLogger()
-    for h in list(raiz.handlers):
-        raiz.removeHandler(h)
-    raiz.addHandler(_logging.NullHandler())
+    init_worker()
 
 
 async def _options_loop(app: FastAPI) -> None:

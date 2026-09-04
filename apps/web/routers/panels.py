@@ -82,18 +82,25 @@ _CI_METRICS_LOCK = threading.Lock()
 
 
 def _ci_metrics(panel_id: str, request: Request, hist_provider,
-                revision: int = -1) -> Optional[list]:
+                ciclo=None) -> Optional[list]:
     """Métricas on-demand del plazo CI (T+0): corre el motor para los tipos del panel
     leyendo el snapshot CI del hub. Todo en memoria (el hub ya tiene CI del refresh,
     sin red extra). None si el panel no tiene tipos (no aplica).
 
-    Memoizado por (revision, panel_id): si el AppState no cambió desde la última
-    llamada para este panel devuelve el resultado cacheado sin reejecutar el motor."""
+    Memoizado por (ciclo, panel_id), donde `ciclo` es `state.last_refresh` — el sello
+    del ciclo del refresh loop, que avanza SIEMPRE.
+
+    Deliberadamente NO por `revision`: la revisión está gateada por la huella del
+    snapshot de **24hs** (`AppState._huella`), y esto corre el motor sobre el snapshot
+    **CI**, que el hub guarda por separado. O sea que la clave no rastreaba ninguno de
+    los inputs de lo que cachea. Antes del gating no se notaba porque la revisión subía
+    cada 5s y daba vuelta el memo sola; con el gating se congela y el panel CI podía
+    servir precios viejos. `last_refresh` restituye exactamente ese "una vez por ciclo"."""
     types = PANELS[panel_id][1]
     if not types:
         return None
 
-    cache_key = (revision, panel_id)
+    cache_key = (ciclo, panel_id)
     with _CI_METRICS_LOCK:               # get() en vez de `in` + []: una sola lectura
         hit = _CI_METRICS_CACHE.get(cache_key)
     if hit is not None:                  # (una lista vacía también es un hit válido)
@@ -110,8 +117,8 @@ def _ci_metrics(panel_id: str, request: Request, hist_provider,
         fx=getattr(app_state, "fx", None),
     ).execute(list(types), settle_date=date.today(), settle_lag=0)
     with _CI_METRICS_LOCK:
-        # Purgar entradas de revisiones anteriores (revision es monótonamente creciente).
-        for k in [k for k in _CI_METRICS_CACHE if k[0] != revision]:
+        # Purgar las entradas de ciclos anteriores (el sello es monótono creciente).
+        for k in [k for k in _CI_METRICS_CACHE if k[0] != ciclo]:
             _CI_METRICS_CACHE.pop(k, None)
         _CI_METRICS_CACHE[cache_key] = result
     return result
@@ -175,7 +182,7 @@ def panel_rows(panel_id: str, request: Request, settle: str = "24", state=Depend
     if panel_id == "futuros":
         rows = _build_futuros_rows(rofex, fx, indices)
     elif settle.upper() == "CI" and panel_id in SETTLE_FILTER_PANELS:
-        metrics = _ci_metrics(panel_id, request, provider, revision=state.revision)
+        metrics = _ci_metrics(panel_id, request, provider, ciclo=state.last_refresh)
         rows = _build_rows(panel_id, state, provider, metrics_override=metrics or [])
     else:
         rows = _build_rows(panel_id, state, provider)

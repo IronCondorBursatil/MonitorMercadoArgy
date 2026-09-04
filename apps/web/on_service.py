@@ -231,9 +231,18 @@ def _build_on_dataset(state, fx=None) -> dict:
 
 
 def get_on_dataset(state, fx=None, *, force: bool = False) -> dict:
-    """Dataset `{generated, today, bonds, sectors, meta}` memoizado por (revisión, hoy).
-    `fx` (FxProvider) se usa para pasar a USD la pata pesos en el Current Yield."""
-    key = (state.revision, str(date.today()))
+    """Dataset `{generated, today, bonds, sectors, meta}` memoizado por (ciclo, hoy),
+    donde `ciclo` es `state.last_refresh`: el sello del refresh loop, que avanza SIEMPRE.
+    `fx` (FxProvider) se usa para pasar a USD la pata pesos en el Current Yield.
+
+    Deliberadamente NO por `revision`. La revisión está gateada por la huella de los
+    campos de mercado (`AppState._huella`), y este dataset depende ADEMAS del catálogo:
+    `sector_override`, `short_name`, `clase`, `isin`, `ley`, `tipo`, `cupon`, `frec` y
+    `emision` salen del `Instrument`, y una edición del ABM no mueve un solo campo de
+    la huella. Con la revisión como clave, una edición no se veía hasta la próxima vez
+    que se moviera un precio — fuera de rueda, horas — y `on.js` promete lo contrario.
+    `last_refresh` restituye el "una vez por ciclo" que había antes del gating."""
+    key = (state.last_refresh, str(date.today()))
     if not force:
         with _LOCK:
             if _CACHE["key"] == key and _CACHE["data"] is not None:

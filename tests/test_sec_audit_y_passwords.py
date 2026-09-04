@@ -246,3 +246,59 @@ def test_la_columna_entra_por_migracion_forward_only(tmp_path):
             assert (fila.token_version or 0) == 0
     finally:
         db_engine.configure(_s.catalog_db)
+
+
+# ── Hallazgos de la auditoría 2026-09-04 ─────────────────────────────────────
+
+def test_la_promocion_a_admin_QUEDA_registrada(usuarios, caplog):
+    """`update_user` es el unico handler que OTORGA privilegios y era el unico de los
+    cuatro sin linea de auditoria: promover a alguien a administrador --la accion mas
+    sensible de toda la ABM-- no dejaba rastro en ningun lado.
+
+    Se registra el estado ANTES y DESPUES: "quien tenia que rol" es justo lo que uno
+    quiere reconstruir despues de un incidente. Auditoria 2026-09-04."""
+    with TestClient(app) as c:
+        _login_admin(c)
+        with SessionLocal() as s:
+            bob = s.query(UserORM).filter(UserORM.username == "bob").first().id
+        with caplog.at_level(logging.INFO, logger="monitor.audit"):
+            c.post(f"/users/update/{bob}", data={"is_admin": "true"})
+
+    lineas = _lineas(caplog)
+    assert any("action=update" in m and "target=bob" in m for m in lineas), lineas
+    assert any("is_admin=False->True" in m for m in lineas), (
+        f"la promocion a admin no dice que cambio: {lineas}")
+    assert any("by=admin" in m for m in lineas), f"no dice QUIEN promovio: {lineas}"
+    assert all(getattr(r, "console", False) for r in caplog.records
+               if r.name == "monitor.audit"), "la linea no llega a journald"
+
+
+def test_el_username_no_puede_forjar_campos_del_registro(caplog):
+    """`_limpio` sólo descartaba lo no imprimible — y el ESPACIO y el `=`, que son los
+    dos delimitadores de logfmt, lo son. Un login fallido con usuario
+    `x ip=1.2.3.4 login=ok` inyectaba pares clave=valor enteros en un registro que
+    después se lee (o se parsea con un `failregex` de fail2ban) como si fueran reales.
+
+    El username del login se loguea CRUDO: no pasa por la validación del alta."""
+    from apps.web.routers.auth import _limpio
+
+    forjado = _limpio("x ip=1.2.3.4 login=ok")
+    assert "=" not in forjado and " " not in forjado, forjado
+    assert "x" in forjado, "el sanitizador no puede vaciar el campo"
+    assert _limpio("") == "-", "un campo vacío tiene que ocupar lugar igual"
+    assert len(_limpio("a" * 500)) <= 64
+
+
+def test_un_Origin_gigante_no_puede_vaciar_el_journal():
+    """`_rechazar` corre ANTES del árbol de auth y nginx sólo limita `POST /login`:
+    el `Origin` es texto de largo arbitrario elegido por un anónimo que va a parar al
+    `RotatingFileHandler` (5 MB × 5) y al journal —el mismo donde vive la auditoría—.
+    Sin recorte, un puñado de requests rota los 5 archivos y borra el rastro."""
+    from apps.web.security_web import _recortado
+
+    salida = _recortado("http://" + "a" * 100_000)
+    assert len(salida) <= 140, f"el header entra al log casi entero: {len(salida)}"
+    assert salida.endswith("...")
+    assert _recortado("http://evil.example") == "http://evil.example", (
+        "un origen normal tiene que verse completo para poder diagnosticar")
+    assert "\n" not in _recortado("http://a\nfake log line")

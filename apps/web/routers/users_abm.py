@@ -169,7 +169,8 @@ def update_user(
     user_id: int,
     is_admin: bool = Form(False),
     tabs: List[str] = Form(default=[]),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: UserORM = Depends(get_admin_user_html),
 ):
     user = db.query(UserORM).filter(UserORM.id == user_id).first()
     if not user:
@@ -183,7 +184,17 @@ def update_user(
                 request, db,
                 error="No puedes quitarle el rol de admin al último administrador.")
 
+    antes_admin, antes_tabs = user.is_admin, list(user.allowed_tabs or [])
     user.is_admin = is_admin
     user.allowed_tabs = ["*"] if is_admin else tabs
     db.commit()
+    # La PROMOCION A ADMIN es la accion mas sensible de toda la ABM y era la unica de
+    # los cuatro handlers que no quedaba registrada en ningun lado (auditoria
+    # 2026-09-04). Se loguea el estado ANTES y DESPUES: "quien tenia que rol" es
+    # justo lo que se quiere reconstruir despues de un incidente.
+    _audit.info("users action=update by=%s target=%s is_admin=%s->%s tabs=%s->%s",
+                _limpio(getattr(admin, "username", "?")), _limpio(user.username),
+                bool(antes_admin), bool(is_admin),
+                _limpio(",".join(antes_tabs)),
+                _limpio(",".join(user.allowed_tabs or [])), extra={"console": True})
     return _users_page(request, db, success=f"Permisos actualizados para {user.username}.")

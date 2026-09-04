@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -121,10 +122,21 @@ def armar(db_dir: Path, base_dir: Path, destino: Path, incluir_env: bool = True)
         (stage / "MANIFEST.json").write_text(
             json.dumps(manifiesto, indent=2, sort_keys=True), encoding="utf-8")
 
+        # Escribir a un nombre que `rotar` NO mira y renombrar al final. Escribir
+        # directo sobre el nombre definitivo dejaba, ante cualquier corte a mitad del
+        # tar (disco lleno, OOM, un stop del timer), un .tar.gz PARCIAL con nombre
+        # valido: ocupaba un slot de retencion y desalojaba un backup completo. Y como
+        # el gzip queda cerrado, el parcial ABRE bien — "se puede abrir?" no lo
+        # distingue de uno sano. `os.replace` es atomico dentro del mismo filesystem.
         bundle = destino / f"monitor-{sello}.tar.gz"
-        with tarfile.open(bundle, "w:gz") as tar:
-            for item in sorted(stage.iterdir()):
-                tar.add(item, arcname=item.name)
+        parcial = destino / f"monitor-{sello}.tar.gz.parcial"
+        try:
+            with tarfile.open(parcial, "w:gz") as tar:
+                for item in sorted(stage.iterdir()):
+                    tar.add(item, arcname=item.name)
+            os.replace(parcial, bundle)
+        finally:
+            parcial.unlink(missing_ok=True)
         return bundle
     finally:
         shutil.rmtree(stage, ignore_errors=True)
@@ -134,6 +146,10 @@ def rotar(destino: Path, keep: int) -> int:
     """Deja los `keep` bundles más nuevos. Devuelve cuántos borró."""
     if keep <= 0:
         return 0
+    # Barrer restos de corridas cortadas antes de contar: un `.parcial` huerfano no
+    # es un backup y no puede ocupar un slot de retencion.
+    for resto in destino.glob("monitor-*.tar.gz.parcial"):
+        resto.unlink(missing_ok=True)
     bundles = sorted(destino.glob("monitor-*.tar.gz"), reverse=True)
     borrados = 0
     for viejo in bundles[keep:]:

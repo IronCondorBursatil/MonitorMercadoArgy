@@ -365,14 +365,14 @@ def test_ci_metrics_cache_hit_skips_motor():
     with patch("apps.web.routers.panels.HubMarketDataProvider"), \
          patch("apps.web.routers.panels.GenerateMonitorReport", _FakeGMR), \
          patch("apps.web.routers.panels.get_repo", return_value=MagicMock()):
-        r1 = panels._ci_metrics("cer", fake_req, MagicMock(), revision=42)
-        r2 = panels._ci_metrics("cer", fake_req, MagicMock(), revision=42)
+        r1 = panels._ci_metrics("cer", fake_req, MagicMock(), ciclo="c42")
+        r2 = panels._ci_metrics("cer", fake_req, MagicMock(), ciclo="c42")
 
     assert r1 is r2 is fake_result
     assert call_count["n"] == 1   # motor corrió 1 sola vez
 
 
-def test_ci_metrics_cache_miss_on_revision_change():
+def test_ci_metrics_cache_miss_on_ciclo_change():
     """C4: nueva revision invalida el cache y el motor vuelve a correr."""
     from unittest.mock import MagicMock, patch
 
@@ -395,11 +395,11 @@ def test_ci_metrics_cache_miss_on_revision_change():
     with patch("apps.web.routers.panels.HubMarketDataProvider"), \
          patch("apps.web.routers.panels.GenerateMonitorReport", _FakeGMR), \
          patch("apps.web.routers.panels.get_repo", return_value=MagicMock()):
-        panels._ci_metrics("cer", fake_req, MagicMock(), revision=1)
-        panels._ci_metrics("cer", fake_req, MagicMock(), revision=2)  # revision nueva
+        panels._ci_metrics("cer", fake_req, MagicMock(), ciclo="c1")
+        panels._ci_metrics("cer", fake_req, MagicMock(), ciclo="c2")  # ciclo nuevo
 
-    assert call_count["n"] == 2   # motor corrió en ambas revisiones
-    assert all(k[0] == 2 for k in panels._CI_METRICS_CACHE)  # solo rev 2 en cache
+    assert call_count["n"] == 2   # el motor corrió en los dos ciclos
+    assert all(k[0] == "c2" for k in panels._CI_METRICS_CACHE)  # sólo el ciclo nuevo
 
 
 def test_futuros_label():

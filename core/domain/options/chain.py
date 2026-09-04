@@ -162,6 +162,29 @@ def _enriquecer(p: "_Prep", r: float, q: float, N: int) -> OptionItem:
     )
 
 
+def init_worker() -> None:
+    """Corre en cada worker del pool al arrancar. Le saca todo handler de logging.
+
+    Bajo `spawn` el hijo re-importa el modulo que define el callable, y con
+    `python run.py` eso vuelve a ejecutar `setup_logging()`, abriendo un SEGUNDO
+    RotatingFileHandler sobre el mismo archivo. Dos procesos rotando el mismo log se
+    pisan. Los workers no tienen nada que decir.
+
+    VIVE ACA, y no en `apps/web/app.py`, por el import: `multiprocessing` picklea el
+    initializer por nombre calificado, asi que cada hijo tiene que importar el modulo
+    que lo define. Definido en la app web, cada worker importaba FastAPI, los routers,
+    SQLAlchemy, httpx y pydantic —162 MB y 1885 modulos— para despues correr codigo
+    que no toca nada de eso. Aca el hijo importa este modulo, que es el que igual
+    necesita para `_enriquecer_lote`: cero imports extra. Auditoria 2026-09-04.
+    """
+    import logging as _logging
+
+    raiz = _logging.getLogger()
+    for h in list(raiz.handlers):
+        raiz.removeHandler(h)
+    raiz.addHandler(_logging.NullHandler())
+
+
 def _enriquecer_lote(lote, r: float, q: float, N: int) -> list:
     """Punto de entrada de los workers. Module-level para que sea picklable por nombre."""
     return [_enriquecer(p, r, q, N) for p in lote]
@@ -184,9 +207,35 @@ def _enriquecer_en_paralelo(preps, r, q, N, executor, chunk_size):
     try:
         return [item for lote in executor.map(
             functools.partial(_enriquecer_lote, r=r, q=q, N=N), lotes) for item in lote]
-    except Exception:  # noqa: BLE001 — incluye BrokenProcessPool y TimeoutError
+    except Exception as e:  # noqa: BLE001 — incluye BrokenProcessPool y TimeoutError
+        if _es_apagado(e, executor):
+            # El pool se cerro porque la app esta parando (`shutdown(cancel_futures=
+            # True)` en el lifespan). Cancelar el `to_thread` NO detiene este hilo, asi
+            # que sin este corte el ciclo en curso recalculaba los 458 contratos EN
+            # SERIE —segundos— para tirar el resultado, demorando el stop. Que la
+            # excepcion suba: el caller la descarta igual. Auditoria 2026-09-04.
+            logger.debug("options: pool cerrado por apagado, se abandona el ciclo")
+            raise
         logger.warning("options: el pool fallo, recalculando en serie", exc_info=True)
         raise _PoolRoto([_enriquecer(p, r, q, N) for p in preps])
+
+
+def _es_apagado(exc: BaseException, executor) -> bool:
+    """Distingue "el pool se rompio" de "el pool lo cerramos nosotros".
+
+    `shutdown()` en curso: un `submit`/`map` posterior levanta RuntimeError
+    ("cannot schedule new futures after shutdown"), y `cancel_futures=True` cancela
+    los lotes pendientes, que salen como CancelledError. Ninguno amerita recalcular.
+
+    OJO con el orden: `BrokenProcessPool` HEREDA de RuntimeError (via BrokenExecutor),
+    asi que un `isinstance(exc, RuntimeError)` a secas se traga el caso que SI tiene
+    que recalcular en serie — que es la razon de ser del fallback. Se descarta primero.
+    """
+    from concurrent.futures import BrokenExecutor, CancelledError
+
+    if isinstance(exc, BrokenExecutor):
+        return False                       # pool roto de verdad → recalcular
+    return isinstance(exc, (CancelledError, RuntimeError))
 
 
 class _PoolRoto(Exception):

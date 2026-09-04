@@ -18,7 +18,11 @@ WorkingDirectory=/home/ubuntu/MonitorMercadoArgy
 Environment=MONITOR_DB_DIR=/var/lib/monitor
 ExecStart=/home/ubuntu/MonitorMercadoArgy/venv/bin/python scripts/backup_bundle.py --keep 3
 
-# Mismo criterio que el servicio principal.
+# Mismo criterio que el servicio principal — incluido el UMask, que aca es la
+# directiva que MAS importa: el artefacto que produce este unit lleva el jwt_secret,
+# el .env con las credenciales BYMA y los hashes de contrasena, y `backup_bundle.py`
+# no hace ningun chmod. Sin esto el bundle sale 0644, legible por todo el sistema.
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectKernelTunables=true

@@ -82,7 +82,7 @@ def test_dos_paneles_ci_concurrentes_no_se_pisan_el_cache(_stub_engine, monkeypa
 
     def _worker():
         try:
-            panels._ci_metrics("bonares", req, None, revision=1)
+            panels._ci_metrics("bonares", req, None, ciclo="c1")
         except BaseException as e:     # noqa: BLE001 — lo reportamos como fallo
             boom.append(e)
 
@@ -90,19 +90,19 @@ def test_dos_paneles_ci_concurrentes_no_se_pisan_el_cache(_stub_engine, monkeypa
     t.start()
     assert cache.entered.wait(2), "el hilo A nunca llegó a recorrer el cache"
     # Hilo B (el otro panel CI del mismo ciclo de refresh) entra ahora.
-    panels._ci_metrics("cer", req, None, revision=1)
+    panels._ci_metrics("cer", req, None, ciclo="c1")
     cache.other_finished.set()
     t.join(5)
 
     assert not boom, f"la purga concurrente reventó: {boom[0]!r}"
     assert not cache.interleaved, \
         "dos hilos dentro de la sección crítica del cache a la vez (falta lock)"
-    assert set(cache) == {(1, "bonares"), (1, "cer")}, dict(cache)
+    assert set(cache) == {("c1", "bonares"), ("c1", "cer")}, dict(cache)
 
 
 def test_hit_de_cache_no_reejecuta_el_motor(_stub_engine, monkeypatch):
     """El memo sigue funcionando (y un resultado VACÍO también cuenta como hit)."""
-    monkeypatch.setattr(panels, "_CI_METRICS_CACHE", {(7, "cer"): []})
+    monkeypatch.setattr(panels, "_CI_METRICS_CACHE", {("c7", "cer"): []})
     calls = {"n": 0}
 
     class _Counting(_FakeReport):
@@ -111,6 +111,6 @@ def test_hit_de_cache_no_reejecuta_el_motor(_stub_engine, monkeypatch):
             return super().execute(types, **kw)
 
     monkeypatch.setattr(panels, "GenerateMonitorReport", _Counting)
-    out = panels._ci_metrics("cer", _FakeRequest(), None, revision=7)
+    out = panels._ci_metrics("cer", _FakeRequest(), None, ciclo="c7")
     assert out == []
     assert calls["n"] == 0, "un resultado cacheado vacío volvió a correr el motor"

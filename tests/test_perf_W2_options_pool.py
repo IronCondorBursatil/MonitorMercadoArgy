@@ -14,11 +14,14 @@ Lo que estos tests protegen, en orden de importancia:
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 from core.domain.options import chain as C
 from core.infrastructure.schemas import Data912Row
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def _row(symbol, **kw):
@@ -198,3 +201,89 @@ def test_la_perilla_apaga_el_pool(monkeypatch):
     monkeypatch.setattr(settings, "options_workers", 0)
     monkeypatch.delenv("MONITOR_DISABLE_LOOPS", raising=False)
     assert A._crear_pool_de_opciones() is None
+
+
+# ── Hallazgos de la auditoría 2026-09-04 ─────────────────────────────────────
+
+def test_el_worker_no_arrastra_la_app_web():
+    """`multiprocessing` picklea el `initializer=` por nombre calificado, así que cada
+    hijo `spawn` importa el módulo que lo DEFINE. Con el initializer en
+    `apps/web/app.py`, cada worker importaba FastAPI, los 16 routers, SQLAlchemy, httpx
+    y pydantic para después correr código de dominio que no toca nada de eso — lo
+    contrario de la razón declarada del split prepare/enrich.
+
+    Se comprueba en un intérprete limpio: importar el módulo que define el initializer
+    NO puede traer `fastapi`."""
+    import subprocess
+    import sys
+
+    codigo = (
+        "import sys;"
+        "import core.domain.options.chain as c;"
+        "assert callable(c.init_worker);"
+        "web = [m for m in sys.modules if m.startswith(('fastapi', 'apps.web'))];"
+        "print('WEB=%d' % len(web))"
+    )
+    r = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True,
+                       cwd=str(ROOT))
+    assert r.returncode == 0, r.stderr
+    assert "WEB=0" in r.stdout, (
+        f"el módulo del worker arrastra la app web: {r.stdout.strip()}")
+
+
+def test_el_initializer_de_la_app_delega_en_el_del_dominio():
+    """El nombre viejo se conserva (lo referencian `_crear_pool_de_opciones` y sus
+    tests), pero tiene que ser una cáscara: si el cuerpo vuelve a `app.py`, vuelve el
+    import de 162 MB por worker."""
+    import inspect
+
+    from apps.web.app import _init_worker_de_opciones
+
+    fuente = inspect.getsource(_init_worker_de_opciones)
+    assert "from core.domain.options.chain import init_worker" in fuente
+    assert "removeHandler" not in fuente, "el cuerpo volvió a la app web"
+
+
+def test_un_pool_CERRADO_no_recalcula_lo_que_se_va_a_tirar():
+    """En el `finally` del lifespan las tasks se cancelan y se awaitean ANTES del
+    `pool.shutdown(cancel_futures=True)`. Pero cancelar un `asyncio.to_thread` NO
+    detiene el hilo: `build_options` sigue corriendo huérfano. Cuando llega el
+    `cancel_futures`, los lotes pendientes se cancelan y —sin este corte— el fallback
+    recalculaba los 458 contratos EN SERIE, segundos, para tirar el resultado y
+    demorar el stop.
+
+    Un pool roto de verdad SÍ tiene que recalcular: `BrokenProcessPool` hereda de
+    RuntimeError, así que la distinción es por tipo y el orden importa."""
+    from concurrent.futures import CancelledError
+    from concurrent.futures.process import BrokenProcessPool
+
+    from core.domain.options.chain import _es_apagado
+
+    assert _es_apagado(CancelledError(), None) is True
+    assert _es_apagado(RuntimeError("cannot schedule new futures after shutdown"),
+                       None) is True
+    assert _es_apagado(BrokenProcessPool("worker muerto"), None) is False, (
+        "un pool roto de verdad tiene que seguir recalculando en serie")
+    assert _es_apagado(ValueError("otra cosa"), None) is False
+
+
+def test_el_apagado_no_pasa_por_el_camino_serial(monkeypatch):
+    """El extremo a extremo del anterior: con el pool cerrándose, `_enriquecer` no se
+    llama ni una vez."""
+    from concurrent.futures import CancelledError
+
+    from core.domain.options import chain
+
+    llamadas = []
+    monkeypatch.setattr(chain, "_enriquecer",
+                        lambda *a, **k: llamadas.append(1) or {})
+
+    class _Cerrado:
+        _max_workers = 3
+
+        def map(self, *a, **kw):
+            raise CancelledError()
+
+    with pytest.raises(CancelledError):
+        chain._enriquecer_en_paralelo([object()] * 50, 0.5, 0.0, 80, _Cerrado(), None)
+    assert llamadas == [], f"recalculó {len(llamadas)} contratos para tirarlos"
