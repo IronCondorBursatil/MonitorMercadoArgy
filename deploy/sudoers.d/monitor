@@ -1,0 +1,26 @@
+# Se instala en /etc/sudoers.d/monitor (modo 0440, root:root) y REEMPLAZA al
+# `ubuntu ALL=(ALL) NOPASSWD:ALL` que deja cloud-init.
+#
+# Lo que necesita la automatización (deploy.sh, y más adelante el timer de autodeploy)
+# es exactamente esto: reiniciar el servicio y recargar nginx. Nada más.
+#
+# POR QUÉ NO ESTÁ `install` HACIA /etc/systemd/system NI /etc/nginx:
+#   sería un narrowing de fachada. Quien puede escribir un unit de systemd puede
+#   escribir `User=root` + `ExecStart=/bin/sh -c ...` y hacerse root en el próximo
+#   daemon-reload. Conceder eso con NOPASSWD es equivalente a conceder todo, sólo que
+#   disfrazado. Por eso `deploy.sh` DETECTA el drift de configuración y IMPRIME el
+#   comando; instalarla es una acción deliberada de un humano con root
+#   (`sudo bash deploy/bin/install-config.sh`), no un efecto colateral de un git pull.
+#   Ese es también el motivo por el que el autodeploy del timer puede reiniciar el
+#   servicio pero no puede cambiar la configuración del sistema.
+#
+# `daemon-reload` sí está: es inofensivo por sí solo (relee lo que ya hay en disco) y
+# lo necesita el restart después de un cambio de unit hecho a mano.
+
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart monitores.service, \
+                            /usr/bin/systemctl stop monitores.service, \
+                            /usr/bin/systemctl start monitores.service, \
+                            /usr/bin/systemctl daemon-reload, \
+                            /usr/bin/systemctl reload nginx, \
+                            /usr/bin/systemctl reload nginx.service, \
+                            /usr/sbin/nginx -t

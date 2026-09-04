@@ -1,0 +1,91 @@
+# Unit del Monitor Renta Fija AR. VERSIONADO a propósito: hasta 2026-09 vivía sólo
+# en el servidor, así que reconstruir la caja (o entender por qué corre como corre)
+# era arqueología. `deploy.sh` lo instala con diff-then-install.
+#
+# Overrides específicos de una máquina van en un drop-in NO versionado:
+#   /etc/systemd/system/monitores.service.d/local.conf
+# y los secretos en /etc/monitores/env (640 root:ubuntu), que este unit lee si existe.
+#
+# HARDENING — fase 1. Lo que NO está acá y es deliberado:
+#   * `ProtectSystem=strict` + `ProtectHome=read-only`: van en la fase 2, cuando el
+#     log y `cartera.json` salgan del working tree. Hoy el RotatingFileHandler rota
+#     con rename EN LA RAÍZ DEL REPO, así que un árbol read-only lo rompe.
+#   * `MemoryDenyWriteExecute`: sin verificar contra numpy/scipy/uvloop en aarch64.
+#   * deny-lists de syscalls (`~@resources`): Python llama setrlimit en varios lados.
+#
+# El pool de procesos de la chain de opciones necesita `clone`/`execve` (los da
+# @system-service), `/dev/shm` para los semáforos de multiprocessing (PrivateDevices
+# lo conserva) y AF_UNIX para los pipes: los tres están contemplados abajo.
+
+[Unit]
+Description=Monitor Renta Fija AR (uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/MonitorMercadoArgy
+ExecStart=/home/ubuntu/MonitorMercadoArgy/venv/bin/python run.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# --- entorno ---
+Environment=MONITOR_HOST=127.0.0.1
+Environment=MONITOR_PORT=8000
+Environment=MONITOR_DB_DIR=/var/lib/monitor
+# El guard de "bases adentro del working tree" pasa de ERROR-y-seguir a ABORTAR. En
+# producción es lo correcto: arrancar con la base en el árbol de git es exactamente
+# el escenario que un `git clean -xfd` convierte en pérdida de la fuente de verdad.
+Environment=MONITOR_DB_IN_TREE_FATAL=true
+Environment=PYTHONUNBUFFERED=1
+# El árbol es (o será) read-only bajo systemd: que no intente escribir .pyc. `deploy.sh`
+# corre `compileall` para que el arranque no recompile en cada boot.
+Environment=PYTHONDONTWRITEBYTECODE=1
+# matplotlib escribe su cache en $HOME si no se le dice otra cosa (y avisa por WARNING).
+Environment=MPLCONFIGDIR=/var/cache/monitor/matplotlib
+# OpenBLAS levanta un thread por core al importar numpy. Este código es elementwise
+# (CRR/XIRR), no llama BLAS: 4 threads ociosos por proceso son ruido en `top` y en el
+# p95 de CPU que Oracle mira para decidir si la instancia está idle. Con el pool de
+# opciones serían 4 procesos × 4 threads.
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=1
+EnvironmentFile=-/etc/monitores/env
+
+# systemd crea y da permisos a estos directorios, y los deja escribibles aunque
+# ProtectSystem endurezca el resto del filesystem (fase 2).
+StateDirectory=monitor
+CacheDirectory=monitor
+
+# --- recursos ---
+# La app usa ~382 MB de RSS; el pool de opciones suma ~180 MB. 4G es 10× eso: un techo
+# que sólo se toca si algo se desmadra (y entonces preferimos el OOM del cgroup a que
+# la caja se quede sin memoria).
+MemoryHigh=3G
+MemoryMax=4G
+TasksMax=512
+LimitNOFILE=65536
+
+# --- hardening que no toca la vista del filesystem ---
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
