@@ -1,0 +1,27 @@
+# Bundle diario del estado del servidor. Se instala junto con su .timer.
+#
+# Corre CON la app viva: `backup_bundle.py` usa el backup online de SQLite (WAL-safe)
+# y deliberadamente NO usa `op_guards.guard_write`, que aborta cuando el server está
+# arriba. Parar la app para respaldar sería peor: dejaría un hueco en los históricos
+# que se acumulan rueda a rueda.
+[Unit]
+Description=Bundle de backup del Monitor (todas las bases + secretos + cartera)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/MonitorMercadoArgy
+# Explícito: un timer NO hereda el entorno del servicio principal, y sin esto el
+# script resuelve `db_dir` al default vacío y respalda una base que no existe.
+Environment=MONITOR_DB_DIR=/var/lib/monitor
+ExecStart=/home/ubuntu/MonitorMercadoArgy/venv/bin/python scripts/backup_bundle.py --keep 3
+
+# Mismo criterio que el servicio principal.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=

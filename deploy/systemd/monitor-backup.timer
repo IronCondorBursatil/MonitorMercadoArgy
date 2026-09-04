@@ -1,0 +1,19 @@
+# Dispara el bundle una vez por día hábil, después del cierre.
+#
+# 18:30 ART: la rueda cierra 17:00 y el corte de ratings de FIX entra durante la
+# tarde, así que a esa hora el estado del día ya está completo. Domingo se saltea (no
+# hay rueda nueva que respaldar).
+#
+# `Persistent=true`: si la instancia estuvo apagada a la hora del disparo, corre al
+# arrancar. Sin eso, un reinicio a las 18:00 se come el backup de ese día en silencio.
+[Unit]
+Description=Bundle diario de backup del Monitor
+
+[Timer]
+OnCalendar=Mon..Sat *-*-* 18:30:00 America/Argentina/Buenos_Aires
+Persistent=true
+# Desparrama el arranque para no competir con el ciclo de precios si justo coincide.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
