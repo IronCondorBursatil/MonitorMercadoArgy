@@ -233,9 +233,14 @@ En prod hay que setear:
   llegando con `cashflows=()` — el pricing es bit-idéntico POR CONSTRUCCIÓN, no por
   coincidencia numérica — pero el bono queda auditable en la DB y visible en `/cashflows`
   (el router sintetiza el evento de vencimiento desde `maturity_date`, con los montos en
-  em-dash porque el importe no se conoce hasta el vto). Las DOS puertas de escritura
-  (`save_instrument` y `save_cashflows`) rechazan cargarles flujos. Backfill de una DB ya
-  poblada: `scripts/backfill_tamar_anchor.py` (dry-run por default, forward-only, idempotente).
+  em-dash porque el importe no se conoce hasta el vto). La regla por tipo vale en las DOS
+  puertas de ESCRITURA (`save_instrument` y `save_cashflows` rechazan cargarles flujos) y en
+  las TRES de LECTURA: el motor (`_orm_to_domain` filtra el ancla), el form del ABM
+  (`get_instrument` la filtra y devuelve `cashflows_source="analitico"`) y el preview
+  (`preview_cashflows` no propone nada, porque el save lo descartaría). Backfill de una DB
+  ya poblada: `scripts/backfill_tamar_anchor.py` (dry-run por default, forward-only,
+  idempotente). **Ya corrido en la `catalog.db` local (14 bonos, 2026-09-04); el droplet
+  necesita su propia corrida** — `deploy.sh` no ejecuta migraciones.
 - **La ABM ya NO sintetiza al guardar**: `cashflow_synth` lee el RELOJ para resolver el step-up
   del cupón, así que el schedule que quedaba en la DB dependía del DÍA DEL ALTA (el mismo form
   daba 0,63% en 2026 y 1,18% en 2028). La síntesis quedó como PREVIEW

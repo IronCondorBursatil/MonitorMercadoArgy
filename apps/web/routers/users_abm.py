@@ -88,6 +88,16 @@ def delete_user(request: Request, user_id: int, db: Session = Depends(get_db)):
 
     db.delete(user)
     db.commit()
+    # El usuario resuelto por la dependencia de auth queda publicado en `request.state`
+    # y el contexto de los templates lo lee de ahí. Si el admin se borró a SÍ MISMO, ese
+    # objeto es justo el que acabamos de borrar —y con `expire_on_commit=False` conserva
+    # sus atributos—, así que esta misma respuesta se renderizaba como una sesión viva.
+    # Limpiándolo, `templates._resolve_user` cae al camino de siempre: consulta la DB, no
+    # encuentra la fila y el nav sale vacío. (El request SIGUIENTE ya iba a 302 /login: lo
+    # que se arregla acá es que la respuesta no mienta sobre el estado de la cuenta.)
+    actual = getattr(request.state, "current_user", None)
+    if actual is not None and getattr(actual, "id", None) == user_id:
+        request.state.current_user = None
     return _users_page(request, db, success="Usuario borrado.")
 
 @router.post("/users/reset-password/{user_id}", response_class=HTMLResponse)

@@ -12,11 +12,13 @@ from apps.web.app import app
 _CF_BULLET = {"cf_date": ["2027-07-22"], "cf_amort": ["100"], "cf_interest": ["0"]}
 
 
-def _con_preview(fields: dict) -> dict:
+def _con_preview(fields: dict, sheet: str = "") -> dict:
     """`fields` + el schedule que el preview propone para ellos (lo que hace el usuario:
-    ⟳ Previsualizar → Guardar)."""
+    ⟳ Previsualizar → Guardar). `preview_cashflows` devuelve {"cashflows", "nota"}: la
+    nota explica la tabla vacía de un tipo de payoff cerrado, al que no se le propone
+    schedule porque el save lo descartaría."""
     from apps.web import instruments_abm as abm_store
-    cfs = abm_store.preview_cashflows(fields)
+    cfs = abm_store.preview_cashflows(fields, sheet)["cashflows"]
     assert cfs, "el preview no propuso ningún flujo: el alta no sería guardable"
     return {**fields,
             "cf_date": [c["date"] for c in cfs],

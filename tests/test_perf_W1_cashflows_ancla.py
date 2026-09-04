@@ -33,7 +33,14 @@ _VTO = date(2027, 6, 30)
 
 @pytest.fixture
 def tmp_catalog(tmp_path):
-    """Engine apuntado a una .db temporal VACÍA (no toca la catalog.db de la suite)."""
+    """Engine apuntado a una .db temporal VACÍA (no toca la catalog.db de la suite).
+
+    ⚠ NO combinar con `TestClient(app)`: el boot de la app carga el singleton de
+    `get_repo()` desde la DB que esté configurada y lo deja CACHEADO. Con el engine en
+    una temporal vacía, ese cache sobrevive al teardown de la fixture y contamina a
+    los tests siguientes (`test_web_app::test_health_boots_and_loads_catalog` pasó a
+    ver 2 instrumentos en vez de ~91). Los tests de router de este archivo trabajan a
+    propósito sobre el catálogo compartido y limpian lo que crean."""
     db_engine.configure(tmp_path / "w1_ancla.db")
     init_db()
     try:
@@ -439,6 +446,87 @@ def test_save_cashflows_no_puede_romper_un_tipo_analitico(tmp_catalog):
 
 
 # --------------------------------------------------------------------------- #
+# 5b · LECTURA del form. El ancla es una fila del ORM, no un pago: no puede salir
+#      por la tabla EDITABLE del cajón disfrazada de flujo. Y para un tipo analítico
+#      la tabla tampoco puede caer al synth: mostraría un schedule que `save_instrument`
+#      descarta a propósito — el form le mentiría al operador.
+# --------------------------------------------------------------------------- #
+
+def test_el_form_de_un_analitico_no_ofrece_el_ancla_como_flujo_editable(tmp_catalog):
+    """Con el ancla ya en la DB, `get_instrument` la devolvía como una fila
+    `vto / 0.000000 / 0.000000` editable, contra el texto del propio form
+    ("esta tabla queda vacía a propósito")."""
+    from apps.web import instruments_abm as abm
+
+    abm.save_instrument("TAMAR", dict(_TAMAR_FIELDS))
+    assert _rows("TTX9") == [(_VTO, 0.0, 0.0, True)]          # el ancla ESTÁ en la DB
+    got = abm.get_instrument("TTX9")
+    assert got["cashflows"] == []                             # …y NO sale por el form
+    assert got["cashflows_source"] == "analitico"
+
+
+def test_el_form_de_un_analitico_tampoco_sintetiza(tmp_catalog):
+    """Un analítico SIN ancla (fila cruda, o una DB previa al backfill) tampoco puede
+    caer al synth: `save_instrument` descarta ese schedule, así que ofrecerlo es
+    ofrecer trabajo que se va a tirar."""
+    from apps.web import instruments_abm as abm
+
+    _add_bond("TTM9", "PURO", [])
+    got = abm.get_instrument("TTM9")
+    assert got["cashflows"] == []
+    assert got["cashflows_source"] == "analitico"
+
+
+def test_un_ancla_huerfana_no_se_muestra_como_flujo(tmp_catalog):
+    """Defensa en profundidad: si un bono dejó de ser analítico y le quedó el ancla,
+    esa fila sigue sin ser un pago — no puede aparecer en la tabla editable."""
+    from apps.web import instruments_abm as abm
+
+    _add_bond("TTM8", "BONAR", [(date(2026, 6, 30), 50.0, 1.5, False),
+                                (_VTO, 50.0, 1.5, False),
+                                (_VTO, 0.0, 0.0, True)], sheet="Soberanos")
+    got = abm.get_instrument("TTM8")
+    assert [c["date"] for c in got["cashflows"]] == ["2026-06-30", _VTO.isoformat()]
+    assert got["cashflows_source"] == "sheet"
+
+
+def test_el_form_de_un_bono_normal_no_cambia(tmp_catalog):
+    """Contraprueba: el camino de siempre (flujos reales) sigue igual."""
+    from apps.web import instruments_abm as abm
+
+    _add_bond("TTM7", "BONAR", [(_VTO, 100.0, 2.5, False)], sheet="Soberanos")
+    got = abm.get_instrument("TTM7")
+    assert got["cashflows"] == [{"date": _VTO.isoformat(), "amortization": 100.0,
+                                 "interest": 2.5}]
+    assert got["cashflows_source"] == "sheet"
+
+
+def test_router_el_cajon_de_un_analitico_abre_con_la_tabla_vacia():
+    """End-to-end sobre un analítico que SÍ tiene ancla en la DB (si no, el test
+    pasaría por vacío: el synth de un TAMAR sin cupón ya devuelve []). Contraprueba
+    en el mismo test: un bono normal del catálogo SÍ trae sus filas."""
+    from fastapi.testclient import TestClient
+
+    from apps.web import instruments_abm as abm
+    from apps.web.app import app
+
+    abm.save_instrument("TAMAR", dict(_TAMAR_FIELDS))
+    try:
+        assert _rows("TTX9") == [(_VTO, 0.0, 0.0, True)]       # el ancla está
+        with TestClient(app) as c:
+            html = c.get("/abm/form?sheet=TAMAR&key=TTX9").text
+            normal = c.get("/abm/form?sheet=Soberanos&key=AL30").text
+    finally:
+        abm.delete_instrument("TTX9")
+    cuerpo = html.split('hx-post="/abm/save"', 1)[1].split("</form>", 1)[0]
+    assert 'name="cf_date"' not in cuerpo                      # ni una fila editable
+    assert "fórmula cerrada" in html or "analítico" in html or "ancla" in html
+    # el test no pasa por vacío: el mismo endpoint SÍ trae filas para un bono normal
+    assert normal.split('hx-post="/abm/save"', 1)[1].split("</form>", 1)[0].count(
+        'name="cf_date"') > 0
+
+
+# --------------------------------------------------------------------------- #
 # 6 · VISIBILIDAD en /cashflows. El ancla NO llega al dominio (punto 2) y el router
 #     además filtra los montos en cero, así que la visibilidad se resuelve APARTE:
 #     el evento de vencimiento se sintetiza desde `inst.maturity_date`.
@@ -569,3 +657,171 @@ def test_backfill_nunca_borra_filas_existentes(tmp_catalog):
     _add_bond("BF5", "PURO", [(date(2026, 6, 30), 50.0, 1.0, False)])
     assert bf.apply_migration() == 0
     assert _rows("BF5") == [(date(2026, 6, 30), 50.0, 1.0, False)]
+
+
+# --------------------------------------------------------------------------- #
+# 7 · El RECHAZO tiene que ser VISIBLE. `POST /abm/save` apunta a `#abm-list`, que vive
+#     en la vista «Cargados»; el ＋ del tab «Universo BYMA» abre el cajón SIN cambiar de
+#     vista, así que ese target queda con `display:none` y el mensaje —que esta ola
+#     convirtió en el resultado por defecto del alta— no se veía. El cajón sí está a la
+#     vista: el error se espeja ahí con un swap OOB.
+# --------------------------------------------------------------------------- #
+
+def _post_save(client, data):
+    return client.post("/abm/save", data=data)
+
+
+def test_el_rechazo_del_save_se_espeja_dentro_del_cajon():
+    """Sin esto, dar de alta desde «Universo BYMA» no mostraba NADA: ni ✓, ni error,
+    ni cierre del cajón — el operador vuelve a apretar Guardar creyendo que no tomó."""
+    from fastapi.testclient import TestClient
+
+    from apps.web.app import app
+
+    with TestClient(app) as c:
+        r = _post_save(c, dict(_ON_FIELDS))          # ON sin schedule → rechazo
+    assert r.status_code == 200
+    assert "FLUJO DE FONDOS" in r.text
+    # el espejo OOB existe, apunta al cajón y trae el mensaje
+    assert 'id="abm-drawer-err"' in r.text
+    assert 'hx-swap-oob' in r.text
+    oob = r.text.split('id="abm-drawer-err"', 1)[1].split("</div>", 1)[0]
+    assert "abm-err" in oob or "No se guard" in r.text.split('id="abm-drawer-err"', 1)[1][:400]
+
+
+def test_un_save_exitoso_limpia_el_error_del_cajon():
+    """El espejo se vacía en el camino feliz: si no, un error viejo queda pegado en el
+    cajón para siempre. Y el `hx-on::after-request` del form decide por la presencia de
+    la clase `abm-err`, así que el contenedor vacío NO puede traerla."""
+    from fastapi.testclient import TestClient
+
+    from apps.web.app import app
+
+    data = {**_ON_FIELDS,
+            "cf_date": ["2027-07-22"], "cf_amort": ["100"], "cf_interest": ["7.5"]}
+    with TestClient(app) as c:
+        try:
+            r = _post_save(c, data)
+        finally:
+            c.delete("/abm/instrument/W1F0O")     # catálogo compartido: no dejar basura
+    assert r.status_code == 200
+    assert 'id="abm-drawer-err"' in r.text          # el espejo viaja igual (para limpiar)
+    assert "abm-err" not in r.text                  # …pero vacío: el form cierra y flashea
+
+
+def test_la_pagina_no_duplica_el_id_del_espejo():
+    """El bloque OOB sólo sale por la respuesta del POST. Si `abm_list.html` lo
+    renderizara también en el include de la página, habría dos `id="abm-drawer-err"`
+    y htmx pisaría el equivocado."""
+    from fastapi.testclient import TestClient
+
+    from apps.web.app import app
+
+    with TestClient(app) as c:
+        html = c.get("/abm").text
+    assert html.count('id="abm-drawer-err"') == 1   # el del cajón, y nada más
+    assert "hx-swap-oob" not in html
+
+
+# --------------------------------------------------------------------------- #
+# 8 · El PREVIEW tiene que respetar la misma regla que el SAVE. Proponerle un schedule
+#     a un tipo de payoff analítico es ofrecerle al operador trabajo que `save_instrument`
+#     descarta a propósito — y el ✓ del cajón no distinguía "guardado" de "descartado".
+# --------------------------------------------------------------------------- #
+
+def test_preview_no_propone_schedule_a_un_tipo_analitico(tmp_catalog):
+    from apps.web import instruments_abm as abm
+
+    campos = dict(_TAMAR_FIELDS, **{"cupon anual %": "2.0", "frecuencia pagos": "2"})
+    got = abm.preview_cashflows(campos, "TAMAR")
+    assert got["cashflows"] == []
+    assert got["nota"]                                   # y dice POR QUÉ está vacía
+    assert "cerrada" in got["nota"] or "analítico" in got["nota"]
+
+
+def test_preview_sigue_proponiendo_para_un_tipo_normal(tmp_catalog):
+    """Contraprueba: el synth no se apagó, sólo se acotó."""
+    from apps.web import instruments_abm as abm
+
+    got = abm.preview_cashflows(dict(_ON_FIELDS), "Obligaciones_Negociables")
+    assert len(got["cashflows"]) == 4                     # 2 años, semestral
+    assert not got["nota"]
+
+
+def test_router_preview_de_un_analitico_devuelve_cero_filas_y_explica():
+    from fastapi.testclient import TestClient
+
+    from apps.web.app import app
+
+    campos = dict(_TAMAR_FIELDS, sheet="TAMAR",
+                  **{"cupon anual %": "2.0", "frecuencia pagos": "2"})
+    with TestClient(app) as c:
+        r = c.post("/abm/preview_cashflows", data=campos)
+    assert r.status_code == 200
+    assert r.text.count('name="cf_date"') == 0           # ni una fila editable
+    assert "cerrada" in r.text or "analítico" in r.text  # la nota explica
+
+
+def test_save_de_un_analitico_no_reporta_flujos_que_descarto(tmp_catalog):
+    """`out["cashflows"]` decía 2 habiendo persistido sólo el ancla: el router lo
+    loguea y el operador ve ✓ como si se hubieran guardado."""
+    from apps.web import instruments_abm as abm
+
+    out = abm.save_instrument("TAMAR", dict(_TAMAR_FIELDS),
+                              [{"date": "2026-06-30", "amortization": "50", "interest": "3"},
+                               {"date": "2027-06-30", "amortization": "50", "interest": "3"}])
+    assert out["cashflows"] == 0                          # lo que REALMENTE se persistió
+    assert out.get("descartados") == 2                    # …y lo que se tiró, explícito
+    assert _rows("TTX9") == [(_VTO, 0.0, 0.0, True)]
+
+
+# --------------------------------------------------------------------------- #
+# 9 · Los CALLERS del write-path. Sacar el synth de `save_instrument` es un cambio de
+#     CONTRATO: todo script que pasaba `cashflows=None` esperando que el store
+#     sintetizara ahora revienta sobre una DB donde el bono no existe (un restore, o un
+#     droplet nuevo). `load_bond.py` se actualizó en la ola; estos guards evitan que
+#     alguno vuelva a quedar atrás.
+# --------------------------------------------------------------------------- #
+
+def test_ningun_script_le_pide_el_synth_al_write_path():
+    """Guard de clase, no de caso: `cashflows=None` en un script es la firma exacta
+    del bug (esperar que el store sintetice). El schedule lo materializa el caller."""
+    import re
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent / "scripts"
+    culpables = []
+    for py in sorted(raiz.glob("*.py")):
+        txt = py.read_text(encoding="utf-8")
+        for m in re.finditer(r"save_instrument\s*\([^)]*cashflows\s*=\s*None", txt):
+            culpables.append("%s:%d" % (py.name, txt[:m.start()].count("\n") + 1))
+    assert culpables == [], (
+        "estos scripts esperan que `save_instrument` sintetice, y ya no lo hace: %s"
+        % culpables)
+
+
+@pytest.mark.parametrize("modulo,ticker", [("ingest_on_ypc4o", "YPC4O"),
+                                           ("ingest_on_mcc1o", "MCC1O")])
+def test_los_ingest_de_on_materializan_su_schedule(tmp_catalog, modulo, ticker):
+    """Sobre una DB VACÍA (el caso que rompía): el schedule que el script imprime es el
+    que persiste, y el alta ocurre."""
+    import importlib
+    import sys
+    from pathlib import Path
+
+    ruta = str(Path(__file__).resolve().parent.parent / "scripts")
+    if ruta not in sys.path:
+        sys.path.insert(0, ruta)
+    mod = importlib.import_module(modulo)
+
+    from apps.web import instruments_abm as abm
+
+    synth = abm._safe_synth(mod.FIELDS)
+    assert synth, "el synth de %s vino vacío: el test no probaría nada" % ticker
+    filas = mod._rows(synth)
+    out = abm.save_instrument(mod.SHEET, mod.FIELDS, cashflows=filas)
+    assert out["cashflows"] == len(filas)
+    guardado = _rows(ticker)
+    assert guardado is not None, "%s no quedó cargado" % ticker
+    assert [(d, a, i) for d, a, i, _anc in guardado] == [
+        (cf.date, cf.amortization, cf.interest) for cf in synth]

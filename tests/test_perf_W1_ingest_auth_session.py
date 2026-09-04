@@ -115,3 +115,26 @@ def test_has_tab_por_request_state_respeta_los_permisos(admin):
     assert '<a href="/">Bonos</a>' in r.text
     assert '<a href="/bcra">BCRA</a>' not in r.text
     assert '<a href="/abm">ABM Bonos</a>' not in r.text
+
+
+def test_borrarse_a_si_mismo_no_se_renderiza_como_logueado(admin):
+    """`_resolve_user` devuelve el UserORM que publicó la dependencia, en vez de volver
+    a consultar la DB. Ese objeto es EL MISMO que `delete_user` acaba de borrar y, con
+    `expire_on_commit=False`, conserva sus atributos: la página se renderizaba como si
+    la cuenta siguiera viva (nav completo, «Manager», «Cerrar sesión (admin)»).
+    Antes de la ola el template consultaba y no encontraba la fila."""
+    with SessionLocal() as s:                     # 2º admin: el guard del último no dispara
+        s.add(UserORM(username="admin2", hashed_password=get_password_hash("x"),
+                      is_admin=True, allowed_tabs=["*"]))
+        s.commit()
+    with TestClient(app) as c:
+        _login(c)
+        with SessionLocal() as s:
+            mio = s.query(UserORM).filter(UserORM.username == "admin").first().id
+        r = c.post("/users/delete/%d" % mio)
+    assert r.status_code == 200
+    assert "Usuario borrado" in r.text             # el borrado ocurrió
+    # …y la respuesta NO se sigue presentando como una sesión viva
+    assert "Cerrar sesión (admin)" not in r.text
+    with SessionLocal() as s:
+        assert s.query(UserORM).filter(UserORM.username == "admin").first() is None

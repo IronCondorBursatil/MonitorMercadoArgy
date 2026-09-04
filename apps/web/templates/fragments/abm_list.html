@@ -3,6 +3,11 @@
    (rojo=requerido, ámbar=opcional) + Cashflows / Precio / % de completitud + Editar.
    Con sheet='' (Todas) cae a un set universal (Hoja + Emisor). #}
 {% if error %}<div class="abm-err">⚠ No se guardó: {{ error }}</div>{% endif %}
+{# Espejo OOB en el cajón (`oob` lo pasa `routers/abm._render_list`, NO el include de la
+   página — si no, habría dos `id="abm-drawer-err"`). Viaja también VACÍO en el camino
+   feliz, para limpiar un error anterior. Ojo: vacío NO puede traer la clase `abm-err`,
+   que es por la que el `hx-on::after-request` del form decide si cerrar. #}
+{% if oob %}<div id="abm-drawer-err" class="abm-drawer-err" hx-swap-oob="true">{% if error %}<div class="abm-err">⚠ No se guardó: {{ error }}</div>{% endif %}</div>{% endif %}
 <table class="abm-t">
   <thead>
     <tr>

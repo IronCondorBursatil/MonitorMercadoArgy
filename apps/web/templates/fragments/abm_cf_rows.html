@@ -10,3 +10,6 @@
   <td><button type="button" class="cf-del" onclick="cfDel(this)" title="quitar fila">✕</button></td>
 </tr>
 {% endfor %}
+{% if not cashflows and nota %}
+<tr class="abm-cf-nota"><td colspan="4"><small class="abm-faint">{{ nota }}</small></td></tr>
+{% endif %}

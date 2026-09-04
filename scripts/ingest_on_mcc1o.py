@@ -44,6 +44,12 @@ def _fmt(v, nd=2):
     return f"{v:.{nd}f}" if isinstance(v, (int, float)) else "--"
 
 
+
+def _rows(cfs):
+    """`Cashflow` del synth → filas para `save_instrument` (que ya no sintetiza)."""
+    return [{"date": cf.date.isoformat(), "amortization": cf.amortization,
+             "interest": cf.interest} for cf in cfs]
+
 def main(dry_run: bool = False, force: bool = False) -> int:
     from apps.web.instruments_abm import _safe_synth
 
@@ -65,7 +71,9 @@ def main(dry_run: bool = False, force: bool = False) -> int:
 
     if (rc := guard_write("pre-mcc1o", force=force)):
         return rc
-    res = save_instrument(SHEET, FIELDS, cashflows=None)
+    # Fase 9: el schedule lo materializa el caller (ver `ingest_on_ypc4o.py`) — el ABM
+    # dejó de sintetizar al guardar y rechaza un bono normal sin flujos.
+    res = save_instrument(SHEET, FIELDS, cashflows=_rows(synth))
     print(f"{res['action']}: {', '.join(res['tickers'])}\n")
 
     r = verify("MCC1D", price=VERIFY_PRICE, price_mode="dirty")

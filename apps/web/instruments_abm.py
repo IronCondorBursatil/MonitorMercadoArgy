@@ -92,15 +92,36 @@ def _synth_cashflows_for_fields(fields: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
-def preview_cashflows(fields: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Schedule PROPUESTO desde los params del form. **No persiste nada.**
+_NOTA_ANALITICO = ("Este tipo cobra por fórmula cerrada (TAMAR observada + proyectada): "
+                   "no lleva schedule. Al guardar queda sólo la fila ancla del vencimiento.")
 
-    Es el único consumidor legítimo del synth desde la ABM (junto con el fallback de
-    lectura de `get_instrument`): el operador lo revisa en la tabla del cajón y el POST
-    de `/abm/save` lo manda de vuelta. Ver el docstring de `save_instrument` — la
-    síntesis lee el reloj (step-up del cupón), así que fuera del write-path es una
-    propuesta reproducible y adentro era un schedule que dependía del día del alta."""
-    return _synth_cashflows_for_fields(fields)
+
+def preview_cashflows(fields: Dict[str, Any], sheet: str = "") -> Dict[str, Any]:
+    """{"cashflows": [...], "nota": str} — schedule PROPUESTO desde los params del form.
+    **No persiste nada.**
+
+    Es el único consumidor legítimo del synth desde la ABM: el operador lo revisa en la
+    tabla del cajón y el POST de `/abm/save` lo manda de vuelta. Ver el docstring de
+    `save_instrument` — la síntesis lee el reloj (step-up del cupón), así que fuera del
+    write-path es una propuesta reproducible y adentro era un schedule que dependía del
+    día del alta.
+
+    Con `sheet` aplica la MISMA regla por tipo que el save: a un payoff cerrado no se le
+    propone nada, porque `save_instrument` lo descartaría — proponerlo es ofrecerle al
+    operador trabajo que se va a tirar. `nota` dice por qué la tabla quedó vacía; sin
+    ella el botón «⟳ Previsualizar» se ve como si no hubiera hecho nada.
+
+    NUNCA lanza por el tipo: es una vista previa, no un borde de escritura. Si el tipo no
+    se puede resolver, cae al synth y el rechazo (o no) lo decide el save."""
+    try:
+        normalized = _normalize_fields(fields)
+        primary = split_currency_tickers(_currency_tickers(normalized))[0]
+        itype = _resolve_instrument_type(normalized, sheet, primary, warn=False)
+    except Exception:                       # noqa: BLE001 — preview tolerante (ver arriba)
+        itype = None
+    if itype is not None and has_closed_form_payoff(itype):
+        return {"cashflows": [], "nota": _NOTA_ANALITICO}
+    return {"cashflows": _synth_cashflows_for_fields(fields), "nota": ""}
 
 
 def _safe_synth(fields: Dict[str, Any]) -> List[Cashflow]:
@@ -589,7 +610,11 @@ def _byma_isin_for(s, tickers) -> Optional[str]:
 def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
     """{"sheet", "fields", "cashflows", "cashflows_source"} para CUALQUIER ticker
     del bono (primario o pata), o None. `fields` trae los slots ticker_ars/mep/ccl
-    reconstruidos desde la fila (autoritativo)."""
+    reconstruidos desde la fila (autoritativo).
+
+    `cashflows_source`: "sheet" (los flujos REALES de la DB, sin el ancla) ·
+    "analitico" (tipo de payoff cerrado: la tabla va vacía, ver abajo) · "synth"
+    (propuesta del sintetizador para un bono sin flujos) · "empty"."""
     ticker_u = ticker.upper().strip()
     init_db()
     with SessionLocal() as s:
@@ -615,14 +640,27 @@ def get_instrument(ticker: str) -> Optional[Dict[str, Any]]:
         # vacía, se busca en el universo BYMA (byma_catalog) por cualquiera de las patas
         # → el form lo muestra aunque el enrich del catálogo curado aún no lo haya fijado.
         fields["isin"] = orm.isin or _byma_isin_for(s, _row_tickers(orm)) or ""
+        # El ANCLA no es un pago (ver `instrument_groups.ANALYTIC_PAYOFF_TYPES`): filtrarla
+        # acá es el espejo de lo que hace `_orm_to_domain` para el motor. Sin esto salía
+        # por la tabla EDITABLE del cajón como una fila `vto / 0.000000 / 0.000000`.
+        # Incondicional —no sólo para los analíticos— por si un bono cambió de tipo y le
+        # quedó el ancla vieja: sigue sin ser un flujo.
         cf_rows = [
             {
                 "date": cf.fecha_pago.isoformat(),
                 "amortization": float(cf.amortizacion),
                 "interest": float(cf.cupon_interes),
             }
-            for cf in orm.cashflows
+            for cf in orm.cashflows if not cf.es_ancla
         ]
+        analitico = has_closed_form_payoff(orm.instrument_type)
+    if analitico:
+        # Payoff cerrado ⇒ la tabla del cajón va VACÍA, y **sin caer al synth**: lo que
+        # el synth propusiera lo descarta `save_instrument` a propósito, así que ofrecerlo
+        # sería ofrecerle al operador trabajo que se va a tirar. El form ya explica por
+        # qué está vacía (`fragments/abm_form.html`).
+        return {"sheet": sheet, "fields": fields, "cashflows": [],
+                "cashflows_source": "analitico"}
     if cf_rows:
         return {"sheet": sheet, "fields": fields, "cashflows": cf_rows, "cashflows_source": "sheet"}
     synth = _synth_cashflows_for_fields(fields)
@@ -779,7 +817,12 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
     out: Dict[str, Any] = {"action": action, "ticker": primary, "sheet": sheet,
                            "tickers": all_tickers}
     if parsed_cfs is not None:
-        out["cashflows"] = len(parsed_cfs)
+        # Lo PERSISTIDO, no lo recibido: en un tipo analítico las filas del form se
+        # descartan y sobrevive sólo el ancla. Reportar `len(parsed_cfs)` ahí le decía
+        # al caller (y al log del router) que guardó N flujos que no existen.
+        out["cashflows"] = 0 if analitico else len(parsed_cfs)
+        if analitico and parsed_cfs:
+            out["descartados"] = len(parsed_cfs)
     return out
 
 

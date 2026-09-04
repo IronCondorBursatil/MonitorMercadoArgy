@@ -50,11 +50,16 @@ def _price_of(state):
 
 
 def _render_list(request: Request, sheet: str, state, error: str = "") -> HTMLResponse:
-    """Tabla de completitud (adaptativa por hoja) para `sheet` ('' = todas)."""
+    """Tabla de completitud (adaptativa por hoja) para `sheet` ('' = todas).
+
+    `oob=True`: la respuesta arrastra además un swap out-of-band que espeja `error` en
+    `#abm-drawer-err`, dentro del cajón. Sin eso, un rechazo del save iniciado desde el
+    tab «Universo BYMA» aterriza en `#abm-list`, que ahí está con `display:none`, y el
+    operador no ve NADA. Va vacío en el camino feliz para limpiar el error anterior."""
     cov = abm_store.list_instruments_coverage(_price_of(state), sheet or None)
     return _TEMPLATES.TemplateResponse(request, "fragments/abm_list.html", {
         "instruments": cov, "cols": abm_store.coverage_columns(sheet),
-        "sheet": sheet, "error": error,
+        "sheet": sheet, "error": error, "oob": True,
     })
 
 
@@ -280,10 +285,12 @@ async def abm_preview_cashflows(request: Request):
     `/abm/save` las manda. Es el ÚNICO consumidor del synth desde la ABM: así el reloj
     que lee `cashflow_synth` no puede contaminar lo que queda en la DB."""
     form = await request.form()
+    sheet = str(form.get("sheet") or "")
     # to_thread: la síntesis de un bullet a 30 años son cientos de relativedelta.
-    cfs = await asyncio.to_thread(abm_store.preview_cashflows, _form_fields(form))
-    return _TEMPLATES.TemplateResponse(request, "fragments/abm_cf_rows.html",
-                                       {"cashflows": cfs})
+    # El `sheet` va aparte de los campos porque `preview_cashflows` lo necesita para
+    # resolver el tipo y aplicar la misma regla por tipo que `/abm/save`.
+    prev = await asyncio.to_thread(abm_store.preview_cashflows, _form_fields(form), sheet)
+    return _TEMPLATES.TemplateResponse(request, "fragments/abm_cf_rows.html", prev)
 
 
 @router.post("/abm/save", response_class=HTMLResponse)

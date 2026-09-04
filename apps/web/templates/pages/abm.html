@@ -56,6 +56,12 @@
 <div class="abm-scrim" id="abm-scrim" onclick="abmCloseDrawer()"></div>
 <aside class="abm-drawer" id="abm-drawer" aria-hidden="true">
   <div class="abm-drawer-head">ALTA / EDICIÓN<span class="sp"></span><button class="x" onclick="abmCloseDrawer()" title="Cerrar (Esc)">✕</button></div>
+  {# Espejo del error de /abm/save DENTRO del cajón (lo llena un swap OOB desde
+     `fragments/abm_list.html`). El target normal de ese POST es `#abm-list`, que vive en
+     la vista «Cargados»: cuando el alta arranca desde el ＋ del tab «Universo BYMA» esa
+     vista queda con `display:none` y el rechazo era INVISIBLE — ni ✓, ni error, ni cierre.
+     Va fuera de `#abm-editor` porque el form reemplaza ese nodo entero. #}
+  <div id="abm-drawer-err" class="abm-drawer-err"></div>
   <div class="abm-drawer-body" id="abm-editor">
     <div class="abm-ph">Elegí un bono (botón <b>Editar</b>) o un <b>＋</b> del Universo BYMA para cargar / editar acá.</div>
   </div>
@@ -109,6 +115,7 @@
   .abm-edit { background:var(--accent); color:#fff; border:none; border-radius:5px; padding:3px 11px; cursor:pointer; font:600 11px var(--font-body); }
   .abm-edit:hover { filter:brightness(1.08); }
   .abm-empty { color:var(--text-faint); font-style:italic; text-align:center; padding:24px; }
+  .abm-drawer-err:not(:empty) { padding:10px 14px 0; }
   .abm-err { margin:0 0 8px; padding:8px 10px; border:1px solid var(--neg); border-radius:6px; background:rgba(168,36,43,.1); color:var(--neg); font-weight:600; }
   /* ---- cajón ---- */
   /* z-index POR ENCIMA del header sticky de base.html (z-index:200) — si no, el header

@@ -53,6 +53,12 @@ def _fmt(v, nd=2):
     return f"{v:.{nd}f}" if isinstance(v, (int, float)) else "—"
 
 
+
+def _rows(cfs):
+    """`Cashflow` del synth → filas para `save_instrument` (que ya no sintetiza)."""
+    return [{"date": cf.date.isoformat(), "amortization": cf.amortization,
+             "interest": cf.interest} for cf in cfs]
+
 def main(dry_run: bool = False, force: bool = False) -> int:
     from apps.web.instruments_abm import _safe_synth
 
@@ -72,7 +78,12 @@ def main(dry_run: bool = False, force: bool = False) -> int:
 
     if (rc := guard_write("pre-ypc4o", force=force)):
         return rc
-    res = save_instrument(SHEET, FIELDS, cashflows=None)  # bullet → synth
+    # Fase 9: el write-path del ABM ya NO sintetiza (`cashflow_synth` leía el reloj para
+    # el step-up del cupón → lo persistido dependía del día de la carga) y rechaza un bono
+    # normal sin flujos. El schedule lo MATERIALIZA el caller: se manda la MISMA grilla
+    # que se acaba de imprimir arriba. Sin esto el script reventaba con "sin FLUJO DE
+    # FONDOS" sobre cualquier DB donde YPC4O todavía no existiera.
+    res = save_instrument(SHEET, FIELDS, cashflows=_rows(synth))
     print(f"{res['action']}: {', '.join(res['tickers'])}\n")
 
     r = verify("YPC4D", price=VERIFY_PRICE, price_mode="dirty")
