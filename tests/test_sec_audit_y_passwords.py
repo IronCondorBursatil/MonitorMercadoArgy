@@ -169,3 +169,80 @@ def test_ya_no_se_entra_por_el_header_Authorization(usuarios):
         r = c.get("/", headers={"Authorization": f"Bearer {token}"},
                   follow_redirects=False)
     assert r.status_code == 302, "el header sigue abriendo sesión"
+
+
+# ── revocación de sesiones (token_version) ─────────────────────────────────
+def test_resetear_la_password_cierra_las_sesiones_de_ese_usuario(usuarios):
+    """Sin esto, resetearle la contraseña a alguien —el gesto que uno hace JUSTO
+    cuando sospecha que su cuenta está comprometida— no lo saca: el JWT robado sigue
+    valiendo hasta 12 h porque no hay revocación del lado del servidor."""
+    with TestClient(app) as bob_c, TestClient(app) as admin_c:
+        r = bob_c.post("/login", data={"username": "bob", "password": "bobpass1234"},
+                       follow_redirects=False)
+        assert r.status_code in (302, 303)
+        assert bob_c.get("/", follow_redirects=False).status_code == 200
+
+        _login_admin(admin_c)
+        with SessionLocal() as s:
+            bob_id = s.query(UserORM).filter(UserORM.username == "bob").first().id
+        admin_c.post(f"/users/reset-password/{bob_id}", data={"password": "nuevaclave1"})
+
+        assert bob_c.get("/", follow_redirects=False).status_code == 302, (
+            "la sesión de bob sobrevivió al reset de su contraseña")
+
+
+def test_un_token_sin_version_no_vale(usuarios):
+    """Estricto a propósito: un token viejo (de antes de este cambio) es inválido. En
+    la misma ventana se rota el `jwt_secret`, así que igual morían; una rama 'legacy'
+    permanente en la auth es un pasivo que nadie vuelve a mirar."""
+    from core.security import create_access_token
+
+    with TestClient(app) as c:
+        c.cookies.set("access_token", create_access_token({"sub": "admin"}))
+        assert c.get("/", follow_redirects=False).status_code == 302
+
+
+def test_cambiar_permisos_NO_cierra_la_sesion(usuarios):
+    """Contraste deliberado: `is_admin` y `allowed_tabs` se releen de la base en cada
+    request, así que una degradación ya es inmediata. Bumpear la versión ahí sólo
+    desloguearía gente sin comprar nada."""
+    with TestClient(app) as bob_c, TestClient(app) as admin_c:
+        bob_c.post("/login", data={"username": "bob", "password": "bobpass1234"},
+                   follow_redirects=False)
+        _login_admin(admin_c)
+        with SessionLocal() as s:
+            bob_id = s.query(UserORM).filter(UserORM.username == "bob").first().id
+        admin_c.post(f"/users/update/{bob_id}", data={"tabs": ["bonos", "fci"]})
+        assert bob_c.get("/", follow_redirects=False).status_code == 200
+
+
+def test_la_columna_entra_por_migracion_forward_only(tmp_path):
+    """Espejo del test de `es_ancla`: sobre una tabla `users` PREEXISTENTE sin la
+    columna, `init_db` la agrega con ALTER y las filas viejas quedan en 0."""
+    import sqlalchemy as sa
+
+    from core.infrastructure.db import engine as db_engine
+    from core.infrastructure.db.catalog_repository import init_db
+    from config.settings import settings as _s
+
+    db = tmp_path / "vieja.db"
+    eng = sa.create_engine(f"sqlite:///{db}")
+    with eng.begin() as con:
+        con.exec_driver_sql(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "username VARCHAR NOT NULL, hashed_password VARCHAR NOT NULL, "
+            "is_admin BOOLEAN, allowed_tabs JSON)")
+        con.exec_driver_sql(
+            "INSERT INTO users (username, hashed_password, is_admin, allowed_tabs) "
+            "VALUES ('viejo', 'x', 0, '[]')")
+    eng.dispose()
+
+    db_engine.configure(db)
+    try:
+        init_db()
+        with SessionLocal() as s:
+            fila = s.query(UserORM).filter(UserORM.username == "viejo").first()
+            assert fila is not None, "la fila vieja no sobrevivió"
+            assert (fila.token_version or 0) == 0
+    finally:
+        db_engine.configure(_s.catalog_db)

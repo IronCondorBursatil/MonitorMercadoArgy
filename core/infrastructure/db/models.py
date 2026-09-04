@@ -29,6 +29,13 @@ class UserORM(Base):
     hashed_password: Mapped[str] = mapped_column(String)
     is_admin: Mapped[bool] = mapped_column(default=False)
     allowed_tabs: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["*"])
+    # Version de los tokens del usuario. Va DENTRO del JWT: si no coincide con la de
+    # la fila, el token no vale. Es la unica forma de revocar una sesion en un esquema
+    # sin estado — hasta ahora, resetearle la contrasena a alguien (el gesto que uno
+    # hace justo cuando sospecha que le entraron) NO lo sacaba: el JWT robado seguia
+    # valiendo hasta que expirara. Forward-only: `init_db` la agrega con ALTER y las
+    # filas viejas quedan en 0.
+    token_version: Mapped[int] = mapped_column(default=0)
 
 
 

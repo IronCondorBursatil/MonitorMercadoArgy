@@ -166,7 +166,8 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
                       "Pedile acceso a un administrador."}, status_code=403)
 
     # Generar token JWT
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(
+        data={"sub": user.username, "ver": user.token_version or 0})
 
     # Redirigir a la primera pestaña permitida seteando la cookie
     response = RedirectResponse(url=landing, status_code=status.HTTP_302_FOUND)

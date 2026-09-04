@@ -152,6 +152,10 @@ def reset_password(request: Request, user_id: int, password: str = Form(...),
         return _users_page(request, db, status_code=400, error=invalida)
 
     user.hashed_password = get_password_hash(password)
+    # Cierra las sesiones abiertas de ese usuario. NO se hace en `update_user`: los
+    # permisos se releen de la base en cada request, asi que una degradacion ya es
+    # inmediata y bumpear ahi solo desloguearia gente sin comprar nada.
+    user.token_version = (user.token_version or 0) + 1
     db.commit()
     _audit.info("users action=reset_password by=%s target=%s",
                 _limpio(getattr(admin, "username", "?")), _limpio(user.username),

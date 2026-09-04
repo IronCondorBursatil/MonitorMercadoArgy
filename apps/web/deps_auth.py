@@ -80,6 +80,13 @@ def _get_user_from_token(request: Request, db: Session) -> Optional[UserORM]:
         return _publish(request, None)
 
     user = db.query(UserORM).filter(UserORM.username == username).first()
+    if user is None:
+        return _publish(request, None)
+    # ESTRICTO: un token sin `ver` no vale. Los tokens anteriores a este cambio mueren
+    # igual con la rotacion del jwt_secret que va en la misma ventana, y dejar una rama
+    # "legacy" permanente en la auth es un pasivo que despues nadie vuelve a mirar.
+    if payload.get("ver", -1) != (user.token_version or 0):
+        return _publish(request, None)
     return _publish(request, user)
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> UserORM:
