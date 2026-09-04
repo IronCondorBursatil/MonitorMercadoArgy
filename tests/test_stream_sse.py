@@ -4,6 +4,7 @@ import asyncio
 
 from apps.web.app import app
 from apps.web.state import AppState
+from tests._routes import app_route_paths
 
 
 def test_appstate_revision_starts_zero():
@@ -33,5 +34,6 @@ def test_wait_for_change_returns_immediately_when_already_changed():
 
 
 def test_stream_route_registered():
-    paths = {getattr(r, "path", None) for r in app.routes}
-    assert "/stream" in paths
+    # `app_route_paths` en vez de recorrer `app.routes`: desde FastAPI 0.141 las rutas
+    # de un router incluido viven detrás de un wrapper sin `.path` (ver tests/_routes.py).
+    assert "/stream" in app_route_paths(app)

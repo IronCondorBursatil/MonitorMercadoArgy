@@ -3,11 +3,13 @@
 from fastapi.testclient import TestClient
 
 from apps.web.app import app
+from tests._routes import app_route_paths
 
 
 def test_health_badge_route_registered():
-    paths = {getattr(r, "path", None) for r in app.routes}
-    assert "/health/badge" in paths
+    # Ver tests/_routes.py: desde FastAPI 0.141 `app.routes` no trae las rutas de los
+    # routers incluidos, sino un wrapper sin `.path`.
+    assert "/health/badge" in app_route_paths(app)
 
 
 def test_badge_shows_stale_when_never_refreshed():

@@ -19,6 +19,8 @@ import pytest
 from fastapi import Depends, FastAPI
 from starlette.routing import Mount
 
+from tests._routes import iter_app_routes
+
 # Nombres (qualname) que marcan una dependencia de autenticación.
 _AUTH_MARKERS = ("get_current_user", "get_admin_user", "RequireTabPermission")
 
@@ -50,7 +52,12 @@ def routes_without_auth(app):
     if os.environ.get("MONITOR_ENABLE_DOCS"):
         allowed |= _DOCS_PATHS
     offenders = []
-    for route in app.routes:
+    # `iter_app_routes` aplana los wrappers `_IncludedRouter` de FastAPI >= 0.141 (la
+    # versión que corre el servidor) y devuelve aparte las dependencias que se pasaron
+    # en `include_router(..., dependencies=[...])`, que en esa versión NO quedan en el
+    # `dependant` de la ruta. Sin eso este guard ve 4 rutas en vez de 66 — ver
+    # `tests/_routes.py`.
+    for route, heredadas in iter_app_routes(app):
         path = getattr(route, "path", None) or getattr(route, "path_format", "?")
         if isinstance(route, Mount):
             if path not in _PUBLIC_MOUNTS:
@@ -65,6 +72,7 @@ def routes_without_auth(app):
             offenders.append((path, f"{type(route).__name__} sin árbol de dependencias"))
             continue
         names = _auth_dep_names(dependant)
+        names |= {getattr(c, "__qualname__", None) or type(c).__name__ for c in heredadas}
         if not any(marker in n for n in names for marker in _AUTH_MARKERS):
             offenders.append((path, f"sin dep de auth (deps: {sorted(names)})"))
     return offenders
@@ -112,3 +120,30 @@ def test_el_walker_no_saltea_rutas_sin_arbol_de_dependencias():
     with_docs = FastAPI(docs_url="/docs", openapi_url="/openapi.json")
     offenders = dict(routes_without_auth(with_docs))
     assert "/openapi.json" in offenders and "/docs" in offenders
+
+
+@pytest.mark.noauth
+def test_el_walker_ve_TODAS_las_rutas_y_no_solo_las_de_nivel_app():
+    """El guard de arriba sólo sirve si efectivamente RECORRE la app.
+
+    Esta es la lección de 2026-09-04: con FastAPI 0.141 (la versión que instala
+    `requirements.txt`, o sea la que corre el servidor) `app.routes` dejó de traer las
+    rutas de los routers incluidos y pasó a traer un wrapper sin `.path`. El walker
+    veía 4 rutas en vez de 66. Esta vez falló ruidoso por casualidad —los wrappers
+    cayeron en la rama "sin árbol de dependencias"—; con otra forma podría haber
+    quedado VERDE inspeccionando nada, que es el peor final posible para un guard de
+    seguridad. Este test le pone piso: si mañana el recorrido vuelve a quedar ciego,
+    rompe acá y no en producción.
+    """
+    from apps.web.app import app
+
+    from tests._routes import app_route_paths
+
+    paths = app_route_paths(app)
+    assert len(paths) >= 40, (
+        f"el walker sólo ve {len(paths)} rutas: casi seguro FastAPI volvió a cambiar la "
+        f"forma de `app.routes` y `tests/_routes.py` quedó ciego. Rutas: {sorted(paths)}")
+    # Una de cada familia: router público, router con RequireTabPermission, router de
+    # admin, parcial de HTMX y ruta declarada directo en la app.
+    for esperada in ("/login", "/panels/{panel_id}/rows", "/users", "/stream", "/api/health"):
+        assert esperada in paths, f"falta {esperada} — el recorrido está incompleto"
