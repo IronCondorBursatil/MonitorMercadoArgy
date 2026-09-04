@@ -152,6 +152,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     from sqlalchemy import select
 
+    from core.infrastructure.db.engine import get_engine
+
     from core.infrastructure.db.catalog_repository import init_db
     from core.infrastructure.db.engine import SessionLocal
     from core.infrastructure.db.models import InstrumentORM
@@ -165,6 +167,28 @@ def main(argv: Optional[List[str]] = None) -> int:
         especies = sum(len(e["tickers"]) for e in plan)
 
     print(f"migracion {MIGRATION_ID}")
+    # QUE base, siempre y antes que nada. Este script se corre A MANO en prod, y en
+    # el droplet `MONITOR_DB_DIR` vive en el drop-in de systemd: un `venv/bin/python
+    # scripts/...` desde la shell del operador NO lo hereda y `db_dir` cae al default
+    # (~/.local/share/monitor). Sin esta linea el script apuntaba a otra base y no lo
+    # decia.
+    #
+    # Sale del ENGINE, no de `settings.catalog_db`: esa es la ruta PRETENDIDA, y
+    # `db_engine.configure()` puede haberla movido (los tests lo hacen). La unica
+    # respuesta honesta a "¿a que base le estoy pegando?" es la que el engine abrio.
+    print(f"catalog.db : {get_engine().url.database}")
+    print(f"instrumentos en esa base: {len(rows)}")
+    print()
+    if not rows:
+        # Catalogo vacio = casi seguro la base equivocada. "Nada que anclar" sobre una
+        # base vacia es INDISTINGUIBLE de "ya estaba aplicado", y esa ambiguedad en una
+        # migracion de prod se paga cara: abortar es la unica salida honesta.
+        print("ABORTADO: esa base no tiene NI UN instrumento.")
+        print("  Casi seguro es la base equivocada. En el droplet, db_dir se fija en el")
+        print("  drop-in de systemd y NO lo hereda tu shell -- pasalo explicito:")
+        print("      MONITOR_DB_DIR=/var/lib/monitor venv/bin/python \\")
+        print("          scripts/backfill_tamar_anchor.py")
+        return 4
     print(f"bonos de payoff analitico sin filas y con vencimiento: {len(plan)} "
           f"({especies} especies con sus patas de moneda)\n")
     print_plan(plan, faltan_vto, con_flujos)

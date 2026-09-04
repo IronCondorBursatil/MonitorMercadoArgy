@@ -239,8 +239,13 @@ En prod hay que setear:
   (`get_instrument` la filtra y devuelve `cashflows_source="analitico"`) y el preview
   (`preview_cashflows` no propone nada, porque el save lo descartaría). Backfill de una DB
   ya poblada: `scripts/backfill_tamar_anchor.py` (dry-run por default, forward-only,
-  idempotente). **Ya corrido en la `catalog.db` local (14 bonos, 2026-09-04); el droplet
-  necesita su propia corrida** — `deploy.sh` no ejecuta migraciones.
+  idempotente; imprime contra QUÉ base corre y aborta si no tiene instrumentos — en el
+  droplet `MONITOR_DB_DIR` vive en el drop-in de systemd y una shell manual NO lo hereda).
+  **Ya corrido en la `catalog.db` local (14 bonos, 2026-09-04).** Ojo con qué compra el
+  backfill: `/cashflows` y el pricing son IGUALES con o sin ancla (la fila del panel se
+  sintetiza desde `maturity_date`); lo único que cambia es la tabla de completitud del
+  ABM, donde `cfn` es un `COUNT(*)` crudo y esos 14 figuran en rojo por «falta
+  Cashflows» hasta que se corra.
 - **La ABM ya NO sintetiza al guardar**: `cashflow_synth` lee el RELOJ para resolver el step-up
   del cupón, así que el schedule que quedaba en la DB dependía del DÍA DEL ALTA (el mismo form
   daba 0,63% en 2026 y 1,18% en 2028). La síntesis quedó como PREVIEW

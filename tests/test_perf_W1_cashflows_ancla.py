@@ -825,3 +825,30 @@ def test_los_ingest_de_on_materializan_su_schedule(tmp_catalog, modulo, ticker):
     assert guardado is not None, "%s no quedó cargado" % ticker
     assert [(d, a, i) for d, a, i, _anc in guardado] == [
         (cf.date, cf.amortization, cf.interest) for cf in synth]
+
+
+# --------------------------------------------------------------------------- #
+# 10 · El backfill corre A MANO, en prod, contra la base equivocada con una sola
+#      variable de entorno de diferencia: en el droplet `MONITOR_DB_DIR` vive en el
+#      drop-in de systemd y un `venv/bin/python scripts/...` desde la shell NO lo ve
+#      (resuelve a ~/.local/share/monitor, vacío). Sin estas dos guardas el script
+#      imprimía "Nada que anclar" y el operador se iba convencido de que ya estaba.
+# --------------------------------------------------------------------------- #
+
+def test_el_backfill_dice_contra_que_base_corre(tmp_catalog, capsys):
+    bf = _backfill_mod()
+    _add_bond("BF1", "PURO", [])
+    assert bf.main([]) == 0
+    salida = capsys.readouterr().out
+    assert "w1_ancla.db" in salida, "no dice a qué .db le pega:\n%s" % salida
+
+
+def test_el_backfill_aborta_si_el_catalogo_esta_vacio(tmp_catalog, capsys):
+    """Catálogo sin un solo instrumento = casi seguro la DB equivocada. Abortar es
+    la única salida honesta: 'nada que anclar' sobre una base vacía es indistinguible
+    de 'ya estaba aplicado'."""
+    bf = _backfill_mod()
+    assert bf.main([]) != 0                      # dry-run tambien aborta
+    salida = capsys.readouterr().out
+    assert "MONITOR_DB_DIR" in salida             # y dice cuál es la perilla
+    assert bf.main(["--apply"]) != 0
