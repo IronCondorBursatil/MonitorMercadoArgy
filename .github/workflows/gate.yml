@@ -1,0 +1,49 @@
+# Gate de calidad (ruff + pytest) — el mismo que `scripts/check.ps1` corre a mano en
+# Windows, ejecutado por GitHub Actions en Linux x86 y en Linux ARM.
+#
+# Por qué las DOS arquitecturas: el servidor de producción es un Ampere A1 (aarch64) y
+# hasta 2026-09 la suite JAMÁS corrió en Linux — hay tests con ramas `hasattr(time,
+# "tzset")` que en Windows nunca se ejecutaron. El runner x86 da la señal rápida; el ARM
+# da paridad real con lo que produce (mismas wheels de numpy/scipy, mismo uvloop).
+#
+# Instala `requirements.txt` (NO el `.lock`) a propósito: es lo que instala `deploy.sh`
+# en el servidor, así que un drift de las versiones abiertas aparece acá antes que en
+# producción. El lock sigue siendo para el bootstrap local reproducible.
+name: gate
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # `tests/conftest.py` redirige TODAS las bases a un sandbox bajo
+      # `tempfile.gettempdir()` y sólo acepta `MONITOR_TEST_DB_DIR` si cae ahí adentro.
+      # En los runners `TMPDIR` es /tmp, así que no hay nada que configurar; se deja
+      # explícito para que se note si algún runner futuro lo cambia.
+      - name: Gate (ruff + pytest)
+        env:
+          TMPDIR: /tmp
+        run: bash scripts/check.sh

@@ -56,3 +56,25 @@ def test_check_ps1_no_afirma_que_no_hay_remoto():
     assert "repo local" not in txt
     assert "mergear a master" not in txt
     assert "main" in txt, "el gate tiene que nombrar el trunk real (origin/main)"
+
+
+def test_check_sh_es_el_gemelo_linux_del_gate():
+    """`check.sh` lo corren el CI (x86 + ARM) y un humano en el servidor. Tiene que
+    decir lo mismo que `check.ps1` sobre el trunk, exigir 3.12 (run.py aborta con
+    otra minor) y correr las DOS mitades del gate."""
+    txt = (ROOT / "scripts" / "check.sh").read_text(encoding="utf-8")
+    assert "repo local" not in txt
+    assert "mergear a master" not in txt
+    assert "main" in txt, "el gate tiene que nombrar el trunk real (origin/main)"
+    assert "ruff check" in txt and "pytest" in txt, "el gate corre ruff Y pytest"
+    assert "3.12" in txt, "el interprete esta pinneado a 3.12 (run.py lo exige)"
+
+
+def test_el_workflow_del_gate_corre_en_arm_y_usa_check_sh():
+    """El servidor es aarch64 y la suite nunca habia corrido en Linux: el CI tiene que
+    ejercitar ARM, no solo x86. Y tiene que invocar el MISMO script que el humano, no
+    una copia divergente de los comandos."""
+    txt = (ROOT / ".github" / "workflows" / "gate.yml").read_text(encoding="utf-8")
+    assert "ubuntu-24.04-arm" in txt, "falta el runner ARM (paridad con el servidor)"
+    assert "scripts/check.sh" in txt, "el CI tiene que correr el gate compartido"
+    assert "requirements.txt" in txt, "el CI instala lo que instala deploy.sh"
