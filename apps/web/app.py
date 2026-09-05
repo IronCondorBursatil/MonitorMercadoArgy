@@ -44,6 +44,7 @@ from apps.web.routers import (
     abm, bcra, bonds, cartera, cashflows, catalog, curva, escenarios, fci, header,
     on, options, panels, source, stream,
 )
+from core.domain.options.chain import init_worker as _init_worker_del_dominio
 from apps.web.state import AppState
 from apps.web.supervisor import supervise
 from config.settings import settings
@@ -140,18 +141,18 @@ def _crear_pool_de_opciones():
         return None
 
 
-def _init_worker_de_opciones() -> None:
-    """Inicializador de los workers del pool de opciones.
-
-    Delgado A PROPOSITO: el cuerpo vive en `core.domain.options.chain` porque
-    `multiprocessing` picklea el initializer por nombre calificado y cada worker
-    importa el modulo que lo define. Definirlo aca hacia que cada hijo `spawn`
-    importara FastAPI entero. Se conserva el nombre porque `_crear_pool_de_opciones`
-    y sus tests lo referencian.
-    """
-    from core.domain.options.chain import init_worker
-
-    init_worker()
+# ALIAS, no una cascara: `multiprocessing` picklea el `initializer=` por NOMBRE
+# CALIFICADO, y ese nombre sale del `__module__`/`__qualname__` de la funcion REAL,
+# no de como se la llame aca. Por eso un alias resuelve a
+# `core.domain.options.chain.init_worker` y el worker `spawn` importa 205 modulos.
+#
+# Definir una funcion propia en este modulo --aunque delegara en la del dominio-- la
+# pickleaba como `apps.web.app._init_worker_de_opciones`, y cada worker volvia a
+# importar FastAPI, los routers, SQLAlchemy, httpx y pydantic: 1877 modulos y ~100 MB
+# por worker, x3. El primer intento del arreglo cayo exactamente en esa trampa y el
+# test de entonces --que comprobaba que importar chain.py no trae la web-- pasaba en
+# verde por encima del bug. El nombre viejo se conserva porque lo usan los tests.
+_init_worker_de_opciones = _init_worker_del_dominio
 
 
 async def _options_loop(app: FastAPI) -> None:

@@ -231,17 +231,46 @@ def test_el_worker_no_arrastra_la_app_web():
         f"el módulo del worker arrastra la app web: {r.stdout.strip()}")
 
 
-def test_el_initializer_de_la_app_delega_en_el_del_dominio():
-    """El nombre viejo se conserva (lo referencian `_crear_pool_de_opciones` y sus
-    tests), pero tiene que ser una cáscara: si el cuerpo vuelve a `app.py`, vuelve el
-    import de 162 MB por worker."""
-    import inspect
+def test_el_initializer_PICKLEA_al_modulo_de_dominio():
+    """Lo que decide que importa cada worker `spawn` es el NOMBRE CALIFICADO con que
+    `multiprocessing` serializa el `initializer=` — o sea el modulo donde la funcion
+    esta DEFINIDA, no donde se la nombra.
+
+    El primer intento de este arreglo movio el CUERPO a `chain.py` pero dejo en
+    `app.py` una cascara, y el pickle seguia diciendo `apps.web.app...`: cada worker
+    importaba FastAPI igual. El test de entonces comprobaba que importar `chain.py`
+    no trae la web —cierto pero irrelevante— y pasaba en verde sobre el bug.
+    Este comprueba el nombre que DE VERDAD viaja."""
+    import pickle
 
     from apps.web.app import _init_worker_de_opciones
 
-    fuente = inspect.getsource(_init_worker_de_opciones)
-    assert "from core.domain.options.chain import init_worker" in fuente
-    assert "removeHandler" not in fuente, "el cuerpo volvió a la app web"
+    inicializador = _init_worker_de_opciones
+    viajado = pickle.loads(pickle.dumps(inicializador))
+    assert viajado.__module__ == "core.domain.options.chain", (
+        f"el worker va a importar {viajado.__module__}: si es la app web, son 1877 "
+        "modulos y ~100 MB por worker")
+
+
+def test_el_pool_recibe_el_inicializador_del_dominio(monkeypatch):
+    """El extremo a extremo: lo que `_crear_pool_de_opciones` le pasa al executor
+    tiene que ser el del dominio, no una cascara de la app."""
+    import apps.web.app as A
+
+    capturado = {}
+
+    class _FakeExecutor:
+        def __init__(self, **kw):
+            capturado.update(kw)
+
+    monkeypatch.setattr("concurrent.futures.ProcessPoolExecutor", _FakeExecutor)
+    monkeypatch.setattr(A.settings, "options_workers", 3, raising=False)
+    # conftest deja MONITOR_DISABLE_LOOPS puesto y con eso el pool ni se crea.
+    monkeypatch.delenv("MONITOR_DISABLE_LOOPS", raising=False)
+    A._crear_pool_de_opciones()
+    ini = capturado.get("initializer")
+    assert ini is not None, "el pool se creo sin inicializador"
+    assert ini.__module__ == "core.domain.options.chain", ini.__module__
 
 
 def test_un_pool_CERRADO_no_recalcula_lo_que_se_va_a_tirar():
