@@ -199,6 +199,17 @@ class Settings(BaseSettings):
     # dejan margen para meses de 31 y para un hueco de días sin corte.
     fci_history_keep_days: int = 400
     index_ruedas: int = 5               # ventana del sparkline de índices (ruedas)
+    # Alta AUTOMATICA de letras nuevas desde ArgentinaDatos (`MONITOR_LETRAS_AUTOSYNC`).
+    # Es la unica escritura automatica en el catalogo --la fuente de verdad-- desde una
+    # fuente de terceros, asi que vale decir por que se banca:
+    #   * SOLO AGREGA. Nunca pisa ni borra una fila que ya esta (`letras_sync` no tiene
+    #     camino de update ni de delete: las diferencias se reportan y listo).
+    #   * Escribe por `instruments_abm.save_instrument`, con todos sus guards.
+    #   * Valida cada fila en el borde y RECHAZA el payload entero si viene con muchas
+    #     menos letras vivas de las que ya hay (mismo criterio que el corte de ratings).
+    #   * Cada alta se audita a journald.
+    # En `false` el loop sigue mirando y avisando por log, pero no escribe.
+    letras_autosync: bool = True
     # Guard "nada de .db dentro del proyecto": por default DENUNCIA (ERROR al boot,
     # ver `_check_db_paths`) pero deja arrancar, porque un droplet desplegado antes
     # de este cambio ya tiene la base viva adentro del árbol y abortar lo dejaría

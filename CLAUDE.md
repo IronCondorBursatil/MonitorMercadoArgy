@@ -112,8 +112,9 @@ por eso NO se supervisa):
   De ahí la asimetría 60s vs 5s que se ve en el panel de Opciones.
 - `_bei_loop` (`bei_refresh_sec`, 300s): `apps.cli.bei.compute_bei_tables`.
 - `_price_history_loop` (`price_history_sec`, 1h): mantiene el store de cierres diarios
-  para los rendimientos (priming Data912 `/historical/bonds` + acumulación del feed) y
-  **además acumula el corte diario de ArgentinaDatos en `fci_history`** (flujos del FCI).
+  para los rendimientos (priming Data912 `/historical/bonds` + acumulación del feed),
+  **acumula el corte diario de ArgentinaDatos en `fci_history`** (flujos del FCI), toma
+  el backup periódico del catálogo y **da de alta las letras nuevas** (ver abajo).
 - `_ratings_loop`: 1 corte por día de FIX SCR (si ya está el de hoy no re-scrapea; tras un
   corte nuevo invalida el cache de `ratings`).
 
@@ -228,6 +229,22 @@ En prod hay que setear:
   explícita, no re-seed. El re-seed (`ingest_master.py`) tiene guards anti-pérdida: aborta con el
   server vivo, si borraría altas DB-only, o si el backup de seguridad pre-reseed falló
   (`--force` para override consciente; el snapshot pre-op es incondicional, `backup_db(tag=...)`).
+- **Alta automática de letras = la ÚNICA escritura automática en el catálogo**
+  (`apps/web/letras_service.py` + `core/domain/../letras_sync.py`, cableada al final de
+  `_price_history_loop`). Trae `GET /v1/finanzas/letras` de ArgentinaDatos y da de alta
+  las LECAP/BONCAP que faltan. Como el catálogo es la FUENTE DE VERDAD y esto escribe
+  solo desde una fuente de terceros, las reglas son duras y hay tests que las fijan:
+  **sólo agrega** (nunca pisa ni borra: no existe camino de update ni de delete, las
+  diferencias se reportan por WARNING), **sólo con dato completo** (sin `fechaEmision`
+  no hay alta: la API la manda vacía en 12 de 18 y no se puede deducir), **nunca una
+  vencida** (la API lista letras muertas: S17A6 seguía en el payload 5 meses después de
+  vencer), y **un `tem: 0` es dato AUSENTE, no una tasa de cero** (mismo error que
+  `ccp<=0` en `fci_history`). Descarta el payload ENTERO si trae menos del 60% de las
+  letras vivas que ya hay (mismo criterio que el corte de ratings). Escribe por
+  `instruments_abm.save_instrument` —el borde con los guards— y NO por SQL. Corre
+  DESPUÉS del backup del día, así toda alta queda precedida por una copia. Cada alta se
+  audita a journald. Perilla: `MONITOR_LETRAS_AUTOSYNC=false` (sigue mirando y avisando,
+  sin escribir). A mano: `scripts/sync_letras.py` (dry-run por default, `--apply`).
 - **Payoff analítico ⇒ fila ANCLA, nunca schedule**: TAMAR PURO / DUAL / DUAL_CER_TAMAR
   (`instrument_groups.ANALYTIC_PAYOFF_TYPES`, verificada CONTRA el registry por test) cobran
   por fórmula cerrada (`pricing/tamar.tamar_dual_payoff_at`), así que materializarles un

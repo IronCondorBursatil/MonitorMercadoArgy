@@ -423,6 +423,35 @@ async def _price_history_loop(app: FastAPI) -> None:
                 logger.info("catalog backup periódico: %s", bak.name)
         except Exception:  # noqa: BLE001 — el backup no debe tumbar el loop
             logger.warning("backup periódico de catalog.db falló", exc_info=True)
+        # Letras: da de alta las LECAP/BONCAP nuevas que publica ArgentinaDatos. Va
+        # DESPUES del backup a proposito: es la unica escritura automatica sobre el
+        # catalogo, y asi toda alta queda precedida por una copia del dia.
+        #
+        # Solo AGREGA (nunca pisa ni borra), valida cada fila en el borde y descarta
+        # el payload entero si llega anemico. Con `letras_autosync=false` mira y avisa
+        # pero no escribe. `to_thread`: pega a la API sync y escribe SQLite.
+        try:
+            from apps.web.letras_service import sincronizar as _sync_letras
+            plan = await asyncio.to_thread(_sync_letras,
+                                           aplicar=settings.letras_autosync)
+            if plan.aplicadas:
+                logger.info("Letras: alta automatica de %s", ", ".join(plan.aplicadas))
+            if plan.altas and not settings.letras_autosync:
+                logger.info("Letras: %d nueva(s) sin cargar (autosync apagado): %s",
+                            len(plan.altas), ", ".join(a["ticker"] for a in plan.altas))
+            if plan.incompletas:
+                logger.info("Letras: %d nueva(s) que la API manda incompletas, hay que "
+                            "cargarlas por la ABM: %s", len(plan.incompletas),
+                            ", ".join(i["ticker"] for i in plan.incompletas))
+            if plan.diferencias:
+                logger.warning("Letras: %d difieren de la API y NO se tocan: %s",
+                               len(plan.diferencias),
+                               "; ".join("%s (%s)" % (d["ticker"], ", ".join(d["difs"]))
+                                         for d in plan.diferencias))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — una API de terceros no tumba el loop
+            logger.warning("sincronizacion de letras falló", exc_info=True)
         # Poda del store de precios: el read-path solo mira ~400 días, así que todo lo
         # anterior era RAM y disco que nadie leía y que crecía sin techo (~54k filas/año).
         try:
