@@ -57,8 +57,17 @@ monitor ya consume.
 
 Separada de `byma_catalog` a propósito: un re-seed del universo jamás pisa las decisiones
 de triage. `byma_catalog` sigue siendo el store de metadata; el job le hace **upsert
-(nunca delete)** y gana una columna `last_seen`. El CSV `titulos_final.csv` queda como
-semilla de bootstrap (sin cambios acá).
+(nunca delete)** y gana tres columnas: `last_seen` (última corrida que vio el símbolo),
+`denominacion` y `vencimiento` (de la ficha técnica BYMA, cuando la trae). El CSV
+`titulos_final.csv` queda como semilla de bootstrap, pero **el arranque deja de
+re-sembrarla**: hoy `_startup_reconcile` hace DELETE+INSERT del CSV en cada boot y eso
+borraría lo que el job agregó; pasa a sembrar **sólo si la tabla está vacía** (mismo modelo
+que las ON) y la siembra corre en el **lifespan, antes de crear cualquier loop** (dentro de
+`_startup_reconcile` era el 6º paso, después de minutos de fichas, en paralelo con el primer
+diff del job). Con estado del job en la tabla (`last_seen`), `ingest_byma_catalog` se
+rechaza salvo `force=True`. La corrida del día y cuántos símbolos vio se sellan en `schema_meta`
+(`universe_ultima_corrida`, `universe_ultimos_vistos`), como ya hacen los scripts de
+backfill con sus propias claves.
 
 Transiciones de `estado`:
 
@@ -69,29 +78,42 @@ Transiciones de `estado`:
 
 ## 2. Job diario y fuentes
 
-**Loop asyncio nuevo** (`_universe_loop`, mismo patrón que `_ratings_loop`): duerme hasta
-las 08:00 de America/Argentina/Buenos_Aires y ejecuta:
+**Loop asyncio nuevo** (`_universe_loop`, mismo patrón que `_ratings_loop`): a partir de
+las 08:00 de America/Argentina/Buenos_Aires, una vez por día, ejecuta:
 
-1. **Fetch vivo**: la rueda BYMA open (todas las pizarras que la API expone — si hoy el
-   provider pide un subconjunto, la corrida amplía la cobertura de LECTURA a las que
-   falten: cedears, cauciones, etc.; un tipo de activo que la API no publique no genera
-   novedades) + snapshot Data912 (los endpoints que el hub ya consume). Solo las dos APIs;
-   ninguna fuente nueva.
-2. **Upsert de universo**: símbolos + metadata a `byma_catalog` (solo agregar/actualizar,
-   `last_seen` al día; nunca borrar). Enrich de ficha BYMA **solo** para símbolos nuevos.
+1. **Lectura del hub, no fetch nuevo.** A las 08:00 BYMA responde `data: []` (pre-market):
+   un fetch fresco rechazaría la corrida todas las mañanas. El hub es stale-safe y conserva
+   la rueda anterior (`hub.snapshot()` ∪ `hub.sources()`), que es exactamente «el universo
+   de esta mañana». Procedencia: `hub.freshness()` lista lo que trajo la fuente ACTIVA, sea
+   cual sea; cuenta como `byma` sólo si `hub.active_mode` empieza con `byma` (con Data912
+   activa todo es `data912`); el resto vino del floor Data912. Cobertura = las 6 pizarras BYMA open que el
+   provider ya pide (líderes, general, **cedears**, títulos públicos, letras, ON) + los 4
+   endpoints Data912. Opciones y cauciones quedan fuera a propósito: son contratos, no
+   especies que se carguen en el ABM. Las filas de la rueda no traen metadata (denominación,
+   emisor, ISIN, vencimiento): eso sale de la **ficha técnica BYMA, sólo para los símbolos
+   nuevos** (best-effort, cap por corrida), y la categoría del bucket del hub
+   (`notes`→Letras, `bonds`→Títulos Públicos, `corp`→ON, `stocks`→Acciones,
+   `cedears`→Cedears) con la moneda por sufijo (`core/domain/currency.py`).
+2. **Upsert de universo**: símbolos nuevos + metadata a `byma_catalog` (solo agregar;
+   `last_seen` al día para todo lo visto; nunca borrar ni pisar metadata existente).
 3. **Diff contra la línea de base** = `byma_catalog` ANTES del upsert de la corrida ∪
    `instruments` ∪ patas ∪ `universe_novedades`. Símbolo visto que no está en la base →
    fila `nueva`. Símbolo en estado `nueva` que ya fue cargado → pasa a `cargada`.
    Consecuencia: la primera corrida NO marca como nuevas las ~4.700 especies del seed CSV
    (ya conocidas: viven en el Universo del ABM); sí aflora los huecos genuinos tipo
    `S29E7` que las fuentes vivas traen y el universo conocido no tenía.
-4. **Guard de fuente rota**: si una fuente viene vacía o con forma inesperada, WARNING y
-   **no se toca nada** de esa fuente (ni estados ni universo) — mismo espíritu que el
-   guard del 60 % del autosync de letras. Un `0`/payload vacío es dato ausente.
+4. **Guard de lectura rota**: si el hub trae 0 símbolos, menos de 50, o menos del 60 % de
+   los que vio la corrida anterior (server reiniciado antes de la rueda, breaker abierto),
+   WARNING y **no se toca nada** — mismo espíritu que el guard del autosync de letras. La
+   corrida NO se sella como hecha y se reintenta cada hora hasta que entre. Mismo rechazo
+   si `byma_catalog` está vacío (sin línea de base: la siembra no corrió o falló) y si ya
+   hay una corrida en curso (un lock: el loop y «Refrescar ahora» no se solapan).
 
-Corre todos los días (los findes no habrá novedades; es inocuo). Crash del loop →
-`record_loop_crash` → ámbar (loop lateral, no crítico; el semáforo de precios no se toca).
-Bajo pytest no arranca (`MONITOR_DISABLE_LOOPS=1`).
+Ritmo: primera oportunidad a las 08:00 AR (antes de esa hora duerme hasta las 08:00; si el
+día ya se selló duerme hasta las 08:00 de mañana). Corre todos los días (los findes no
+habrá novedades; es inocuo). Crash del loop → `record_loop_crash` → ámbar (loop lateral,
+no crítico; el semáforo de precios no se toca). Bajo pytest no arranca
+(`MONITOR_DISABLE_LOOPS=1`).
 
 **«Refrescar ahora»**: POST admin en el ABM que dispara la misma corrida a demanda
 (pasa por `reject_cross_site` como toda mutación).
@@ -103,11 +125,16 @@ Bajo pytest no arranca (`MONITOR_DISABLE_LOOPS=1`).
   moneda, volumen del día si cotiza (del snapshot del hub, como ya hace el Universo),
   fuente y fecha de detección.
 - Acciones por especie: **Cargar** (abre el cajón con el form prefillado) y **Descartar**.
-  Las descartadas viven en un grupo colapsado al final con «Restaurar».
-- **Prefill enriquecido**: además de lo que ya precarga `prefill_for`, se sugiere
-  `instrument_type` por mapeo categoría→tipo (editable; si no hay mapeo claro, sin
-  sugerencia — nunca se inventa un tipo: manda el invariante de `instrument_groups`),
-  y vencimiento/datos de ficha cuando existan.
+  Las descartadas viven en un grupo colapsado al final con «Restaurar». «Cargar» sólo
+  aparece en categorías que tienen hoja en el ABM (Títulos Públicos, ON); Acciones,
+  Cedears, Índices y demás sólo ofrecen Descartar (las acciones ya se registran solas al
+  arranque; el resto no se precia).
+- **Prefill enriquecido**: además de lo que ya precarga `prefill_for`, una especie del panel
+  **Letras** con prefijo `S`+dígito abre la hoja Tasa Fija con `clase=LECAP`, y `T`+dígito
+  con `clase=BONCAP` (TO26/TY30P/TTM26 —letra después de la T— NO reciben clase: son
+  BONTE/duales y el operador decide). El vencimiento de la ficha prefillea
+  `fecha_pago`/`fecha_vencimiento` según la hoja. Nunca se inventa un tipo: manda el
+  invariante de `instrument_groups`.
 - Al guardar un alta cuyo símbolo está en `universe_novedades`, la novedad pasa a
   `cargada` sin intervención.
 - La pestaña «Universo BYMA» actual queda como está (buscador general).
@@ -122,7 +149,11 @@ Bajo pytest no arranca (`MONITOR_DISABLE_LOOPS=1`).
 
 ## 5. Manejo de errores
 
-- Fuente rota/vacía → WARNING + skip de esa fuente (punto 2.4). La otra fuente procesa igual.
+- Fuente rota/vacía → no aporta nada nuevo al ciclo, pero el hub conserva la rueda
+  anterior de esa fuente (stale-safe). El job no distingue fuentes: aplica el guard de 2.4
+  sobre el TOTAL mergeado (BYMA ∪ floor Data912). Sólo con el server recién arrancado antes
+  de la rueda el total puede caer bajo el guard; entonces la corrida entera se rechaza y se
+  reintenta cada hora. Si el total supera el guard, se procesa lo que haya.
 - Enrich de ficha que falla para un símbolo → la novedad entra igual con la metadata del
   feed; la ficha es best-effort (como hoy en `_startup_reconcile`).
 - El botón «Refrescar ahora» reporta el resultado en el ABM (n novedades / error), no en logs.
