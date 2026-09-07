@@ -20,9 +20,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set
+from typing import Dict, Iterable, List, Optional, Set, Tuple
+
+from sqlalchemy import func, inspect, select
 
 from core.domain.currency import ccy_from_suffix
+from core.infrastructure.db.catalog_repository import init_db
+from core.infrastructure.db.engine import SessionLocal, get_engine
+from core.infrastructure.db.models import BymaCatalogORM, UniverseNovedadORM
 
 logger = logging.getLogger(__name__)
 
@@ -158,3 +163,144 @@ def proximo_despertar(now: datetime, *, hecha_hoy: bool) -> float:
     elif now >= objetivo:
         return 0.0
     return max(0.0, (objetivo - now).total_seconds())
+
+
+# ── store: `universe_novedades` + claves propias en `schema_meta` ──────────────
+def _ahora() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _norm(symbol) -> str:
+    return str(symbol or "").upper().strip()
+
+
+def registrar_nuevas_en(s, nuevas: Iterable[dict], *, hoy) -> List[str]:
+    """Inserta como `nueva` las que NO existen. Una fila existente (en cualquier estado)
+    se respeta: el operador ya decidió, o el job ya la vio."""
+    out: List[str] = []
+    for f in nuevas:
+        sym = _norm(f.get("symbol"))
+        if not sym or s.get(UniverseNovedadORM, sym) is not None:
+            continue
+        s.add(UniverseNovedadORM(symbol=sym, first_seen=hoy.isoformat(),
+                                 source=f.get("source") or "data912",
+                                 categoria=f.get("categoria"), estado="nueva",
+                                 updated_at=_ahora()))
+        out.append(sym)
+    return sorted(out)
+
+
+def marcar_cargadas_en(s, symbols: Iterable[str]) -> List[str]:
+    """`nueva` → `cargada` para los símbolos dados (sólo las pendientes)."""
+    syms = {_norm(t) for t in symbols if t}
+    if not syms:
+        return []
+    filas = s.execute(select(UniverseNovedadORM).where(
+        UniverseNovedadORM.symbol.in_(sorted(syms)),
+        UniverseNovedadORM.estado == "nueva")).scalars().all()
+    for f in filas:
+        f.estado = "cargada"
+        f.updated_at = _ahora()
+    return sorted(f.symbol for f in filas)
+
+
+def marcar_cargadas(symbols: Iterable[str]) -> List[str]:
+    init_db()
+    with SessionLocal.begin() as s:
+        return marcar_cargadas_en(s, symbols)
+
+
+def _cambiar_estado(symbol: str, desde: str, hacia: str) -> bool:
+    init_db()
+    with SessionLocal.begin() as s:
+        f = s.get(UniverseNovedadORM, _norm(symbol))
+        if f is None or f.estado != desde:
+            return False
+        f.estado = hacia
+        f.updated_at = _ahora()
+        return True
+
+
+def descartar(symbol: str) -> bool:
+    """`nueva` → `descartada` (reversible con `restaurar`). Nunca borra."""
+    return _cambiar_estado(symbol, "nueva", "descartada")
+
+
+def restaurar(symbol: str) -> bool:
+    return _cambiar_estado(symbol, "descartada", "nueva")
+
+
+def contar_nuevas() -> int:
+    init_db()
+    with SessionLocal() as s:
+        n = s.execute(select(func.count()).select_from(UniverseNovedadORM)
+                      .where(UniverseNovedadORM.estado == "nueva")).scalar()
+    return int(n or 0)
+
+
+def simbolos_registrados(s) -> Tuple[Set[str], Set[str]]:
+    """(todas, pendientes): lo que ya está en `universe_novedades` y, de eso, lo que
+    sigue en `nueva`."""
+    todas: Set[str] = set()
+    pend: Set[str] = set()
+    for sym, estado in s.execute(select(UniverseNovedadORM.symbol,
+                                        UniverseNovedadORM.estado)).all():
+        todas.add(sym)
+        if estado == "nueva":
+            pend.add(sym)
+    return todas, pend
+
+
+def listar(estado: str = "nueva") -> List[dict]:
+    """Novedades en `estado` con la metadata de `byma_catalog` (outer join: una novedad
+    sin fila en el universo muestra lo que guardó al detectarse)."""
+    init_db()
+    with SessionLocal() as s:
+        rows = s.execute(
+            select(UniverseNovedadORM, BymaCatalogORM)
+            .outerjoin(BymaCatalogORM, BymaCatalogORM.symbol == UniverseNovedadORM.symbol)
+            .where(UniverseNovedadORM.estado == estado)
+            .order_by(UniverseNovedadORM.first_seen.desc(), UniverseNovedadORM.symbol)
+        ).all()
+    out: List[dict] = []
+    for n, u in rows:
+        categoria = (u.categoria if u else None) or n.categoria or "Otros"
+        out.append({
+            "symbol": n.symbol, "first_seen": n.first_seen, "source": n.source,
+            "estado": n.estado, "categoria": categoria,
+            "panel": u.panel if u else None, "emisor": u.emisor if u else None,
+            "denominacion": u.denominacion if u else None, "isin": u.isin if u else None,
+            "moneda": u.moneda if u else None, "vencimiento": u.vencimiento if u else None,
+            "cargable": categoria not in CATEGORIAS_SIN_HOJA,
+        })
+    return out
+
+
+def agrupadas(estado: str = "nueva") -> List[dict]:
+    """[{categoria, filas}] ordenado por categoría (estable, para que la pestaña no
+    salte de orden entre refrescos)."""
+    grupos: Dict[str, List[dict]] = {}
+    for f in listar(estado):
+        grupos.setdefault(f["categoria"], []).append(f)
+    return [{"categoria": c, "filas": fs} for c, fs in sorted(grupos.items())]
+
+
+def leer_meta(key: str) -> Optional[str]:
+    """Valor de una clave propia en `schema_meta` (None si no existe). Mismo mecanismo
+    que `catalog_repository._stamp_schema_version` y los scripts de backfill."""
+    eng = get_engine()
+    if not inspect(eng).has_table("schema_meta"):
+        return None
+    with eng.begin() as conn:
+        row = conn.exec_driver_sql("SELECT value FROM schema_meta WHERE key=?",
+                                   (key,)).fetchone()
+    return row[0] if row else None
+
+
+def escribir_meta_en(s, key: str, value) -> None:
+    """Upsert de una clave propia en `schema_meta`, dentro de la transacción `s`."""
+    s.connection().exec_driver_sql(
+        "INSERT INTO schema_meta (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, str(value)),
+    )

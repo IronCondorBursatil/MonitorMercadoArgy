@@ -195,3 +195,78 @@ def test_categorias_sin_hoja_en_el_abm():
     assert {"Acciones", "Cedears", "Índices", "Totales", "Otros"} <= nov.CATEGORIAS_SIN_HOJA
     assert "Obligaciones Negociables" not in nov.CATEGORIAS_SIN_HOJA
     assert "Títulos Públicos" not in nov.CATEGORIAS_SIN_HOJA
+
+
+# ── store ───────────────────────────────────────────────────────────────────
+from core.infrastructure.db.engine import SessionLocal  # noqa: E402
+from core.infrastructure.db.models import BymaCatalogORM, UniverseNovedadORM  # noqa: E402
+
+
+def _nueva(symbol, source="byma", categoria="Obligaciones Negociables"):
+    return {"symbol": symbol, "source": source, "categoria": categoria}
+
+
+def test_registrar_solo_agrega_y_nunca_pisa_un_estado(base):
+    with SessionLocal.begin() as s:
+        assert nov.registrar_nuevas_en(s, [_nueva("AAA1O"), _nueva("BBB2O")], hoy=HOY) == ["AAA1O", "BBB2O"]
+    assert nov.descartar("AAA1O") is True
+    with SessionLocal.begin() as s:
+        assert nov.registrar_nuevas_en(s, [_nueva("AAA1O"), _nueva("CCC3O")], hoy=HOY) == ["CCC3O"]
+    with SessionLocal() as s:
+        assert s.get(UniverseNovedadORM, "AAA1O").estado == "descartada"
+        assert s.get(UniverseNovedadORM, "AAA1O").first_seen == HOY.isoformat()
+    assert nov.contar_nuevas() == 2
+
+
+def test_descartar_y_restaurar_son_transiciones_reversibles_y_no_borran(base):
+    with SessionLocal.begin() as s:
+        nov.registrar_nuevas_en(s, [_nueva("AAA1O")], hoy=HOY)
+    assert nov.descartar("aaa1o") is True          # normaliza a upper
+    assert nov.descartar("AAA1O") is False         # ya no está en `nueva`
+    assert nov.contar_nuevas() == 0
+    assert nov.restaurar("AAA1O") is True
+    assert nov.contar_nuevas() == 1
+    assert nov.descartar("NOEXISTE") is False
+    with SessionLocal() as s:
+        assert s.get(UniverseNovedadORM, "AAA1O") is not None
+
+
+def test_marcar_cargadas_solo_toca_las_pendientes(base):
+    with SessionLocal.begin() as s:
+        nov.registrar_nuevas_en(s, [_nueva("AAA1O"), _nueva("BBB2O")], hoy=HOY)
+    nov.descartar("BBB2O")
+    assert nov.marcar_cargadas(["aaa1o", "BBB2O", "ZZZ"]) == ["AAA1O"]
+    with SessionLocal() as s:
+        assert s.get(UniverseNovedadORM, "AAA1O").estado == "cargada"
+        assert s.get(UniverseNovedadORM, "BBB2O").estado == "descartada"
+        todas, pend = nov.simbolos_registrados(s)
+    assert todas == {"AAA1O", "BBB2O"} and pend == set()
+
+
+def test_listar_cruza_con_byma_catalog_y_marca_si_es_cargable(base):
+    with SessionLocal.begin() as s:
+        s.add(BymaCatalogORM(symbol="AAA1O", categoria="Obligaciones Negociables",
+                             emisor="ACME S.A.", isin="ARACME000001", moneda="ARS",
+                             vencimiento="2028-03-31", denominacion="ON ACME CL 1"))
+        nov.registrar_nuevas_en(s, [_nueva("AAA1O"), _nueva("GGAL2", categoria="Acciones")],
+                                hoy=HOY)
+    filas = {f["symbol"]: f for f in nov.listar("nueva")}
+    assert filas["AAA1O"]["emisor"] == "ACME S.A."
+    assert filas["AAA1O"]["vencimiento"] == "2028-03-31"
+    assert filas["AAA1O"]["cargable"] is True
+    assert filas["GGAL2"]["categoria"] == "Acciones"   # sin fila en byma_catalog: la de la novedad
+    assert filas["GGAL2"]["cargable"] is False
+    grupos = nov.agrupadas("nueva")
+    assert [g["categoria"] for g in grupos] == ["Acciones", "Obligaciones Negociables"]
+
+
+def test_meta_se_lee_y_escribe_en_schema_meta(base):
+    assert nov.leer_meta("universe_ultima_corrida") is None
+    with SessionLocal.begin() as s:
+        nov.escribir_meta_en(s, "universe_ultima_corrida", HOY.isoformat())
+        nov.escribir_meta_en(s, "universe_ultimos_vistos", 1234)
+    assert nov.leer_meta("universe_ultima_corrida") == HOY.isoformat()
+    assert nov.leer_meta("universe_ultimos_vistos") == "1234"
+    with SessionLocal.begin() as s:
+        nov.escribir_meta_en(s, "universe_ultimos_vistos", 99)     # upsert, no duplica
+    assert nov.leer_meta("universe_ultimos_vistos") == "99"
