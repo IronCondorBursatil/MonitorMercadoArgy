@@ -42,8 +42,11 @@ class UserORM(Base):
 class BymaCatalogORM(Base):
     """Universo de especies de BYMA (referencia navegable/buscable, NO el catálogo de
     pricing). Una fila por símbolo cotizante (~6.4k). Se llena del seed
-    `data/byma/titulos_final.csv` (symbol→ISIN/categoría/emisor/...). Tabla derivada:
-    se puede borrar y reingerir sin pérdida (≠ `instruments`, que es la verdad ABM)."""
+    `data/byma/titulos_final.csv` (symbol→ISIN/categoría/emisor/...) SÓLO si está vacía;
+    después la mantiene el job diario de novedades (`apps/web/universe_service.py`), que
+    agrega símbolos que sólo existen por el feed, `last_seen` y datos de ficha. Ya NO es
+    derivada: un re-seed pierde eso (ver `ingest_byma_catalog(force=...)`). ≠ `instruments`,
+    que es la verdad ABM."""
 
     __tablename__ = "byma_catalog"
 
@@ -61,6 +64,13 @@ class BymaCatalogORM(Base):
     emisor: Mapped[Optional[str]] = mapped_column(String, default=None)
     sector: Mapped[Optional[str]] = mapped_column(String, default=None)      # futuro (ficha sociedad)
     updated_at: Mapped[Optional[str]] = mapped_column(String, default=None)
+    # Las tres las escribe el job diario de novedades (`apps/web/universe_service.py`);
+    # el seed CSV no las conoce y las deja en NULL. `vencimiento`/`denominacion` salen de
+    # la ficha técnica BYMA (best-effort); `last_seen` = última corrida que vio el
+    # símbolo en los feeds ('YYYY-MM-DD', hora AR).
+    denominacion: Mapped[Optional[str]] = mapped_column(String, default=None)
+    vencimiento: Mapped[Optional[str]] = mapped_column(String, default=None)
+    last_seen: Mapped[Optional[str]] = mapped_column(String, default=None)
 
 
 # Índices para el buscador (ticker/ISIN/emisor/categoría).
@@ -68,6 +78,26 @@ Index("ix_byma_isin", BymaCatalogORM.isin)
 Index("ix_byma_categoria", BymaCatalogORM.categoria)
 Index("ix_byma_ticker_pesos", BymaCatalogORM.ticker_pesos)
 Index("ix_byma_emisor", BymaCatalogORM.emisor)
+
+
+class UniverseNovedadORM(Base):
+    """Especies vistas en los feeds (BYMA open / Data912) que el universo conocido no
+    tenía: el registro de triage de la pestaña «Novedades» del ABM. Separada de
+    `byma_catalog` a propósito: un re-seed del universo nunca pisa una decisión del
+    operador. `estado`: 'nueva' (a decidir) · 'cargada' (ya está en instruments/patas) ·
+    'descartada' (el operador dijo que no; reversible). Nunca se borra una fila."""
+
+    __tablename__ = "universe_novedades"
+
+    symbol: Mapped[str] = mapped_column(String, primary_key=True)
+    first_seen: Mapped[str] = mapped_column(String)          # 'YYYY-MM-DD' (hora AR)
+    source: Mapped[str] = mapped_column(String)              # 'byma' | 'data912'
+    categoria: Mapped[Optional[str]] = mapped_column(String, default=None)
+    estado: Mapped[str] = mapped_column(String, default="nueva")
+    updated_at: Mapped[Optional[str]] = mapped_column(String, default=None)
+
+
+Index("ix_nov_estado", UniverseNovedadORM.estado)
 
 
 class InstrumentORM(Base):
