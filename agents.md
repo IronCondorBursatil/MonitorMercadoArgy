@@ -1,49 +1,22 @@
-# AGENTS.md — Guía para IA / Desarrolladores
+# AGENTS.md — Protocolo IA del Monitor (+ stub de punteros)
 
-**Monitor de instrumentos de renta fija argentinos + Panel Líder + BEI extendido. Documento maestro de arquitectura.**
+**Qué es este archivo hoy** (Fase 4, 2026-09-07): dos cosas y nada más. (1) La sección
+`§0 · PROTOCOLO IA` — reglas de trabajo, entorno real, versiones, veredictos de
+herramientas, mecánica de Claude Code, hechos medidos, plan de fases y glosario. (2) Un
+**stub** al final que mapea cada sección del documento viejo a dónde vive ahora, para que
+los tests que citan `agents.md › "sección"` en sus docstrings sigan teniendo destino. Las
+**convenciones financieras** (CER, TAMAR, settlement, day-counts, MD, accrued, goldens,
+precisión, schema de campos) están en `docs/convenciones-financieras.md`; la arquitectura
+actual, en `CLAUDE.md` y `docs/`.
 
-> ⚠️ **REINGENIERÍA IMPLEMENTADA y mergeada a `main`** (+ campaña de mejora integral del
-> backlog, ya ejecutada). La arquitectura **actual** está en **`CLAUDE.md`** (leer primero)
-> — este doc conserva las **convenciones financieras** vigentes pero su descripción de la
-> **capa web** de abajo es **histórica**. Cambios clave:
-> - **Pricing core**: la escalera `if _is_*_type()` de `services.py` se reemplazó por
->   Strategy + Protocol + registry (`core/domain/pricing/`); `FinancialEngine` es ahora
->   una fachada. Modelos → Pydantic v2. Equivalencia numérica verificada vs el motor viejo.
-> - **Persistencia**: `CatalogRepository` (SQLite, `core/infrastructure/db/`) como drop-in
->   del Excel repo; Excel = semilla (`scripts/ingest_master.py`). DuckDB analytics.
-> - **Web**: el `http.server` + SPA (`server.py`, `app.js`, `style.css`, los HTML) fue
->   **retirado** y reemplazado por **FastAPI + HTMX SSR** (`apps/web/app.py` + `routers/` +
->   `templates/`). `run.py` ahora arranca uvicorn. HTTP: `requests`→`httpx`. Los builders
->   de fila de los paneles viven en `apps/web/panels_rows.py` (separado del router);
->   `apps/web/templates.py` expone el singleton Jinja. Los paneles **FCI** y **ONs** son
->   apps cliente JS (`static/js/fci.js`, `static/js/on.js`) que hacen `fetch('/fci/data')`
->   / `fetch('/on/data')`. **`on.js` es AUTO-GENERADO** por `scripts/build_on_static.py`
->   desde `apps/web/on_src/` (`sectors.js` + `util.js` + `unified.js` + `on_app.html`) —
->   NO editar `on.js` a mano; tocar la fuente en `on_src/` y regenerar. (La vieja galería
->   de mockups `docs/mockups/` se retiró; sus fuentes vivas se movieron a `on_src/`.)
-> - **Dominio compartido nuevo**: `core/domain/currency.py::ccy_from_suffix` (moneda por
->   sufijo D/C/—, única fuente) y `core/domain/pricing/fx_legs.py::peso_leg_to_usd`
->   (dolarización de la pata pesos para display; el motor mantiene su propia copia para
->   no entrar al perímetro de equivalencia).
-> - **Logging** (`config/settings.py::_ConsoleFilter`): la **consola** muestra SOLO lo
->   accionable — `WARNING`+/errores, requests HTTP con status ≥ 400, y todo lo marcado
->   `extra={"console": True}`. El **archivo** `monitores_global.log` recibe **WARNING+**
->   (errores de conexión, breakers, fallas de fetch — registro durable para post-mortem;
->   rota 5 MB × 5). **v7.2**: antes era INFO+ (httpx/access por ciclo) y crecía a MB de ruido;
->   ahora el ruido INFO NO se persiste. Para forzar un INFO puntual a la terminal:
->   `logger.info(msg, extra={"console": True})`.
-> - **Day-count + solver (2026-05-30, v7.2)**: el descuento (TIR/duration/PV/convexidad) ahora
->   **respeta el `day_count` declarado de cada bono** vía `core/domain/daycount.py` (nuevo) —
->   antes todo lo no-30/360 caía a 365.25 ignorando el campo (ONs ACT/365 mal descontadas). Solver
->   XIRR migrado a **Brent robusto** (`xirr.py`). Auditoría completa del codebase aplicada. Ver la
->   convención **"Day-count / convención de descuento"** abajo y el CHANGELOG v7.2.
-> - **Fuente de precios (2026-06)**: dejó de ser "sólo Data912". Hoy la elige el `ProviderHub`
->   entre `byma_open` (default) / `byma_realtime` / `data912`, con floor Data912 debajo. El
->   pilar 4, el stack técnico y el pipeline de abajo ya están corregidos; el detalle vive en
->   `CLAUDE.md`.
-> - **Las secciones de abajo sobre la capa web (server.py / app.js / Gridstack / endpoints
->   `/api/*`) son HISTÓRICAS.** Las **convenciones financieras** (CER, TAMAR, BEI, day-counts,
->   MD, accrued, settle T+0/T+1) SIGUEN VIGENTES — el motor preserva la matemática.
+**Orden de autoridad**: `CLAUDE.md` › `agents.md §0` › `docs/*`. Un hecho vive en UN solo
+archivo; los demás apuntan (§0.1.4).
+
+**Historia**: los changelogs v6.1–v7.2, el dashboard viejo (SPA `app.js` + layout
+arrastrable), los endpoints `/api/*`, CACHE, TROUBLESHOOTING y el resto del documento viejo
+no se perdieron: viven en
+git (`git log -p agents.md`; último estado completo en `git show c0dda9d:agents.md`). No se
+re-copian acá.
 
 ---
 
@@ -81,8 +54,8 @@
    resultado.
 4. **Una sola fuente de verdad por hecho.** Infraestructura → `deploy/README-ops.md`;
    versiones y veredictos de herramientas → esta sección; invariantes → `CLAUDE.md`;
-   convenciones financieras → la sección "CONVENCIONES CRÍTICAS" de este archivo (a mover a
-   `docs/convenciones-financieras.md` en la Fase 4). Los demás archivos **apuntan**, no copian.
+   convenciones financieras → `docs/convenciones-financieras.md` (desde la Fase 4; este archivo
+   solo conserva el stub de punteros). Los demás archivos **apuntan**, no copian.
    Motivo: toda afirmación duplicada en N archivos se actualizó en N-1 (check.ps1 "No hay CI",
    CLAUDE.md "DigitalOcean", "~2330 tests").
 5. **Modo auditoría** es el default cuando se pide analizar/evaluar: no instalar, no modificar
@@ -450,16 +423,18 @@ antes de afirmarlo.
   **sin** mypy/pyright; **sin** coverage; sin `pytest.ini`/`pyproject.toml` (marker `noauth`
   registrado en `conftest.py`).
 - **Documentación**: `CLAUDE.md` 373 líneas / 36 KB ≈ **8,9k tokens por sesión**, ~28 %
-  invariantes críticos y ~72 % procedural/histórico. `agents.md` 534 líneas / 69 KB: ~16 KB de
-  convenciones financieras vigentes y ~51 KB histórico/refutado. **Los tests no pinean el
-  contenido de `CLAUDE.md`**; 9 tests citan `agents.md › sección` en docstrings (mantener el
-  nombre del archivo o un stub). **Afirmaciones obsoletas a corregir (Fase 4)**:
+  invariantes críticos y ~72 % procedural/histórico. `agents.md` (estado 2026-09-07, Fase 4):
+  quedó como **§0 + stub de punteros**; las convenciones financieras viven en
+  `docs/convenciones-financieras.md` y el documento viejo (534 líneas / 69 KB: ~16 KB de
+  convenciones vigentes + ~51 KB histórico/refutado) está en git (`git show c0dda9d:agents.md`).
+  **Los tests no pinean el contenido de `CLAUDE.md`**; 9 tests citan `agents.md › sección` en
+  docstrings (resuelto por el stub del final). **Afirmaciones obsoletas a corregir (Fase 4)**:
   `scripts/check.ps1:3` "No hay CI"; `CLAUDE.md` "DigitalOcean/droplet" (~8 veces, prod es
   Oracle ARM); "~2330 tests" (son 2.625); `CLAUDE.md:233` ubica `letras_sync` en
   `core/domain/` (vive en `core/infrastructure/letras_sync.py`); `CLAUDE.md:332` "los otros 5
-  loops" (son 4); `agents.md:159` "instruments_master.xlsx = FUENTE DE VERDAD" (**falso**:
-  SQLite es la verdad, Excel semilla), `agents.md:66` http.server/Gridstack/"DuckDB analytics"
-  (no existe), `agents.md:76` `apps/web/server.py` (no existe). Redundancias: regla
+  loops" (son 4); las tres de `agents.md` (la línea «el Excel master como fuente de verdad»
+  —**falsa**: SQLite es la verdad, Excel semilla—, el stack web viejo con su base «analytics»
+  inexistente y `apps/web/server.py`) **ya se retiraron** en la Fase 4. Redundancias: regla
   txt-en-server/lock-en-local en 5 archivos; bootstrap del admin en 4; invariante `on.js` en 2.
 - **`.gitignore`**: ignora **`.claude/` entero** (línea 69) → nada de `.claude/settings.json`,
   `hooks/`, `skills/`, `rules/` entraría a git; cambiar a `.claude/settings.local.json`.
@@ -595,9 +570,12 @@ limpio: push → `gh run watch --exit-status` → ssh deploy.sh → `/smoke` →
 `/smoke` corren; `/hooks` lista los hooks; sesión nueva sin errores de hook. Reversión:
 `git revert` + restaurar el backup del settings global.
 
-**Fase 3 — CI y verificación.** *(Estado 2026-09-07: ejecutada en `fase-3-ci`. Guard de
+**Fase 3 — CI y verificación.** *(Estado 2026-09-07: ejecutada en `fase-3-ci` (c0dda9d +
+hotfix e354fc7, CI verde x86+ARM con los 29 tests node corriendo en ARM). Guard de
 skips = `tests/_skip_guard.py` cableado en `conftest.py` (motivos, no cuenta; probado con
-un skip `node` deliberado → exit 1); pre-push instalado en esta máquina con
+un skip `node` deliberado → exit 1). Lección del hotfix: el guard matcheaba cualquier
+"tzset" y denunció el skip legítimo `_solo_windows` en Linux — el gate de Windows no podía
+verlo; se diagnosticó sin logs por la API pública de jobs. Pre-push instalado en esta máquina con
 `scripts/install-hooks.ps1`; `staleness.yml` escrito — la prueba "alerta disparada y
 recibida" queda para David tras el merge, porque los `schedule`/`workflow_dispatch`
 corren desde `main`.)* `actions/setup-node` en ambas patas (los 29 tests node de
@@ -615,7 +593,11 @@ panel → modal → `/fci` → `/on`, leer consola). Aceptación: ARM reporta la
 x86 con skips esperados; pre-push probado con un push deliberado; alerta disparada y recibida
 una vez (apagar el refresco en un entorno de prueba); `verificar-ui` de punta a punta.
 
-**Fase 4 — Dieta de `CLAUDE.md`, `agents.md` y memoria.** Arrancar con `/doctor`.
+**Fase 4 — Dieta de `CLAUDE.md`, `agents.md` y memoria.** *(Estado 2026-09-07: ejecutada en
+`fase-4-docs`: CLAUDE.md 379 → 163 líneas (36 → 11,8 KB, ≈8,9k → ≈3,0k tokens); 4 rules por
+ruta; 6 docs nuevos incl. `docs/convenciones-financieras.md`; agents.md = cabecera + §0 +
+stub; 5 entradas de memoria corregidas. Queda para David en sesión nueva: `/doctor`,
+`/context` contra la baseline, y las tres preguntas "dónde vive X".)* Arrancar con `/doctor`.
 `CLAUDE.md` → <200 líneas / ~12–14 KB: preámbulo corto, cómo correr, invariantes sin narrativa
 histórica, las dos reglas duras de robustez (centinela httpx, TLS), prioridad sobre skills,
 índice "cuándo leer qué" con punteros de una línea. `.claude/rules/`: `pricing.md`
@@ -712,616 +694,56 @@ Se actualiza **acá** (y solo acá) cuando cambie: una versión de la tabla §0.
 §0.4, una regla verificada de §0.5 (citar la URL de la doc y la fecha), un hecho de §0.6/§0.7,
 o el estado de una fase de §0.8. Cada cambio lleva fecha. Si otra IA encuentra que algo de
 acá ya no es cierto, lo corrige acá con evidencia antes de seguir — y no lo re-copia en otro
-archivo.
+archivo. **Las convenciones financieras NO viven acá** (desde la Fase 4, 2026-09-07): están
+en `docs/convenciones-financieras.md`, con `archivo:línea` del código por cada regla; un
+cambio de convención se corrige allá (código + línea + test guardián), nunca en este archivo.
+
 
 ---
 
-## VISIÓN GENERAL
+## Stub de secciones históricas → dónde viven ahora
 
-Monitor automatizado de los principales segmentos de renta fija en Argentina (Soberanos, Bopreales, Tasa Fija, CER, Dólar Linked, TAMAR PURO, Duales TAMAR, Duales CER/TAMAR, Futuros DLR) + Panel Líder de acciones BYMA, que obtiene precios en tiempo real de la **fuente live activa** (BYMA open por default; BYMA realtime o **Data912** —`https://data912.com/live/*` + `/historical/*`— como alternativas, con Data912 siempre presente como *floor*), calcula TIR / Duration Modificada / Valor Técnico / Paridad / TNA / TEM de forma centralizada, presenta los resultados en consola, PNG y dashboard web (Gridstack drag-and-drop), e incluye un módulo de **Break-Even Inflation extendido** (NT3/2019 + NT8/2024) con sendero mensual contra REM-BCRA y método de pares. Cada ticker del dashboard abre un **popup de detalle** de 3 tabs (Detalles + Chart + Calculadora pro de bonos) con toggle de liquidación T+0/T+1.
+El documento viejo (`git show c0dda9d:agents.md`, 534 líneas después de §0) se retiró en la
+Fase 4 (2026-09-07). Cada título que existía se mapea acá a su destino vigente. «Histórico:
+git» = describe una capa que ya no existe (`apps/web/server.py`, `app.js`, el layout
+arrastrable, los endpoints `/api/*`, una base «analytics» que nunca existió) y solo sirve
+como arqueología. Los tests que citan
+`agents.md › "…"` en docstrings apuntan a las filas marcadas ★.
 
-### Stack técnico
-- Python 3.12+
-- **Precios de mercado**: fuente **conmutable** detrás de `ProviderHub` — BYMA open (default), BYMA realtime (con credenciales) o Data912 live (`arg_notes`, `arg_bonds`, `arg_corp`, `arg_stocks`) + historical (`/historical/bonds`, `/historical/stocks`). Data912 además actúa de **floor** permanente debajo de la activa. Ver `core/infrastructure/byma/sources.py` y CLAUDE.md
-- **Índice CER + TAMAR**: BCRA API v4.0 (vars 30 y 44)
-- **Futuros DLR**: Matba/Primary WebSocket público (modo `guest`, sin auth) — reverse-engineered `wss://matbarofex.primary.ventures/ws`
-- **FX USD/ARS**: dolarapi.com
-- **REM (Relevamiento de Expectativas de Mercado)**: `bcra-rem-api.facujallia.workers.dev`
-- **FCI (Fondos Comunes de Inversión)**: CAFCI vía `estadisticas.cafci.org.ar/comparador-de-fondos.json` (catálogo completo + matriz de rendimientos diaria, sin auth)
-- **Histórico de precios** (rendimientos Sem/1M/3M/YTD/1A): store auto-mantenido `price_history.db` (`core/infrastructure/price_history.py`) — priming de Data912 `/historical/bonds` + acumulación del cierre del feed vivo; el CSV legacy `data/history/precio_historico.csv` queda como piso estático
-- **Histórico diario** (popup por ticker): proxy vía data912 con cache TTL 10min
-- **Master de instrumentos**: `data/instruments_master.xlsx`
-- Matemática: SciPy (Newton + Brentq para XIRR, least_squares para NSS), NumPy, Pandas
-- Salida: Tabulate (consola), Matplotlib (PNG), `http.server` (web dashboard) + Chart.js (frontend) + Gridstack (layout)
-- HTTP client: `core/infrastructure/async_http.py::ResilientClient` (httpx async + pool keep-alive + circuit breaker y semáforo por host + retry sobre transients) para el hot-path. Los providers sync que quedan (CAFCI, argentinadatos) usan `httpx` directo con cache propio por TTL y **sin retry**, corriendo en `to_thread`. *(El viejo `core/infrastructure/_http.py::http_get_json` fue BORRADO — ya no existe.)*
-- Tests: pytest (`tests/`); data-quality suite (`scripts/data_quality_check.py`)
-
----
-
-## LOS 4 PILARES ARQUITECTÓNICOS
-
-| Pilar | Implementación | Regla |
-|---|---|---|
-| **1. Una config por curva (panel)** | `apps/web/server.py::_build_refresh_context` | Cada curva es un panel del dashboard, declarado como tupla `(id, tipos, opts)`; todos comparten el row-builder `_base_bond_row()`. |
-| **2. SQLite (`catalog.db`) = fuente de verdad del catálogo; Excel/CSV = semillas de bootstrap** | `core/infrastructure/db/catalog_repository.py::CatalogRepository` (runtime) · `instruments_master.xlsx` + `data/obligaciones_negociables.csv` (seeds) · [apps/web/instruments_abm.py](apps/web/instruments_abm.py) (editor) | **(v7.2)** El catálogo VIVO es **SQLite** (en `%LOCALAPPDATA%\monitor`, fuera del working tree de git). El Excel master y el CSV de ON **sólo siembran** la DB en bootstrap (si está vacía). La **ABM escribe SQLite directo** (transaccional) y es el editor de altas/bajas/ediciones — las altas por ABM viven SOLO en la DB. Sin listas hardcodeadas de tickers. *(El viejo "Excel = única fuente" + ABM con writes atómicos al Excel quedó obsoleto en la reingeniería.)* |
-| **3. Matemática financiera centralizada** | `core/domain/services.py::FinancialEngine` + `core/domain/cashflow_synth.py` | Única implementación de xirr, TIR, MD, V.Téc, TNA, TEM. Nadie reimplementa fórmulas. Cashflow synthesis es un módulo puro reutilizado por el repo y la ABM. |
-| **4. Fuente de precios única e INTERCAMBIABLE** | `core/infrastructure/byma/sources.py::MarketSource` (`byma_open` \| `byma_realtime` \| `data912`) detrás de `core/infrastructure/provider_hub.py::ProviderHub` · `data912_provider.py::Data912MarketDataProvider` | **(2026-06)** Nadie instancia un cliente de precios propio: el hub elige la fuente activa (default `byma_open`, conmutable en caliente por `/source/*`) y le mergea DEBAJO el floor Data912 para los símbolos que la activa no lista. Excepciones documentadas: BCRA (CER, TAMAR, A3500), dolarapi (FX), Matba/Primary WS (futuros DLR, sin auth), REM (expectativas IPC), CAFCI + ArgentinaDatos (FCI), FIX SCR (calificaciones). *(El viejo "datos puramente Data912" quedó obsoleto; `Data912MarketDataProvider` tampoco vive más en `repositories.py`.)* |
-
----
-
-## PIPELINE
-
-```
-instruments_master.xlsx ──► ExcelInstrumentsRepository ──┐
-                                                          │
-fuente live activa ──────► ProviderHub (+ floor Data912) ┐ │
-Data912 historical ────────────────────────────────────┤ │
-                                                       ▼ ▼
-                                      GenerateMonitorReport.execute(types)
-                                                       │
-                                                       ▼
-                                        FinancialEngine.calculate_tir / duration / technical_value
-                                                       │     (usa indices_provider + fx_provider)
-                                                       ▼
-                            apps/web/server.py ──► dashboard JSON (refresh 5s)
-                                                       │
-                                                       ▼
-                            BEI thread (5min) ──► /api/snapshot bei_tenor/sendero/pares
-                            Panel Líder thread ──► /arg_stocks + OHLC histórico (5d/30d + spark)
-                            ABM endpoints ───────► CRUD transaccional sobre Excel (openpyxl)
-                            Bond history popup ──► /api/bond_history/<TICKER> (cache 10min)
-```
-
----
-
-## ESTRUCTURA DE ARCHIVOS
-
-```
-Monitores - Data912/
-├── run.py                              # Supervisor: arranca web con auto-restart en crash
-├── agents.md                           # Este documento
-│
-├── apps/
-│   ├── cli/
-│   │   ├── _common.py                  # bootstrap: repo Excel cacheado + build_use_case()
-│   │   └── bei.py                      # BEI extendido (NT3/2019 + NT8/2024) — compute_bei_tables() para el server
-│   └── web/
-│       ├── server.py                   # Dashboard JSON + ABM + bond history proxy + supervisor-friendly shutdown
-│       ├── instruments_abm.py          # CRUD transaccional sobre instruments_master.xlsx (atomic save)
-│       ├── bond_detail.py              # Backend del popup de detalle (3 tabs) + calculadora pro de bonos
-│       └── static/
-│           ├── index.html              # Gridstack layout drag-and-drop persistido en localStorage
-│           ├── app.js                  # SPA: render + curva soberana + popup detalle (3 tabs) + ABM modal + Layout settings
-│           ├── style.css               # single source of truth de estilos (cache-busted con ?v=N)
-│           ├── curva.html / curva.js   # Página standalone de curva (legacy)
-│           └── vendor/gridstack/       # Lib vendored (sin CDN-dep)
-│
-├── config/
-│   ├── settings.py                     # Paths, setup_logging(), .env loader propio
-│   └── theme.py                        # Paleta y geometría de los PNG
-│
-├── core/
-│   ├── domain/
-│   │   ├── models.py                   # Instrument, Cashflow, MarketSnapshot, InstrumentMetrics
-│   │   ├── interfaces.py               # IInstrumentsRepository, IMarketDataProvider
-│   │   ├── services.py                 # FinancialEngine (xirr, TIR, MD, V.Téc, TNA, TEM, spreads, dual rails, CER projection)
-│   │   ├── instrument_groups.py        # SOBERANOS, BOPREALES, TASA_FIJA, CER, DOLAR_LINKED, TAMAR, DUAL_TAMAR, PANEL_LIDER
-│   │   ├── cashflow_synth.py           # Pure cashflow synthesis (compartido entre repo + ABM preview)
-│   │   ├── yield_curve.py              # NS, NSS, bootstrapping, Fisher, forward BEI, pair-of-bonds, real_fx_drift
-│   │   └── inflation_path.py           # Sendero mensual de BEI (NT8/2024 Fig. 4)
-│   ├── infrastructure/
-│   │   ├── async_http.py               # ResilientClient: httpx async, pool, breaker + semáforo por host, retry sobre transients
-│   │   ├── provider_hub.py             # ProviderHub: fuente live activa + floor Data912, merge stale-safe
-│   │   ├── byma/                       # sources (byma_open/realtime/data912), field_map, credentials, universe, catálogo
-│   │   ├── repositories.py             # ExcelInstrumentsRepository + build_instrument (parser de fila → Instrument)
-│   │   ├── data912_provider.py         # Data912MarketDataProvider (live + OHLC histórico)
-│   │   ├── indices_provider.py         # BCRAIndicesProvider (CER + TAMAR, disk-mirrored + offline-friendly)
-│   │   ├── fx_provider.py              # DolarAPIProvider (USD/ARS quotes)
-│   │   ├── futures_provider.py         # RofexProvider — WS público matba/primary, sin auth, thread daemon persistente
-│   │   ├── rem_provider.py             # REMProvider (BCRA expectations API, TTL 6h)
-│   │   └── cafci_provider.py           # CAFCIProvider (FCI: catálogo + matriz rendimientos diaria, fetch 1×/día, disk-mirror, offline-friendly)
-│   ├── use_cases/
-│   │   └── generate_report.py          # GenerateMonitorReport.execute(types) -> [InstrumentMetrics]
-│   └── holiday_engine.py               # Calendario BYMA + feriados AR (settlement T+0/T+1)
-│
-├── data/
-│   ├── instruments_master.xlsx         # FUENTE DE VERDAD: 5 hojas (Soberanos, Tasa_Fija, CER, Dolar_Linked, TAMAR)
-│   │                                   #                   + Cashflows + Cashflows_Fija
-│   └── history/
-│       ├── precio_historico.csv        # Piso estático del store de precios (legacy; ver core/infrastructure/price_history.py)
-│       ├── bei_diario.csv              # Persistencia diaria del BEI (auto-append)
-│       ├── cer_diario.csv              # Mirror BCRA var 30 (resilience: opera offline si BCRA cae)
-│       ├── tamar_diario.csv            # Mirror BCRA var 44 (idem)
-│       ├── a3500_diario.csv            # Mirror BCRA var 5 — tipo de cambio A3500 (usado como spot DLR fuera de rueda)
-│       └── cafci_diario.json           # Mirror CAFCI: catálogo + rendimientos FCI del día (resilience: opera offline si CAFCI cae)
-│
-├── tests/                              # pytest — sin red, sin Excel real
-│   ├── conftest.py                     # Inyecta repo root al sys.path
-│   ├── test_cashflow_synth.py
-│   ├── test_financial_engine.py
-│   ├── test_data912_provider.py
-│   └── test_instruments_abm.py
-│
-└── scripts/
-    ├── data_quality_check.py           # Suite de resilience: conectividad, latencia, schema, sanity, cache, concurrencia, offline. Exit 0 sólo si CRITICAL pasa.
-    └── run_server_test.py              # Smoke-test del web server (arranca, polls /api/snapshot, mata).
-```
-
----
-
-## SCHEMA DE LAS HOJAS DEL EXCEL
-
-| Hoja | Columnas | Notas |
-|---|---|---|
-| **Soberanos** | ticker, short_name, tipo, fecha_vencimiento, fecha_emision, cupon anual %, frecuencia pagos, base calculo, tipo amortizacion, amort inicio, amort cantidad | BONAR/GLOBAL/BOPREAL. Si no hay cashflows explícitos, `cashflow_synth.synth_cashflows()` los crea. |
-| **Tasa_Fija** | ticker, clase, fecha_emision, fecha_pago, tem_licit, precio_fallback | LECAP/BONCAP capitalizable: payoff = 100 × (1+tem_licit)^months (30/360). BONOFIJA usa Cashflows_Fija. |
-| **CER** | ticker, tipo, fecha emision, fecha vencimiento, cupon anual %, frecuencia pagos, base calculo, tipo amortizacion, amort inicio, amort cantidad, capital factor, meses cupon, cer emision, categoria | `cer emision` es crítico (ver convenciones). `categoria` es la etiqueta de mercado (ej. "BONCERES CERO CUPON"). |
-| **Dolar_Linked** | ticker, fecha_vencimiento, tc_inicial, fecha_emision, cupon anual %, frecuencia pagos, base calculo | Valor par 100 USD. V.Téc en pesos = 100 × mayorista venta. |
-| **TAMAR** | ticker, tipo, fecha_emision, fecha_vencimiento, tasa_fija_mensual, spread, cer_base, cer_spread | tipo ∈ {PURO, DUAL, DUAL_CER_TAMAR}. `spread` aplica al rail TAMAR; `cer_spread` solo para DUAL_CER_TAMAR. |
-| **Cashflows** | ticker, fecha_pago, amortizacion, cupon_interes | Sobreescribe el generador sintético. Per-100-VN en términos base. |
-| **Cashflows_Fija** | ticker, fecha_pago, monto | Para BONOFIJA / pagos únicos. |
-
----
-
-## CÓMO AGREGAR UNA NUEVA CURVA
-
-1. **Agregar el `instrument_type`** en `instruments_master.xlsx` (hoja correspondiente o crear nueva).
-2. **Agregar el tipo** a la constante adecuada en [`core/domain/instrument_groups.py`](core/domain/instrument_groups.py).
-3. **Web**: agregar el panel a la tupla `bond_panels` dentro de `_build_refresh_context` en `apps/web/server.py` (y a `all_bond_types` si es nuevo grupo); agregar el schema de columnas en `_get_columns()`; agregar el `{"id": ..., ...}` al `Snapshot.__init__`; agregar el `.grid-stack-item` en `index.html` con `gs-id` matching el monitor id. Las filas se arman con `_base_bond_row()`.
-4. **Si requiere matemática nueva**: agregar branch en `FinancialEngine.calculate_tir` / `calculate_technical_value` / `calculate_duration`. Para nuevo tipo de cashflow synth, agregar dispatch en `cashflow_synth.synth_cashflows`.
-5. **Si querés el chart curva TIR vs MD**: agregar un `.grid-stack-item.curve-extra` con `data-source="<mid>"` (ver curva_cer, curva_tasa_fija como template); `renderBondCurve()` en `app.js` lo levanta automáticamente.
-
-**Nunca**:
-- Hardcodear listas de tickers en un monitor (usar `instrument_groups.py`).
-- Crear un cliente HTTP nuevo para precios live (usar el `ProviderHub` / la `MarketSource` activa).
-- Crear un cliente HTTP nuevo para otra fuente sin pasar por `core/infrastructure/async_http.py::ResilientClient` (perdés pool, breaker y el retry sobre transients). Si por algún motivo va sync, usar `httpx` con cache por TTL y correrlo en `to_thread` — y saber que ahí NO hay retry.
-- Reimplementar TIR / duration / NPV (usar `FinancialEngine`).
-- Reimplementar cashflow synthesis (usar `cashflow_synth.synth_cashflows`).
-- Leer el catálogo fuera de `CatalogRepository` (SQLite). El Excel master / CSV de ON sólo se leen para **sembrar** la DB (bootstrap); el editor de runtime es la ABM (`instruments_abm.py`, escribe SQLite transaccional). *(v7.2: la verdad es SQLite, no el Excel.)*
-- Tratar al Excel master como fuente de verdad viva: es semilla. Las altas/ediciones del runtime van por la ABM → SQLite.
-
----
-
-## CÓMO AGREGAR UN NUEVO INSTRUMENTO (sin tocar Excel a mano)
-
-Usar el **botón ABM** del dashboard web. Abre un modal con:
-- Búsqueda de ticker existente (datalist autocomplete) → carga del row + cashflows.
-- "+ Nueva especie" → elige hoja → completa form → preview de cashflows synth en vivo → guarda.
-- Tabla de cashflows editable al lado del form: **⟳ Regenerar** llama a `/api/abm/preview_cashflows` (rate limit 120/min global) recalculando desde los fields actuales; **+ Fila** agrega una fila vacía. Al guardar, el endpoint persiste row + cashflows en **una sola transacción atómica** (mismo workbook handle, único save).
-- Eliminar por ticker (con confirmación). Borra row del sheet + cashflows huérfanos, todo atómico.
-
-El backend (`/api/abm/instrument`) escribe directo al Excel preservando formato openpyxl. Thread-safe vía RLock global compartido con el loader del repo. Para Soberanos basta llenar los 11 campos (emisión + cupón + freq + amort + ...) y el cashflow se genera solo via `cashflow_synth.synth_cashflows`.
-
----
-
-## CONVENCIONES CRÍTICAS
-
-### Bonos CER (NT N°8/2024)
-
-#### `CER_BASE` en la hoja de instrumentos
-
-La columna `cer emision` / `cer_emision` debe contener el **CER 10 días hábiles antes de la fecha de emisión**, no el del día de emisión.
-
-Ejemplo del paper (T2X5):
-- Fecha de Emisión: 14/03/2023
-- Valor a cargar: CER del **28/02/2023** (= emisión − 10 días hábiles BYMA) = **81.22**
-
-#### Cashflows en términos "base"
-
-La hoja `Cashflows` debe almacenar montos per-100-nominal en términos de "base", NO valores nominales-al-pago. El sistema multiplica internamente por `CER_LIQ-10h / CER_BASE` al deflactar el precio. Si los flujos vienen indexados, hay **doble-conteo**.
-
-#### Lag de 10 días hábiles BYMA
-
-`dias habiles previos` / `dias_lag` controla el lag. Default = 10.
-
-### Bonos TAMAR (PURO, DUAL, DUAL_CER_TAMAR)
-
-- **`spread`**: anual decimal sobre TAMAR (ej. 0.05 = TAMAR + 5%). ⚠️ **DESACTUALIZADO** (el código manda): el rail NO es diario `(1+(TAMAR_d+spread)/365)`. El BONTE TAMAR capitaliza **mensualmente** — `conventions.py:23-31` (`_TAMAR_K = 365/32`, `tamar_tem`) y `tamar.py:145-149` (`payoff = 100·(1+tem_max)^n_months`, validado contra la referencia para TTJ26). Ver el docstring de `tamar.py`.
-- **`tasa_fija_mensual`** (solo DUAL): floor **mensual** decimal. Bond paga `max(tem_tamar, floor_mensual)` por mes (no diario).
-- **`cer_base` + `cer_spread`** (solo DUAL_CER_TAMAR, serie TXMJ*): rail CER independiente. Payoff a vto = max(rail_TAMAR, CER_ratio × (1+cer_spread)^years). ⚠️ Para futuros lejanos el CER se proyecta **compuesto**, NO linealmente — `tamar.project_cer_at` (la línea vieja decía "linealmente").
-- **MD bullet** TAMAR/DUAL usa **m=12** (capitalización mensual) → `MD = years / (1+TEA)^(1/12)`. DL usa m=1.
-- **Panel TAMAR** incluye los bonos DUAL re-valuados como si fueran PURO (sufijo `_TAM`) via `FinancialEngine.recompute_as_tamar_puro`.
-
-### Bonos DOLAR LINKED
-
-- Precio en pesos; **par = 100 USD**.
-- V.Téc en pesos = `residual_USD × mayorista_venta` (FX desde dolarapi).
-- Paridad = `price_pesos / V.Téc_pesos` (en rango 80-105% típico).
-- TIR es **USD TIR**: precio se deflacta por FX antes de XIRR (day-count `ACT/365`, ver Day-count).
-
-### Obligaciones Negociables (ON hard-dollar)
-
-- Categoría `HARD DOLLAR`, **multi-ticker** (`…O` = pesos, `…D` = MEP, `…C` = CABLE; panel default `…D`).
-  Cashflows en USD.
-- **Day-count por instrumento**: las ON del informe (`data/obligaciones_negociables.csv` →
-  `core/infrastructure/on_catalog.py`, ingesta idempotente a SQLite) usan `ACT/365` ("real/365", base
-  de intereses del calculador del broker). Las ON de bancos cargadas por ABM varían: ej. **BACH = 30/360**,
-  **BF37/BPCV/BYCV/CACB/CICA = ACT/365**. El motor descuenta con la convención declarada de cada una
-  (ver Day-count). Validadas contra la referencia (`tests/test_golden_referencia.py`).
-- **Serie/Clase + Ley Aplicable** (v7.2): el CSV tiene columnas `serie_clase` (ej. "Clase XXXI",
-  del listado IAMC/BYMA) y `ley` (`Argentina` / `Extranjera`). `on_catalog` las lee → `serie_clase`
-  se agrega al `short_name` para display (`"EMISOR - Clase X"`) y ambas van a `raw_fields`. El form
-  ABM de ONs tiene los campos `serie_clase` (texto) + `ley_aplicable` (select). **`ingest()` es
-  destructivo** (borra la hoja y la reconstruye del CSV) → las ON cargadas por ABM (no en el CSV) se
-  anotan editándolas en el ABM, no por re-ingesta.
-
-### Bonos LECAP / BONCAP capitalizables
-
-- Generador sintético usa `tem_licit` + `fecha_emision` + day-count **30/360** (`days_30_360`) para computar `payoff = 100 × (1+tem)^months`. Para S29Y6: con 30/360 → 359 días → 11.97 meses → payoff 132.05 (matchea la referencia). Con `base calculo = "Act/..."` usa days/30 en su lugar.
-- V.Téc(t) = `100 × (payoff/100)^(elapsed/total)` (interpolación geométrica desde emisión).
-- TIR es TEA pura; TNA y TEM se derivan en base 365 (act/365):
-  - `TEM = (1+TEA)^(30/365) − 1`
-  - `TNA = 365 × ((1+TEA)^(1/365) − 1)`
-
-### Modified Duration — convención BYMA/IAMC
-
-`MD = Macaulay_years / (1+TEA)^(1/freq)`, donde `freq` es la frecuencia anual de pagos (2 = semestral). El campo `payment_frequency` del Instrument se infiere automáticamente del gap mediano entre cashflows si no está en el Excel.
-
-### Day-count / convención de descuento (centralizado en `core/domain/daycount.py`)
-
-> **Refactor 2026-05-30 (v7.2).** Antes el descuento (TIR/duration/PV/convexidad) estaba cableado a
-> `_JULIAN_YEAR = 365.25` salvo la rama 30/360 — **ignorando el `day_count` declarado del bono**. Las
-> ONs `ACT/365` se descontaban a 365.25 → error sistemático de ~1bp+. Ahora se respeta lo declarado.
-
-- **Fuente única**: `daycount.year_fraction(start, end, DayCount)` es la ÚNICA fracción de año de
-  descuento. Convenciones: `ACT/365` (días/365), `ACT/365.25` (días/365.25 — año juliano, **default
-  soberano**), `30/360` (ISDA, `days_30_360/360`), `ACT/ACT` (ISDA actual/actual). `parse_day_count()`
-  tolera alias/blanks/basura. `Instrument.day_count_enum` resuelve la convención (BOPREAL → 30/360).
-- **Respetar lo declarado**: todos los sitios de descuento (`pricing/base.py`, `pricing/metrics.py`,
-  `pricing/strategies.py`, `services.calculate_theoretical_price`) descuentan con
-  `inst.year_fraction_to(date, ref)`. Para `30/360` y `ACT/365.25` el resultado es **bit-idéntico** al
-  motor viejo (sólo cambian los `ACT/365`: ONs hard-dollar + Dólar-Linked, que ahora matchean la referencia —
-  ej. CICA 7.56%, antes 7.57%).
-- **Solver Brent** (`core/domain/xirr.py`): `xirr(flows, dates, day_count=None)`. brentq con
-  auto-bracketing geométrico (encuentra yields >1000% que el bracket fijo `[-0.999,10]` perdía); Newton
-  sólo como pre-paso rápido. `_npv` overflow-safe; `duration`/`vanilla_pv` con guard de `OverflowError`
-  → `None` limpio (mata el crash histórico de CUAP con TIR degenerada). `tests/_legacy_engine.py`
-  (fixture de equivalencia) espeja el MISMO descuento + solver → `test_pricing_equivalence` queda verde
-  por construcción.
-- **Invariante de cashflows**: `Instrument` ordena sus cashflows por fecha en un `field_validator` (el
-  schedule es cronológico por definición) → el hot-path de pricing ya no re-sortea defensivamente.
-- **Tests**: `test_daycount.py` (identidades + bordes bisiestos/fin-de-mes/ACT-ACT), `test_xirr_solver.py`
-  (robustez del solver + recuperación de yield), `test_daycount_pricing.py` (descuento por convención +
-  gap-lock ACT/365 vs 365.25), `test_golden_referencia.py` (anclas exactas vs la referencia), `test_pricing_invariants.py`
-  (round-trip / monotonicidad / cotas, property-based con `hypothesis`).
-
-### Soberanos: 3 especies por moneda (ARS / MEP / CABLE) + pricing de la pata ARS
-
-> ⚠️ Reemplaza el viejo "filtro MEP-only": ya **no** se ocultan las patas pesos/CABLE.
-> Ahora se muestran las 3 monedas y la pata ARS se pricea bien (ver abajo).
-
-Cada bono soberano (BONAR/GLOBAL) cotiza en 3 monedas con tickers distintos pero **mismo flujo** — solo cambia el precio: **ARS** (sin sufijo, ej. AL30), **MEP** (sufijo `D`, AL30D), **CABLE** (sufijo `C`, AL30C). AO27D/AO28D son sólo-MEP. Convención de moneda por sufijo (single source of truth, en `portfolio.position_currency` / `panels._ticker_ccy` / `instruments_abm._sob_slot`): última letra **D→MEP, C→CABLE, resto→ARS**.
-
-**Pricing de la pata ARS** (corrige el mismatch ARS-price / USD-cashflows que antes daba TIR −94% / paridad 130000%): la pata peso cotiza en pesos pero los cashflows son USD, así que para las métricas se usa el **precio USD implícito = precio_pesos ÷ offer (venta)**, **MEP si BONAR / CABLE si GLOBAL** (dolarapi: `bolsa`=MEP, `contadoconliqui`=CABLE). Vive en `generate_report._enrich_metrics` (NO en el motor, para no romper el test de equivalencia): TIR / V.Téc / MD / paridad se calculan sobre el precio dolarizado, pero la columna **Precio** del panel muestra los **pesos sin decimales**.
-
-**ABM**: las 3 especies se consolidan en **1 solo bono** (form con los 3 tickers, agrupadas por sufijo). Siguen siendo filas independientes en SQLite (el pricing las pricea por ticker como siempre); la consolidación es solo de la capa ABM. **Panel BONARES**: botones **ARS/MEP/CABLE** filtran las filas por moneda (default MEP). Detalle de la capa web (HTMX) en `CLAUDE.md`.
-
-### Date parsing — bug histórico
-
-`_parse_date` detecta strings ISO (`YYYY-MM-DD`) y los parsea con `dayfirst=False`. Sin esto, pandas con `dayfirst=True` swappeaba mes/día en strings ISO (ej. `2026-07-09` → `2026-09-07`). El módulo `cashflow_synth` además normaliza `datetime → date` para evitar TypeError al comparar tipos mixtos (`cf.date >= settle_date`).
-
-### Accrued period para soberanos mid-amortización
-
-Los soberanos mid-amort (AL29D/AL30D/GD30D/...) suelen cargar en Excel **sólo cashflows futuros** (no traen los cupones ya pagados). Antes, el helper `_period_bounds` y el accrued en `calculate_technical_value` caían a `emission_date` como inicio del período corriente cuando no había past flows en Excel — y como emisión puede ser de hace 5+ años, accrued y V.Téc venían completamente inflados (ej. AL29D: 2082 días en vez de 130).
-
-**Regla actual** (`FinancialEngine._period_bounds`):
-
-1. Si hay past flow en Excel → tomar el último.
-2. Inferir `prev = next_cf − (12/freq) meses` usando `relativedelta` (aritmética calendario exacta, no `days=365/freq` que daba off-by-1 entre cupones). Si `prev > emission_date`, usar `prev` — es el cupón anterior real.
-3. Si `prev ≤ emission_date`, el bond aún no pagó su primer cupón: el período arranca en `emission_date`.
-
-`calculate_technical_value` ahora delega su accrued a `FinancialEngine.accrued_interest` (single source of truth) — no duplica la lógica.
-
----
-
-## CÓMO EXTENDER LA MATEMÁTICA FINANCIERA
-
-Todo va en [`core/domain/services.py::FinancialEngine`](core/domain/services.py) como `@staticmethod`. Métodos disponibles:
-
-| Método | Devuelve |
+| Sección del doc viejo | Dónde vive ahora |
 |---|---|
-| `xirr(flows, dates)` | TIR de un cashflow (decimal fraction; 0.30 = 30%) |
-| `calculate_tir(snapshot, indices_provider, fx_provider, settle_date=None)` | TIR del instrumento; branches específicos: CER, DL, TAMAR PURO, DUAL TAMAR, DUAL_CER_TAMAR. `settle_date` override usado por la calculadora del popup (T+0/T+1). |
-| `calculate_duration(snapshot, tir, settle_date=None)` | Modified Duration con convención BYMA (`m=freq`); bullets TAMAR/DUAL usan m=12 |
-| `calculate_technical_value(snapshot, indices_provider, fx_provider, ref_date=None)` | V.Téc universal: residual + accrued; branches para DL (en pesos), CER (× CER_ratio), TAMAR PURO/DUAL (capitalizado), DUAL_CER_TAMAR (max rails) |
-| `calculate_theoretical_price(instrument, tir, ref_date)` | Precio implícito al descontar al TIR dado |
-| `tir_from_price(snapshot, price_override, indices, fx, settle_date=None)` | Inversa de `calculate_tir`: TIR para un precio (dirty) dado. Reusa toda la lógica per-type vía `replace` del snapshot. |
-| `price_from_tir(snapshot, tir, indices, fx, settle_date=None)` | Precio (dirty) implícito al TIR dado. Branches por tipo: vanilla (PV), CER (real × CER_ratio), DL (USD/FX), TAMAR PURO/DUAL/DUAL_CER_TAMAR (payback / (1+tir)^t). |
-| `accrued_interest(instrument, ref_date)` | Intereses corridos per-100-VN, accrual lineal sobre el cupón corriente. 0 para zero-coupon / capitalizables. |
-| `days_since_last_coupon(instrument, ref_date)` | Días transcurridos desde el último corte de cupón (o desde emisión si nunca pagó). |
-| `residual_nominal(instrument, ref_date)` | Valor Residual per-100 = suma de amortizaciones futuras. Fallback: 100 − amortizado. |
-| `current_yield(instrument, price_dirty, ref_date)` | Cupones próximos 12 meses / dirty price (decimal). |
-| `dv01(instrument, tir, ref_date)` | ΔP per-100 ante -1bp en TIR. Signo positivo (precio sube cuando yield baja). |
-| `convexity(instrument, tir, ref_date)` | Convexidad en años² (PPV en la calculadora del popup). Pareja con MD: `ΔP/P ≈ -MD×Δy + 0.5×C×(Δy)²`. |
-| `calculate_pct_change(current, previous)` | Variación porcentual (None-safe + epsilon guard) |
-| `tea_to_tem(tea)` | TEA → TEM act/365 |
-| `tea_to_tna(tea)` | TEA → TNA base 365 (diaria capitalizada) |
-| `recompute_as_tamar_puro(snapshot, indices_provider)` | Re-valúa un DUAL como si fuera PURO (rail TAMAR solo). Usado en panel TAMAR con sufijo `_TAM`. |
-
-### Override de settle_date (T+0/T+1)
-
-Los métodos públicos que dependen del settle date aceptan un parámetro opcional `settle_date` (o `ref_date` para V.Téc) que sobrescribe el default. Sin override, cada método cae a `_settlement_for(instrument_type)` (T+1 para soberanos, T+0 para LECAP/LECER/CI) o `date.today()`. La calculadora del popup usa esto para exponer un toggle T+0/T+1 que recalcula TODO desde la fecha elegida — sin esto, accrued/V.Téc quedaban en T+0 mientras TIR estaba en T+1 (inconsistencia silenciosa de 1 día).
-
-Helper interno: `_resolve_settle(instrument_type, override)` — `override if override is not None else _settlement_for(instrument_type)`.
-
-**Convención T+0 / T+1** — ⚠️ **DESACTUALIZADO** (el código manda): `conventions.py:104-107`
-usa **lag=1 (T+1) para TODOS los tipos**, LECAP/BONCAP/LECER incluidos (el motor legacy
-congelado hace lo mismo → el cambio es anterior al refactor). El toggle T+0/T+1 del popup
-sigue siendo del usuario, pero el default por tipo ya no distingue LECAP. La descripción vieja:
-- ~~**T+0** (Contado Inmediato): LECAP, BONCAP, LECER, cualquier tipo con token "CI"~~
-- ~~**T+1**: todo lo demás~~
-
-### Curvas y BEI ([core/domain/yield_curve.py](core/domain/yield_curve.py))
-
-| Función | Origen |
-|---|---|
-| `NelsonSiegelCurve` (4 params) | NT8 Eq.11 |
-| `NelsonSiegelSvenssonCurve` (6 params) | NT3 Eq.17 |
-| `bootstrap_zero_rates(bonds, today)` | NT3 Eq.11-16 |
-| `fisher_break_even(i, r)` | NT8 Eq.8 |
-| `gamma_known_cer_factor(cer_liq, cer_last)` | NT8 Eq.A4 |
-| `forward_rate(curve, t1, t2)` | NT3 Eq.8'/9' |
-| `forward_bei_between_tenors(...)` | NT3 Eq.10 |
-| `pair_delta(...)` | NT8 Apéndice Eq.A13 (validado: da exactamente 3.81% para S14F5/T2X5) |
-| `pair_monthly_inflation(δ, days)` | NT8 Eq.A12 |
-| `real_fx_drift(dev_rate, infl_rate)` | Fisher sobre FX |
-
-### Sendero mensual ([core/domain/inflation_path.py](core/domain/inflation_path.py))
-
-`monthly_inflation_path(nom_curve, real_curve, today, months_ahead=12)` — implementa la Fig.4 de NT8/2024. Para cada mes calendario, computa BEI forward usando las curvas y la convención de Fisher por intervalo.
-
----
-
-## CACHE Y PERFORMANCE
-
-- **Repositorio Excel**: singleton vía [`apps/cli/_common.py::get_repository`](apps/cli/_common.py). `_by_type` dict para lookups O(1).
-- **Snapshots Data912 live**: cache class-level con TTL 3s — coalesce las ~8 llamadas internas por ciclo de refresh en una sola round-trip a los 3 endpoints (`arg_notes`, `arg_bonds`, `arg_corp`). TTL < `REFRESH_SEC` garantiza data fresca entre ciclos.
-- **Stock OHLC histórico** (Panel Líder): cache instance-level por ticker; prefetch paralelo al boot (8 workers) para evitar blow-up del primer ciclo.
-- **Bond OHLC histórico** (popup): proxy `_BOND_HISTORY_CACHE` con TTL 600s por ticker. Validación con `HISTORICAL_SUPPORTED_TICKERS` (rechazo temprano con 400 para tickers no soportados upstream — sino se gastan ~4s esperando un 502).
-- **Histórico CSV intradiario**: lazy-loaded una vez por instancia. Lookup directo por ticker (headers del CSV = ticker).
-- **Índice CER + TAMAR**: `BCRAIndicesProvider` con cache class-level + persistencia en `data/history/{cer,tamar}_diario.csv`. Al startup hidrata desde disco; **un solo intento por día** a BCRA (gate sobre `_last_attempt`, no sobre cache populated — evita thundering herd si BCRA está caída). CER: 30 días. TAMAR: bootstrap 3 años, top-up 30 días. Si BCRA está caído, sigue operando con el último snapshot persistido.
-- **FX**: `DolarAPIProvider` TTL 60s, invalidado por el loop cada 30s (cambia lento intraday → refresh cada 5s era overkill).
-- **Matba/Primary WS** (futuros DLR + spot): conexión WebSocket persistente en thread daemon — push real-time, sin polling. Snapshot inicial llega en ~500ms-2s del primer connect; updates incrementales después. State dict en memoria, lock thread-safe. Auto-reconnect con backoff exponencial (1s → 60s cap). Heartbeat custom (`ping` string cada 30s). Subscribe topics: `md.rx_DDF_DLR_*` + `md.rx_DDF_BCRA_A3500`. **Sin auth ni credenciales**.
-- **REM**: TTL 6h (rate-limit 1 req/min upstream, dataset mensual).
-- **CAFCI (FCI)**: `CAFCIProvider` class-level + mirror `data/history/cafci_diario.json`. Un solo fetch exitoso por día (gate sobre `_last_attempt`); en fallo, cooldown de 60s antes de reintentar (evita hammering si el usuario spammea filtros con CAFCI caída). Hidrata de disco al startup + prime en background thread (el primer `/api/fci` no paga el JSON de ~3.9MB). El filtrado/orden/búsqueda se hace en memoria sobre el dataset cacheado. Offline-friendly: sirve el último snapshot persistido.
-- **BEI history (/api/bei_history)**: cache por mtime — re-serializa solo si el CSV cambió. Lock granular: I/O y parsing **fuera** del lock (sino bloquea otros endpoints concurrentes).
-- **BEI compute**: thread dedicado, **eager** al startup, refresh cada 5 min.
-- **Bond panels web**: una sola llamada batched `use_case.execute(all_bond_types)` por ciclo → agrupado por `instrument_type` → distribuido a cada panel. Refresh cada 5s. Adaptive sleep: si el ciclo supera 2× budget, skip sleep + log WARN.
-- **Cycle stats**: heartbeat por ciclo a DEBUG + summary a INFO cada 60s (`avg / max / overruns`).
-- **Rate limit `/api/abm/preview_cashflows` + `/api/bond_calculate`**: token bucket 120 req/min global compartido (deque + lock) — protege CPU del thread pool de clientes maliciosos. Ambos endpoints pueden ser polleados por keystroke del usuario.
-
----
-
-## DASHBOARD WEB
-
-### Paneles
-
-| ID | Contenido | Sort |
-|---|---|---|
-| `bonares` | SOBERANOS (sólo MEP) | MD asc |
-| `bopreales` | BOPREALES (sólo MEP) | MD asc |
-| `curva_soberana` | Chart TIR vs MD de bonares + bopreales | — |
-| `cer` | CER (LECER, BONCER, BONCER ZC, CON CUPON, STEP-UP) | MD asc |
-| `tasa_fija` | LECAP / BONCAP / BONOFIJA con TIR + TNA + TEM | MD asc |
-| `fci` | FCI (CAFCI): filtros tipo de renta + moneda + buscador, toggle TNA/Directo, períodos 7d/1m/3m/6m/YTD/12m + VCP. Click → popup detalle. Datos diarios (no live) → fetch propio fuera del snapshot de 5s. | TNA del período elegido (headers ordenables) |
-| `dolar_linked` | DL con V.Téc en pesos | MD asc |
-| `tamar` | TAMAR PURO + DUAL bonds re-valuados como TAMAR puro (sufijo `_TAM`) | MD asc |
-| `dual_tamar` | DUAL TAMAR (con floor) + DUAL CER/TAMAR (TXMJ*) | MD asc |
-| `futuros` | DLR curve via WS público de Matba; **TNA = (futuro_last/`DLR/SPOT` − 1)·365/d** (lineal, = informe A3 Matba y popup Curva Rofex); la efectiva compuesta `(F/S)^(365/d) − 1` es la **TEA** (`implied_tea`), no la TNA; spot = índice BCRA A3500 (`Dólar USA` en la UI de Primary) | — |
-| `panel_lider` | Acciones BYMA: mid + Día% (data912) + 5d% + 30d% + sparkline 30d | — |
-| `bei_tenor` | BEI por tenor estándar (3M-3Y) con TAMAR fwd, BEI γ-adj, BEI TAMAR, Deval DLR, TC real | — |
-| `bei_sendero` | Sendero mensual BEI vs REM-BCRA (12 meses) | calendario |
-| `bei_pares` | Cross-check método de pares LECAP/CER | — |
-| `valor_relativo` | Ranking rich/cheap transversal: junta el `spread_curva` de todos los paneles; más baratos (spread +) arriba, más caros (−) abajo | spread desc |
-| `escenarios` | Stress interactivo: sliders Δtasa (bps) + ΔFX (%) → ΔP por bono + P&L de cartera. Fetch propio (POST `/api/scenario`), no vive del snapshot de 5s | ΔP ARS asc |
-| `bei_history` (chart) | Evolución diaria de BEI spot por tenor desde CSV | — |
-| `curva_<x>` (extras) | Curvas TIR vs MD por panel de bonos (cer, tasa_fija, dolar_linked, tamar, dual_tamar). Ocultas por default; toggle desde **⚙ Layout** | — |
-
-### Layout (Gridstack)
-
-- El grid usa **Gridstack** vendored en `apps/web/static/vendor/gridstack/` (sin CDN-dep).
-- Cada panel está envuelto en `.grid-stack-item` con `gs-id` (ancla estable), `gs-w` (ancho 1..60), `gs-h` (alto 1..N, cellHeight = 5px).
-- Drag-and-drop desde el header, resize desde la esquina SE.
-- El layout se persiste en `localStorage`; el botón **⚙ Layout** abre el settings (visibilidad de paneles + restore default).
-- Cache busting: bumpear `?v=N` a las imports de `style.css` / `app.js` / `gridstack` en `index.html` al cambiar CSS/JS.
-
-### Endpoints
-
-| Endpoint | Método | Propósito |
-|---|---|---|
-| `/` | GET | Sirve `index.html` |
-| `/static/*` | GET | Sirve JS/CSS/HTML (incluye `vendor/gridstack/*`) |
-| `/api/snapshot` | GET | Snapshot completo: FX + monitors + BEI |
-| `/api/bei_history` | GET | Histórico diario de BEI (cached por mtime) |
-| `/api/supported_tickers` | GET | Lista de tickers soportados por data912 historical (single source of truth para el frontend) |
-| `/api/bond_history/<TICKER>` | GET | Proxy OHLC histórico de data912 con cache 10min. 400 para ticker no soportado, 502 si upstream falla. |
-| `/api/fci` | GET | FCI (CAFCI) filtrable: query params `tipo`, `moneda`, `q`, `sort` (período), `dir` (asc\|desc), `metric` (tna\|directo), `limit`. Devuelve `{meta, funds}`. |
-| `/api/fci/<clase_id>` | GET | Una clase de FCI por `clase_id` (para el popup de detalle). 404 si no existe. |
-| `/api/bond_detail/<TICKER>?lag=0\|1` | GET | Detalle estático para popup: meta + cashflows completos + métricas vivas. `lag` controla T+0/T+1 (default 1). |
-| `/api/bond_calculate/<TICKER>` | POST | Recompute para calculadora: `{mode: from_price\|from_tir, price?, price_mode?, tir?, settlement_lag?}`. **Rate limit 120/min** (mismo bucket que `preview_cashflows`). |
-| `/api/abm/schemas` | GET | Field metadata por hoja Excel |
-| `/api/abm/instruments` | GET | Lista de tickers + hoja |
-| `/api/abm/instrument/{ticker}` | GET | Row completo del ticker + cashflows (sheet o synth) |
-| `/api/abm/instrument` | POST | Crea/actualiza (upsert por ticker). Acepta `cashflows` para persistir en la misma transacción atómica. |
-| `/api/abm/instrument/{ticker}` | DELETE | Elimina row + cashflows huérfanos (atomic) |
-| `/api/abm/preview_cashflows` | POST | Sintetiza cashflows desde fields del form sin persistir. **Rate limit 120/min global.** |
-| `/api/cartera` | GET | Valuación viva de la cartera: `{positions, summary, cashflows, holdings}`. Lee tenencias de `data/cartera.json` + métricas del snapshot. |
-| `/api/cartera` | POST | Upsert tenencia: `{ticker, nominal, cost_price?, note?}`. |
-| `/api/cartera/{ticker}` | DELETE | Elimina una tenencia. |
-| `/api/scenario` | POST | Stress test: `{d_tir_bps, d_fx_pct}` → ΔP por bono + P&L de cartera. **Rate limit 120/min.** |
-
-### Popup de detalle por bono (3 tabs)
-
-Click en cualquier celda de ticker en cualquier panel abre un popup modal full-size (max 1440px, alto = viewport − 80px overlay padding) con 3 tabs:
-
-| Tab | Contenido | Notas |
-|---|---|---|
-| **Detalles** | Columna izq: 3 cards (Descripción técnica + Mercado + Métricas vivas). Columna der: tabla Cashflow completa con columnas `Fecha Cupón / VR Cartera / Renta Efect. / Amortización % c/100 VN / Obs. Prox. Pago / Total`. Past cupones en gris, próximo en bold + highlight. | El CF card capa su altura a la natural de la columna izq (JS measure); table-wrap scrollea adentro si los rows exceden. `scrollIntoView` centra el próximo cupón al abrir. |
-| **Chart** | Histórico OHLC con range buttons (1M/3M/6M/1Y/All) + selector Pesos/MEP/CABLE. | Reusa `/api/bond_history/<TICKER>`. Tab oculta si data912 no soporta histórico para el ticker (verificado contra `HISTORICAL_SUPPORTED_TICKERS`). |
-| **Calculadora** | 4 inputs editables (`Precio Dirty / Precio Clean / TIR / Paridad`). Modificar cualquiera recalcula los otros 3 + 3 cards de resultados (Rentabilidad, Valuación c/100 VN, Sensibilidad). Toggle T+0/T+1 controla el settle date para todas las métricas. | Trigger por ENTER o blur (no debounce-per-keystroke). Conversión Paridad↔Dirty en frontend (usa V.Téc cacheada); TIR↔Precio via backend para preservar lógica per-type. Rate-limited igual que `/api/abm/preview_cashflows` (mismo bucket 120/min). |
-
-Tab transitions usan animación JS de `height` (mide before/after, anima 220ms ease-out) — sin esto el popup snappea entre tabs con altos muy distintos (Detalles largo ↔ Calculadora corta).
-
-Todos los tickers son clickeables (independiente de si tienen OHLC) — la tab Chart se oculta sola cuando no hay histórico, manteniendo Detalles + Calculadora siempre accesibles.
-
-### Resilience del web server
-
-- **Supervisor** en `run.py`: si `web_server_main()` crashea, log + sleep 5s + restart. Ctrl+C exit limpio.
-- **Shutdown coordinado** vía `_SHUTDOWN_EVENT` (threading.Event): los daemon threads (refresh + BEI) chequean antes de cada iter y reemplazan `time.sleep` por `Event.wait()` para salir temprano. Sin esto, los threads quedaban mid-cycle en `ThreadPoolExecutor.submit()` durante shutdown y tiraban `RuntimeError("cannot schedule new futures after interpreter shutdown")` al log.
-- **`_is_shutdown_error`** detecta esa race y la baja a INFO en vez de stack trace.
-- **HTTP handler** atrapa `ConnectionAbortedError/Reset/BrokenPipe` (cliente cierra mid-response al navegar) y lo baja a DEBUG.
-
----
-
-## ENTORNO DE EJECUCIÓN
-
-**Sin venv en el proyecto.** El proyecto corre directamente con `py -3.12` del sistema (launcher de Windows). No existe ni debe existir ningún directorio `.venv` dentro de la carpeta del proyecto (mantiene el árbol liviano y fuera de git). El servidor sí usa un venv, creado por `deploy.sh` y gitignoreado. Las dependencias se instalan globalmente con `setup.bat` (`py -3.12 -m pip install -r requirements.txt`). Para correr: `run.bat` o `py -3.12 run.py` desde la terminal.
-
----
-
-## CONFIG OPCIONAL (.env)
-
-| Variable | Valor | Para qué sirve |
-|---|---|---|
-| `BYMADATA_USER` / `BYMADATA_PASS` | credenciales BYMA | Gatean la fuente live **`byma_realtime`**: sin ellas `make_source("byma_realtime")` tira `BymaRealtimeError`, la app cae a `byma_open` con WARNING y la UI marca el modo `available=False` ("Configurá BYMADATA_USER / BYMADATA_PASS"). El camino normal de carga es la UI (`/source/credentials` → `byma/credentials.save_credentials`, que escribe el `.env` y lo aplica en caliente), no editar el archivo a mano. |
-| `MONITOR_*` (~40 campos) | ver `config/settings.py` | `Settings` declara `env_prefix="MONITOR_"` y `env_file=".env"`, así que **todo** campo de settings se puede fijar acá (`MONITOR_MARKET_SOURCE`, `MONITOR_DB_DIR`, `MONITOR_JWT_SECRET_KEY`, …). En el droplet estas van en el `EnvironmentFile` del systemd, no en `.env`. |
-| (futuros: ninguna) | — | El provider de futuros usa el WS público de Matba/Primary (modo `guest`, sin credenciales). No hay `ROFEX_*` env vars desde la migración a WebSocket. |
-
-El `.env` está gitignoreado y nunca se comiteó: es el de la máquina del dev.
-`config/settings.py` tiene su propio `_load_dotenv()` mini-parser — no requiere `python-dotenv`.
-
-REM (`bcra-rem-api.facujallia.workers.dev/api/ipc_general`): sin auth. Rate-limit 1 req/min → `REMProvider` cachea 6h.
-
----
-
-## TESTING & QUALITY
-
-- **Tests unitarios** (`tests/`): `pytest`. Sin red, sin Excel real (usan tmp + fixtures). Cobertura: cashflow synth, FinancialEngine, instruments_abm, Data912Provider parsing.
-- **Suite de data quality**: `python -m scripts.data_quality_check` — chequea conectividad / latencia / schema / value sanity / cache / concurrencia / persistencia para cada feed externo. Exit code 0 sólo si todos los CRITICAL pasan; usa colores ANSI y fuerza UTF-8 en stdout para Windows consoles.
-- **Smoke test del server**: `python -m scripts.run_server_test` arranca el web, polls `/api/snapshot`, valida shape básico, mata el proceso.
-- **No mocks de la DB/Excel en integration tests** — la suite usa archivos temporales reales (atomic save + roundtrip).
-
----
-
-## TROUBLESHOOTING
-
-| Error | Causa probable | Solución |
-|---|---|---|
-| `No se encontró instruments_master.xlsx` | El Excel se movió | Restaurarlo en `data/instruments_master.xlsx` |
-| Variaciones Sem/1M/3M/YTD/1A todas `—` para un bono | El store aún no tiene su histórico: Data912 `/historical/bonds/{ticker}` no lo cubre (LECAP/TAMAR/DL/bopreal/ON) y el feed recién acumula | Esperá a que acumule, o sembralo en `precio_historico.csv`. El priming/acumulación los maneja `price_history.py` |
-| TIR muestra `nan` o números absurdos | Cashflows del Excel desactualizados / vencidos / mal cargados | Revisar hoja `Cashflows`. Para LECAP, verificar `tem_licit` y `fecha_emision` |
-| CER/TAMAR no funcionan al primer startup | BCRA API caída + no hay CSV persistido | Verificar `https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/30` y `/44`. Tras el primer fetch exitoso, `data/history/{cer,tamar}_diario.csv` permiten operar offline. |
-| Aparece menos instrumentos de los esperados | Filtro de tipos en `instrument_groups.py` no incluye el tipo del Excel | Agregar el `instrument_type` al grupo correspondiente |
-| Paridad DL en miles de % | V.Téc no está usando FX | Verificar que `_enrich_metrics` pase `fx_provider` a `calculate_technical_value` |
-| Bono TAMAR PURO con V.Téc=100 fijo | Su `fecha_emision` está en el futuro o falta | Editar hoja TAMAR via ABM |
-| BEI panels en "Cargando..." > 60s | El BEI thread está en su primer compute (heavy) | Esperar ~30s; ver logs `BEI thread: computing extended tables...` |
-| FUTUROS ROFEX panel vacío / TNA columna toda `–` | WS de Matba aún warm-up (primeros ~2s) o conexión caída | Esperar 2-3s tras el boot; verificar log `Matba WS connected`. Si el WS está caído, el provider re-intenta con backoff exponencial (1s→60s). |
-| ImportError `websockets` | Falta la lib | `pip install websockets` (~50KB; única dep del provider de futuros) |
-| Popup histórico devuelve 400 para un ticker | No está en `HISTORICAL_SUPPORTED_TICKERS` (data912 no lo soporta) | Validar contra `/api/supported_tickers`; o sumarlo a la constante si data912 lo expone (KEEP IN SYNC con `HISTORY_SUPPORTED_TICKERS` en `app.js`) |
-| Excel queda corrupto tras crash del proceso | Antes el wb.save() no era atómico | Ya resuelto: `_atomic_save_workbook` escribe a `.tmp` y `os.replace`. Si pasa, restaurar de `.tmp` o backup |
-| `RuntimeError: cannot schedule new futures after interpreter shutdown` al Ctrl+C | Race entre daemon threads y main thread durante shutdown | Ya manejado: `_SHUTDOWN_EVENT` + `_is_shutdown_error`. Si reaparece, chequear que nuevos threads suscriban al Event. |
-| Dashboard muestra datos viejos tras edit | Cache del navegador | `Ctrl+Shift+R`. Para changes de JS/CSS/Gridstack: bumpear `?v=N` en `index.html`. |
-| Layout perdido tras update | localStorage incompatible con nuevos `gs-id` | Click en **⚙ Layout** → restore default |
-
----
-
-## CHECKLIST PARA DESARROLLADORES
-
-- [ ] ¿Agregaste un instrumento? Solo en `data/instruments_master.xlsx` (vía ABM web o edición directa).
-- [ ] ¿Cambió un flujo? Hoja `Cashflows` (o `Cashflows_Fija`).
-- [ ] ¿Nuevo cálculo financiero? `FinancialEngine` en `core/domain/services.py`. Cashflow synth nuevo → dispatch en `core/domain/cashflow_synth.py`.
-- [ ] ¿Nuevo monitor CLI? Script en `apps/cli/`, tipo en `instrument_groups.py`.
-- [ ] ¿Nuevo panel web? Schema en `_get_columns`, registro en `Snapshot.__init__`, builder dentro de `_refresh_*` (server.py), `.grid-stack-item` en `index.html` con `gs-id`.
-- [ ] ¿Nueva fuente de datos? Justificar por qué no la cubre la fuente activa del hub; si es índice/referencia, modelo análogo a `BCRAIndicesProvider`; el cliente HTTP es `core/infrastructure/async_http.py::ResilientClient` (async). Ojo con los timeouts: el centinela de "usar el default del cliente" es `httpx.USE_CLIENT_DEFAULT`, **no `None`** (`None` = sin timeout, el request cuelga para siempre).
-- [ ] ¿Cambio de UI? Bumpear `?v=N` en `style.css` / `app.js` / `gridstack` imports de `index.html` para invalidar cache.
-- [ ] ¿Nuevo ticker para popup histórico? Agregar a `HISTORICAL_SUPPORTED_TICKERS` en `server.py` Y a `HISTORY_SUPPORTED_TICKERS` en `app.js` (KEEP IN SYNC). Idealmente consumir `/api/supported_tickers` desde el frontend para eliminar el drift.
-- [ ] ¿Tests? Cualquier cambio en `cashflow_synth` / `FinancialEngine` / `instruments_abm` / `bond_detail` precisa actualizar/sumar test en `tests/`. Correr `scripts/data_quality_check.py` antes de releases para validar feeds externos.
-- [ ] ¿Nuevo método en `FinancialEngine` que dependa de settle date? Aceptar `settle_date` (o `ref_date`) opcional y resolverlo con `_resolve_settle()` para que la calculadora del popup pueda overridearlo en T+0/T+1.
-
----
-
-**Última actualización:** 2026-09-03 (auditoría: fuente de precios, cliente HTTP y `.env` puestos al día; el resto de la capa web sigue siendo histórico) · contenido financiero: 2026-05-30
-**Versión:** 7.2 — **Day-count centralizado + solver Brent + auditoría** (ver CHANGELOG v7.2). · 7.1 — **Dashboard HTMX: UI + ABM soberanos + pricing pata ARS** (sobre la web FastAPI+HTMX de v7.0; arquitectura actual en `CLAUDE.md`). Ver CHANGELOG v7.1. · 7.0 — **Reingeniería `mejora.md`** (branch `refactor/mejora-reingenieria`): pricing core Strategy/Protocol/Pydantic (equivalencia verificada), persistencia SQLite+DuckDB (`CatalogRepository`), primitivas async (httpx/breaker/hub), y **web FastAPI + HTMX** reemplazando el http.server + SPA. **Arquitectura actual en `CLAUDE.md`.** · 6.5 — Cartera + Escenarios + Valor Relativo (ver CHANGELOG v6.5). · 6.4 — Panel FCI (CAFCI). Nueva fuente de datos: Fondos Comunes de Inversión vía el micrositio de estadísticas de CAFCI (`estadisticas.cafci.org.ar/comparador-de-fondos.json`), que bundle-a en un solo JSON diario el catálogo completo (1149 fondos / 4602 clases) + la matriz de rendimientos diaria (~3723 clases con VCP + TNA/Directo a 7d/1m/3m/6m/YTD/12m). El método histórico del repo `fedemoglia/cafci-api` (pegarle a `api.cafci.org.ar` sin auth) está muerto: ese host hoy está detrás de una CloudFront Function con allowlist de rutas (`{"error":"Route not allowed"}`). Nuevo `CAFCIProvider` (fetch 1×/día, disk-mirror, offline-friendly, prime en background), endpoints `/api/fci` + `/api/fci/<clase_id>`, panel web `fci` con filtros (tipo de renta + moneda) + buscador + toggle TNA/Directo + headers ordenables + popup de detalle. Tests en `tests/test_cafci_provider.py`.
-
-### CHANGELOG v7.2
-
-Refactor de day-count + solver XIRR + **auditoría completa** del codebase (2026-05-30). Suite: **964
-verde** (+715 tests nuevos). Detalle de la convención en **"Day-count / convención de descuento"**.
-
-| Tipo | Item | Detalle |
-|---|---|---|
-| **Fix** | **Day-count por instrumento** | El descuento respeta el `day_count` declarado vía `core/domain/daycount.py::year_fraction` (nuevo: `DayCount` enum + `parse_day_count` + ACT/ACT ISDA). Antes todo lo no-30/360 caía a 365.25 ignorando el campo → ONs `ACT/365` con error de ~1bp. Ahora matchean la referencia (CICA 7.56% vs 7.57%). `30/360` y `365.25` quedan bit-idénticos. Espejado en `_legacy_engine.py` → `test_pricing_equivalence` verde. |
-| Engine | **Solver Brent robusto** | `xirr.py` → brentq con auto-bracketing geométrico (yields >1000% que el bracket fijo perdía), Newton como pre-paso, `_npv` overflow-safe + guards en `duration`/`vanilla_pv`. Fixea el crash histórico de **CUAP** (TIR degenerada → `OverflowError`). Firma `xirr(flows, dates, day_count=)`. |
-| Engine | **Invariante cashflows cronológicos** | `Instrument` ordena cashflows en un `field_validator` → el pricing no re-sortea (DRY + claridad). |
-| Tests | **+715 tests** | `test_daycount`, `test_xirr_solver`, `test_daycount_pricing` (gap-lock ACT/365), `test_golden_referencia` (anclas la referencia CICA/CACB/BPCV…), `test_pricing_invariants` (property-based, `hypothesis` → nueva dep dev). |
-| Audit | **Limpieza + bugs** | Greeks: valuación CRR duplicada (`p_r`=`p0`) → reuso. Dead code en `async_http`. `circuit_breaker` `assert`→`raise` explícito. DRY de códigos HTTP transitorios → `_http_constants.py`. **Bug CER** (`cer_return_scenarios`): el tramo lockeado usaba el fallback del escenario en vez del de REM. `futures_provider._is_market_hours` → tz-aware (ZoneInfo BA). `provider_hub` re-raise de `asyncio.CancelledError`. `tamar.project_cer_at` docstring (compuesta, no lineal). |
-| Feature | **short_call / short_put** | Expuestos en `PRESET_NAMES` de opciones (los builders ya existían; faltaba listarlos en el dropdown). |
-| Perf | **Días hábiles date-native** | `holiday_engine` expone `es_habil(date)` y `settlement_byma_date(date, lag)` — O(1) (weekday + lookup en frozenset), **sin** el round-trip `date→str→pd.Timestamp→date`. `cer_reference_date`, `settlement_for` y las ramas CER de `technical_value` (base/strategies) ahora son date-native (~7× por llamada; `is_habil(str)`/`settlement_byma(str)` quedan como wrappers de compat). |
-| Chore | **Log file → WARNING+** | `monitores_global.log` pasa de INFO+ (todo: httpx/access/INFO, MB de ruido) a **WARNING+** (errores de conexión / breakers / fallas de fetch para post-mortem). Consola sin cambios. |
-| Arq/Docs | **SQLite = fuente única del catálogo** | Se explicitó (Pilar 2) que la verdad en runtime es `catalog.db`; Excel master + `obligaciones_negociables.csv` son semillas de bootstrap; la ABM es el editor (sus altas viven solo en la DB). `_ensure_obligaciones_negociables` ahora siembra ON **sólo si la hoja está vacía** (sin re-ingesta destructiva → no pisa las ON del ABM). |
-| Feature | **ON: Serie/Clase + Ley Aplicable** | Campos nuevos en el schema ABM de ON (`serie_clase` texto, `ley_aplicable` select Argentina/Extranjera) + columnas en el CSV. `on_catalog` los lee → `serie_clase` al `short_name` + ambos a `raw_fields`. Poblados 14/38 del CSV desde el listado IAMC/BYMA. |
-| Test fix | `_a_cer_ticker` date-fragile | El helper tomaba el primer CER del catálogo (X29Y6, LECER vencido) → proyección vacía. Ahora filtra por CER vivo (`maturity > settle` + flujos futuros) en `test_bond_detail.py` y `test_bonds_router.py`. |
-
-### CHANGELOG v7.1
-
-Trabajo sobre la web **FastAPI + HTMX** (arquitectura actual en `CLAUDE.md`; las secciones "DASHBOARD WEB" de este doc son del viejo http.server). Foco: cotizaciones en el header, soberanos por moneda + fix de pricing de la pata ARS, y herramientas por panel.
-
-| Tipo | Item | Detalle |
-|---|---|---|
-| Feature | **Header strip de cotizaciones** | Cards en el header (todas las páginas): tipos de dólar de dolarapi (compra/venta **bid/offer** + **variación diaria** de la venta vs cierre de ayer de argentinadatos), **Reservas** y **Riesgo País** (BCRA / JPM) con su delta. `routers/header.py` + `fragments/header_cards.html`, autocargable por HTMX (`/header/cards`, poll 60s). |
-| Feature | **Soberanos consolidados (ABM)** | 1 bono = 3 especies por moneda (ARS / MEP-`D` / CABLE-`C`). El form de Soberanos tiene los 3 tickers; el listado del ABM muestra **1 fila por bono**; al guardar sincroniza las especies con cashflows compartidos. Sin cambio de esquema: agrupa por sufijo (`_sob_group`). `instruments_abm.py`. |
-| **Fix** | **Pricing de la pata ARS** | La pata pesos se dolariza para las métricas: precio USD implícito = `precio_pesos ÷ offer` (**MEP si BONAR, CABLE si GLOBAL**); TIR/V.Téc/MD/paridad sobre ese USD, la columna Precio muestra los pesos (sin decimales). Corrige el TIR −94% / paridad 130000% que daba la pata peso. En `generate_report._enrich_metrics` (no toca el motor → test de equivalencia intacto). Ver convención "Soberanos: 3 especies por moneda". |
-| Feature | **Filtro de moneda en BONARES** | Botones **ARS / MEP / CABLE** en el header del panel; **toggle independiente** (cada uno prende/apaga su moneda); default MEP. CSS-driven (`data-flt` en el panel, `data-ccy` en la fila), sobrevive a los swaps de HTMX del tbody. |
-| Feature | **Toolbar por panel** | Botones `Gráfico` · `Config` · `✕`. **Gráfico** (solo paneles con MD/TIR) = popup Chart.js (CDN): dispersión TIR×MD, Bonares vs Globales en colores, curva log por grupo, ticker arriba/abajo de cada punto. **Config** = mostrar/ocultar columnas (clases `hcol-N`). **✕** = cerrar panel. `routers/panels.py::panel_chart` + `fragments/panel_chart.html`. |
-| Feature | **CONFIG global + layout default** | Menú en el nav (al lado de ABM): toggle independiente de paneles visibles + restaurar los cerrados. **"Guardar layout como default"** persiste el arreglo (posiciones + ocultos + columnas) server-side: `POST /panels/layout` → `dashboard_layout.json` en `%LOCALAPPDATA%\monitor`. Prioridad al cargar: **localStorage personal > default del server > auto-layout**. |
-| UI | **Grid: auto-fit + resize fino + scrollbars** | Paneles auto-ajustan el alto a su contenido (sin scrollbar vertical; ajuste relativo medido en JS). Resize libre de grano fino (grid 200 col × cellHeight 5px). Scrollbars finos temáticos (navy/la referencia, light/dark). Layout en localStorage `grid-layout-v3`. |
-
-### CHANGELOG v6.5
-
-Tres features de análisis de portafolio (relevadas de FinceptTerminal pero acotadas a renta fija AR). Dos ya estaban medio construidas y se **generalizaron** en vez de rehacerse.
-
-| Tipo | Item | Detalle |
-|---|---|---|
-| Feature | **Valor Relativo (rich-cheap)** | El enriquecimiento que vivía solo en `tasa_fija` se generalizó a TODOS los paneles de bonos: `spread_curva` (TIR − ajuste log `a+b·ln(DM)`) + `carry_roll` por panel; `tir_real` solo en pesos nominales (tasa_fija/tamar; CER ya es real, hard-dollar no aplica REM). Nuevo panel `valor_relativo` (ranking transversal: más baratos arriba, más caros abajo). Curvas mono-serie coloreadas por residuo (🟢 barato / 🔴 caro) en `renderBondCurve`. |
-| Feature | **Cartera** | Tenencias (ticker + nominal + costo) con valuación viva: P&L, TIR ponderada, MD/convexidad de cartera, exposición por tipo/moneda, calendario de flujos escalado por tenencia. Página `/cartera`. USD→ARS al MEP. |
-| Feature | **Escenarios / Stress** | Panel interactivo (sliders Δtasa bps + ΔFX %) → ΔP por bono + P&L de cartera. Reprice analítico MD+convexidad con overlay FX por tipo (β_precio/β_valor: USD→valor ARS, DL→precio ARS, pesos→0). Inflación por sendero mensual sigue en el popup CER (`/api/cer_scenarios`). |
-| Engine | `core/domain/portfolio.py` | Agregación pura: `build_portfolio` + `portfolio_cashflows`. Tests en `tests/test_portfolio.py`. |
-| Engine | `core/domain/scenarios.py` | Reprice puro: `shock_position` + `portfolio_shock`. Tests en `tests/test_scenarios.py`. |
-| Store | `apps/web/cartera_store.py` | Tenencias en `data/cartera.json` (atomic `.tmp`+`os.replace`, RLock propio). NO toca el Excel maestro — las tenencias no son instrumentos. |
-| Refactor | `_enrich_curve_metrics` | Extraído de `_enrich_tasa_fija_rows` (que ahora delega + agrega DV01/convexidad). Reusado por todos los paneles. |
-| API | `GET/POST/DELETE /api/cartera` + `POST /api/scenario` | Valuación + CRUD de tenencias; stress test (rate-limit 120/min, mismo bucket que preview/calculate). |
-| UI/Nav | Header dropdown **"Análisis ▾"** | Agrupa Valor Relativo · Escenarios · Cashflows · BCRA. Nuevo botón **Cartera** (abre `/cartera`). Reemplaza los botones sueltos Cashflows/BCRA. |
-
-**Pendientes v6.5 (para continuar):**
-- **Cartera**: P&L solo precio vs costo (falta sumar cupones cobrados desde una `fecha_compra`); calendario de flujos en términos "base" (CER/TAMAR/DL sin proyección de indexación al pago — los hard-dollar USD sí son exactos); el costo USD se convierte al FX actual, no al de compra.
-- **Escenarios**: convexidad exacta solo en `tasa_fija` (lineal en el resto → sumar `FinancialEngine.convexity` por bono); el shock de tasa es shift paralelo (falta empinamiento/twist); inflación por sendero sigue solo en el popup CER (`/api/cer_scenarios`).
-- **Valor Relativo**: usa ajuste log `a+b·ln(DM)`; para soberanos evaluar NSS (`NelsonSiegelSvenssonCurve.fit`). Falta z-spread / asset-swap.
-- **Layout**: los paneles nuevos (`valor_relativo`, `escenarios`) pueden requerir ⚙ Layout → restore default en sesiones con layout viejo en `localStorage`.
-- **Tests**: `portfolio` + `scenarios` cubiertos por unit tests (`tests/test_{portfolio,scenarios}.py`); falta integration test HTTP de `/api/cartera` y `/api/scenario` (hoy validados por smoke manual).
-
-### CHANGELOG v6.4
-
-| Tipo | Item | Detalle |
-|---|---|---|
-| Feature | Panel FCI (CAFCI) | Acceso a TODOS los fondos (10 tipos de renta, 3 monedas) con rendimientos diarios. Default Money Market en pesos por TNA. |
-| Source | `CAFCIProvider` | Join catálogo↔matriz sobre `clase_id`, fetch 1×/día con cooldown en fallo, mirror `data/history/cafci_diario.json`, hidratación de disco + prime en background. |
-| API | `GET /api/fci` + `GET /api/fci/<clase_id>` | Lista filtrable/ordenable + detalle por clase. |
-| UI | Panel `fci` autónomo | No depende del snapshot de 5s — fetch propio on-load + on-filter-change. |
-
-### CHANGELOG v6.1
-
-| Tipo | Item | Detalle |
-|---|---|---|
-| Feature | Popup de detalle por bono (3 tabs) | Click en cualquier ticker abre Detalles + Chart + Calculadora. Reemplaza al popup de histórico standalone. |
-| Feature | Calculadora pro de bonos | 4 inputs editables (Dirty/Clean/TIR/Paridad) con auto-recompute mutuo. Toggle T+0/T+1. Métricas: TIR/TNA/TEM, V.Téc/Residual/Paridad/Accrued, MD/DV01/Convexity/Term. |
-| Module | `apps/web/bond_detail.py` | Backend del popup: `get_bond_detail()` + `calculate()`. Resuelve `settle_date` con `_resolve_ref(lag)` (T+1 default, BYMA-aware). |
-| API | `GET /api/bond_detail/<TICKER>?lag=0\|1` | Detalle estático + métricas vivas. |
-| API | `POST /api/bond_calculate/<TICKER>` | Recompute: `{mode, price?, price_mode?, tir?, settlement_lag?}`. Mismo rate limit que preview_cashflows. |
-| FinancialEngine | `+ accrued_interest, days_since_last_coupon, residual_nominal, current_yield, dv01, convexity` | Métricas adicionales para la calculadora. |
-| FinancialEngine | `+ tir_from_price, price_from_tir` | Inversas roundtrip-exactas. `price_from_tir` con branches per-type (vanilla/CER/DL/TAMAR/DUAL/DUAL_CER_TAMAR). |
-| FinancialEngine | `settle_date` override en `calculate_tir`, `calculate_duration`, `calculate_technical_value`, `tir_from_price`, `price_from_tir` | Permite a la calculadora cambiar T+0/T+1 consistentemente (sin esto TIR y V.Téc quedaban en distintas fechas). |
-| Bug fix | Accrued period para soberanos mid-amort | Antes caía a `emission_date` (5+ años atrás) cuando Excel no tenía past flows → AL29D mostraba 2082 días. Ahora infiere `prev = next_cf − 6 meses` con `relativedelta`. Mismo fix aplicado en `calculate_technical_value`. |
-| UX | Todos los tickers clickeables | Antes solo `HISTORICAL_SUPPORTED_TICKERS`. Tab Chart se oculta sola si no hay OHLC. |
-| UX | Calculadora dispara en ENTER/blur | Antes debounced por keystroke; ahora vos controlás cuándo recalcula. Spinners nativos del `<input type=number>` removidos. |
-| UX | CF card capa altura a col izquierda (JS measure) | Sin esto el CF largo (AO27 con 21 rows) inflaba el grid y dejaba empty space gigante en la columna izquierda. |
-| UX | Transición animada entre tabs | Mide before/after, anima `height` 220ms ease-out — sin esto el popup snappea cuando Detalles ↔ Calculadora tienen alturas muy distintas. |
+| Cabecera «REINGENIERÍA IMPLEMENTADA … Cambios clave» | Histórico: git. Arquitectura actual → `CLAUDE.md` · `docs/arquitectura.md` |
+| VISIÓN GENERAL | `CLAUDE.md` (preámbulo) · `docs/arquitectura.md` |
+| Stack técnico | `docs/arquitectura.md` (el stack web viejo y la base «analytics» que listaba eran falsos) |
+| LOS 4 PILARES ARQUITECTÓNICOS — Pilar 1 (una config por curva) | `docs/flujo-web.md` (registro `PANELS`/`PANEL_ORDER` de `panels_schema.py`); el `_build_refresh_context` del server viejo es histórico |
+| Pilar 2 (SQLite = fuente de verdad; Excel/CSV semillas) | `CLAUDE.md › Invariantes` · `docs/convenciones-financieras.md › «Schema de las hojas / campos del instrumento»` |
+| Pilar 3 (matemática centralizada) | `docs/convenciones-financieras.md › «Cómo extender la matemática financiera»` |
+| Pilar 4 (fuente de precios intercambiable: hub + floor) | `CLAUDE.md` (preámbulo + glosario §0.10) · `docs/arquitectura.md` |
+| PIPELINE | `docs/arquitectura.md` · `docs/flujo-web.md` (el diagrama con `server.py`/threads es histórico) |
+| ESTRUCTURA DE ARCHIVOS | `CLAUDE.md › Arquitectura` · `docs/arquitectura.md` (7 archivos del árbol viejo no existen: `apps/web/server.py`, `app.js`, `style.css`, `index.html`, `curva.js`, `config/theme.py`, `interfaces` de uso web) |
+| SCHEMA DE LAS HOJAS DEL EXCEL | `docs/convenciones-financieras.md › «Schema de las hojas / campos del instrumento»` (corregido: Excel = SEMILLA) |
+| CÓMO AGREGAR UNA NUEVA CURVA | `CLAUDE.md › Invariantes` («tipos») · `docs/flujo-web.md`; los pasos sobre `_get_columns` / `Snapshot.__init__` / `index.html` son históricos |
+| CÓMO AGREGAR UN NUEVO INSTRUMENTO (sin tocar Excel a mano) | `CLAUDE.md › Invariantes` (la ABM escribe SQLite; preview de cashflows) · `docs/flujo-web.md` |
+| CONVENCIONES CRÍTICAS | `docs/convenciones-financieras.md` (entero) |
+| ★ Bonos CER (NT N°8/2024) | `docs/convenciones-financieras.md › «Bonos CER (NT N°8/2024)»` |
+| ★ Bonos TAMAR (PURO, DUAL, DUAL_CER_TAMAR) | `docs/convenciones-financieras.md › «Bonos TAMAR (PURO, DUAL, DUAL_CER_TAMAR)»` («max rails», «MD bullet m=12») |
+| Bonos DOLAR LINKED | `docs/convenciones-financieras.md › «Bonos DOLAR LINKED»` |
+| Obligaciones Negociables (ON hard-dollar) | `docs/convenciones-financieras.md › «Obligaciones Negociables (ON hard-dollar)»` (convención ON `ACT/365`, BACH 30/360) |
+| Bonos LECAP / BONCAP capitalizables | `docs/convenciones-financieras.md › «Bonos LECAP / BONCAP capitalizables»` |
+| Modified Duration — convención BYMA/IAMC | `docs/convenciones-financieras.md › «Modified Duration — convención BYMA/IAMC»` |
+| Day-count / convención de descuento | `docs/convenciones-financieras.md › «Day-count / convención de descuento»` |
+| Soberanos: 3 especies por moneda (ARS / MEP / CABLE) + pricing de la pata ARS | `docs/convenciones-financieras.md › «Soberanos: 3 especies por moneda…»` |
+| Date parsing — bug histórico | `docs/convenciones-financieras.md › «Schema…»` (fechas ISO, `repositories.py:92-110`) |
+| Accrued period para soberanos mid-amortización | `docs/convenciones-financieras.md › «Intereses corridos (accrued) y período corriente»` |
+| CÓMO EXTENDER LA MATEMÁTICA FINANCIERA (tabla de `FinancialEngine`) | `docs/convenciones-financieras.md › «Cómo extender la matemática financiera»` |
+| Override de settle_date (T+0/T+1) / Convención T+0 / T+1 | `docs/convenciones-financieras.md › «Settlement: T+1 para todos»` |
+| Curvas y BEI (`yield_curve.py`) · Sendero mensual (`inflation_path.py`) | `docs/convenciones-financieras.md › «Curvas y BEI (NT N°3/2019 + NT N°8/2024)»` |
+| CACHE Y PERFORMANCE (incluida la regla «I/O y parsing fuera del lock» del BEI history, ex `agents.md:411`) | Histórico: git. Providers/caches vigentes → `docs/arquitectura.md`; la regla del lock vive en `tests/test_aud_A_infra_http_indices_lock.py` |
+| DASHBOARD WEB (Paneles · Layout arrastrable · Endpoints `/api/*` · Popup 3 tabs · Resilience del web server) | Histórico: git. Vigente → `docs/flujo-web.md` · `CLAUDE.md › Flujo web (HTMX SSR)` |
+| ENTORNO DE EJECUCIÓN | `CLAUDE.md › Cómo correr` · §0.2 |
+| CONFIG OPCIONAL (.env) | `docs/despliegue.md` · `CLAUDE.md` (secretos, `MONITOR_*`) |
+| TESTING & QUALITY | `CLAUDE.md` (gate) · §0.6 · skill `/gate` |
+| TROUBLESHOOTING | Histórico: git (casi todo refiere a `server.py`/`app.js`). Salud vigente → `/api/health` (§0.2) · `docs/flujo-web.md` · `docs/pendiente.md` |
+| CHECKLIST PARA DESARROLLADORES | `CLAUDE.md › Invariantes` · skill `/compound` (§0.1.9). La línea «¿Agregaste un instrumento? Solo en el Excel» era FALSA: las altas van por la ABM → SQLite |
+| Última actualización / Versión (7.2 · 7.1 · 7.0 · 6.5 · 6.4) | Histórico: git |
+| CHANGELOG v7.2 · v7.1 · v6.5 · v6.4 · v6.1 | Histórico: git (`git log -p agents.md`, `git show c0dda9d:agents.md`) |
