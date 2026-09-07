@@ -373,23 +373,30 @@ def _uni_row(symbol, **kw):
     return BymaCatalogORM(**base)
 
 
-def test_una_letra_del_panel_letras_prefillea_tasa_fija_con_clase_y_vencimiento(tmp_db):
+def test_una_letra_de_titulos_publicos_prefillea_tasa_fija_con_clase_y_vencimiento(tmp_db):
+    from apps.web import instruments_abm as abm_store
     from core.domain.instrument_groups import is_known_type
     from core.infrastructure.db.catalog_repository import init_db
     from core.infrastructure.db.engine import SessionLocal
     init_db()
     with SessionLocal.begin() as s:
         s.add(_uni_row("S29E7", vencimiento="2027-01-29"))
-        s.add(_uni_row("T15E7", vencimiento="2027-01-15"))
+        # BONCAP real: panel "Titulos Publicos" (NO "Letras"), categoría Títulos Públicos.
+        s.add(_uni_row("T15E7", panel="Titulos Publicos", vencimiento="2027-01-15"))
     pf = universe.prefill_for("S29E7")
     assert pf["sheet"] == "Tasa_Fija"
     assert pf["fields"]["clase"] == "LECAP" and is_known_type("LECAP")
     assert pf["fields"]["fecha_pago"] == "2027-01-29"
     assert pf["fields"]["ticker_ars"] == "S29E7"
     assert universe.prefill_for("T15E7")["fields"]["clase"] == "BONCAP"
+    # pin: el form de Tasa_Fija recibe ticker_ars (no el "ticker" crudo del schema) tras
+    # el post-proceso que prepende _CCY_TICKER_FIELDS y agrega isin (apps/web/instruments_abm.py).
+    keys = [f["key"] for f in abm_store.SHEET_SCHEMAS["Tasa_Fija"]["fields"]]
+    assert {"ticker_ars", "clase", "fecha_pago", "isin"} <= set(keys)
+    assert "ticker" not in keys
 
 
-def test_un_bonte_o_dual_del_panel_letras_no_recibe_una_clase_inventada(tmp_db):
+def test_un_bonte_o_dual_de_titulos_publicos_no_recibe_una_clase_inventada(tmp_db):
     from core.infrastructure.db.catalog_repository import init_db
     from core.infrastructure.db.engine import SessionLocal
     init_db()
@@ -401,6 +408,21 @@ def test_un_bonte_o_dual_del_panel_letras_no_recibe_una_clase_inventada(tmp_db):
         assert pf["sheet"] == "Soberanos" and "clase" not in pf["fields"], sym
     assert universe._clase_letra("TY30P") is None
     assert universe._clase_letra("S31G6") == "LECAP" and universe._clase_letra("T30J7") == "BONCAP"
+
+
+def test_una_on_con_ticker_t_mas_digito_no_se_disfraza_de_boncap(tmp_db):
+    """Tarjeta Naranja (T641O) es una ON, no una BONCAP: el guard filtra por categoría
+    "Títulos Públicos", no por el prefijo del ticker solo."""
+    from core.infrastructure.db.catalog_repository import init_db
+    from core.infrastructure.db.engine import SessionLocal
+    init_db()
+    with SessionLocal.begin() as s:
+        s.add(_uni_row("T641O", categoria="Obligaciones Negociables", panel="Oblig. Negociables",
+                       isin="ARTNAR000001", emisor="TARJETA NARANJA S.A.U."))
+    pf = universe.prefill_for("T641O")
+    assert pf["sheet"] == "Obligaciones_Negociables"
+    assert "clase" not in pf["fields"]
+    assert pf["fields"]["tipo"] == "HARD DOLLAR"
 
 
 def test_el_vencimiento_de_la_ficha_prefillea_fecha_vencimiento_en_una_on(tmp_db):
