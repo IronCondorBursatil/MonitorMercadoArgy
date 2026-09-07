@@ -174,20 +174,25 @@ def test_la_corrida_buena_sella_el_dia_y_los_vistos(base):
 
 
 def test_la_ficha_enriquece_isin_emisor_vencimiento_y_categoria(base):
+    """`tipo_especie` distinto del default del bucket (`"Obligaciones Negociables"` para
+    `corp`, ver `_BUCKET_META`): así el assert de categoría sólo pasa si la ficha de
+    verdad viaja hasta la fila del catálogo Y hasta la novedad — si se borrara
+    `fila["categoria"] = campos["categoria"]` en el servicio, la categoría de la fila
+    seguiría siendo el default del bucket y este test lo detectaría."""
     _seed_catalogo(60)
 
     def ficha(symbol):
         assert symbol == "YMCXO"
         return {"isin": "ARYPFS000001", "emisor": "YPF S.A.", "denominacion": "ON YPF CL X",
-                "tipo_especie": "Obligaciones Negociables", "vencimiento": "2029-06-30"}
+                "tipo_especie": "Oblig. Negociables PYMES", "vencimiento": "2029-06-30"}
 
     res = svc.sincronizar_universo(_hub({"YMCXO": "corp"}), hoy=HOY, ficha_fn=ficha)
     assert res.fichas == 1
     f = _fila("YMCXO")
     assert f.isin == "ARYPFS000001" and f.emisor == "YPF S.A."
     assert f.vencimiento == "2029-06-30" and f.denominacion == "ON YPF CL X"
-    assert f.categoria == "Obligaciones Negociables"
-    assert _nov("YMCXO").categoria == "Obligaciones Negociables"
+    assert f.categoria == "Oblig. Negociables PYMES"
+    assert _nov("YMCXO").categoria == "Oblig. Negociables PYMES"
 
 
 def test_una_ficha_rota_no_frena_la_corrida(base):
@@ -212,6 +217,51 @@ def test_la_ficha_se_pide_solo_para_lo_nuevo_y_con_tope(base):
     extra = {f"N{i:02d}O": "corp" for i in range(5)}
     svc.sincronizar_universo(_hub(extra), hoy=HOY, ficha_fn=ficha, max_fichas=3)
     assert len(pedidas) == 3 and all(p.startswith("N") for p in pedidas)
+
+
+def test_una_pendiente_sin_isin_recibe_la_ficha_en_la_corrida_siguiente(base):
+    """«El resto, mañana»: un símbolo nuevo que se quedó sin ficha (tope o falla) no
+    puede perderla para siempre sólo porque ya entró a `byma_catalog` — mientras la
+    novedad siga `nueva` y su fila siga sin ISIN, la corrida siguiente la reintenta."""
+    _seed_catalogo(60)
+    svc.sincronizar_universo(_hub({"YMCXO": "corp"}), hoy=HOY, ficha_fn=_sin_ficha,
+                             max_fichas=0)
+    assert _fila("YMCXO").isin is None
+
+    pedidas = []
+
+    def ficha(symbol):
+        pedidas.append(symbol)
+        return {"isin": "ARYPFS000001", "emisor": "YPF S.A.", "denominacion": "ON YPF CL X",
+                "tipo_especie": "Oblig. Negociables PYMES", "vencimiento": "2029-06-30"}
+
+    res = svc.sincronizar_universo(_hub({"YMCXO": "corp"}), hoy=HOY, ficha_fn=ficha)
+    assert pedidas == ["YMCXO"]                    # ni K001 (sin ISIN pero no es novedad)
+    f = _fila("YMCXO")
+    assert f.isin == "ARYPFS000001" and f.emisor == "YPF S.A."
+    assert f.denominacion == "ON YPF CL X" and f.vencimiento == "2029-06-30"
+    assert f.categoria == "Oblig. Negociables PYMES"
+    assert _nov("YMCXO").categoria == "Oblig. Negociables PYMES"
+    assert res.fichas == 1
+
+
+def test_una_pendiente_con_isin_no_se_reintenta(base):
+    """Si la fila del catálogo ya tiene ISIN (lo trajo una corrida anterior o el CSV),
+    no es candidata a reintento aunque la novedad siga `nueva`."""
+    _seed_catalogo(60)
+    with SessionLocal.begin() as s:
+        s.add(BymaCatalogORM(symbol="S29E7", categoria="Títulos Públicos",
+                             isin="ARARGS100017"))
+        nov.registrar_nuevas_en(s, [{"symbol": "S29E7", "source": "byma",
+                                     "categoria": "Títulos Públicos"}], hoy=HOY)
+    pedidas = []
+
+    def ficha(symbol):
+        pedidas.append(symbol)
+        return None
+
+    svc.sincronizar_universo(_hub({}), hoy=HOY, ficha_fn=ficha)
+    assert pedidas == []
 
 
 def test_una_corrida_que_revienta_a_mitad_no_deja_nada_a_medias(base, monkeypatch):

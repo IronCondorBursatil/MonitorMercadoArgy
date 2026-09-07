@@ -24,14 +24,16 @@ from core.infrastructure.byma import novedades as nov
 from core.infrastructure.byma.universe import _categoria, _loaded_ids
 from core.infrastructure.db.catalog_repository import init_db
 from core.infrastructure.db.engine import SessionLocal
-from core.infrastructure.db.models import BymaCatalogORM
+from core.infrastructure.db.models import BymaCatalogORM, UniverseNovedadORM
 
 logger = logging.getLogger(__name__)
 _audit = logging.getLogger("monitor.audit")
 
 META_ULTIMA_CORRIDA = "universe_ultima_corrida"   # 'YYYY-MM-DD' (hora AR)
 META_ULTIMOS_VISTOS = "universe_ultimos_vistos"   # cuántos símbolos vio (guard relativo)
-_MAX_FICHAS = 200   # fichas BYMA por corrida (una POST sync por símbolo); el resto, mañana
+_MAX_FICHAS = 200   # fichas BYMA por corrida (una POST sync por símbolo); el resto se
+                    # reintenta en corridas siguientes mientras la novedad siga pendiente
+                    # sin ISIN
 
 # Una corrida por vez: el loop de las 08:00 y «Refrescar ahora» corren en hilos distintos
 # y las dos leerían el mismo `catalogo` para después insertar el mismo PK.
@@ -139,20 +141,36 @@ def _sincronizar(hub, *, hoy: date, ficha_fn: Optional[FichaFn], max_fichas: int
         return _rechazo(diff.vistos, diff.rechazo)
     res = Resultado(vistos=diff.vistos)
 
-    # Ficha técnica SOLO para símbolos nuevos en el catálogo. Red, FUERA de la transacción.
+    # Reintentos: novedades pendientes cuya fila de `byma_catalog` sigue sin ISIN — la
+    # corrida en que se altearon puede haberse quedado sin ficha (tope o falla) y, una vez
+    # en el catálogo, `diff.altas_catalogo` no las vuelve a traer. Acotado a PENDIENTES
+    # sin ISIN a propósito: no hay que gastar el tope en los ~664 símbolos del CSV seed
+    # que nunca tuvieron ISIN (no son novedad).
+    altas_symbols = {fila["symbol"] for fila in diff.altas_catalogo}
+    with SessionLocal() as s:
+        candidatos_pendientes = s.execute(
+            select(UniverseNovedadORM.symbol)
+            .outerjoin(BymaCatalogORM, BymaCatalogORM.symbol == UniverseNovedadORM.symbol)
+            .where(UniverseNovedadORM.estado == "nueva", BymaCatalogORM.isin.is_(None))
+        ).scalars().all()
+    reintentos = sorted(sym for sym in candidatos_pendientes if sym not in altas_symbols)
+
+    # Ficha técnica para símbolos nuevos + pendientes sin ISIN. Red, FUERA de la transacción.
     ficha_fn = ficha_fn or _ficha_byma_factory()
+    todos_candidatos = [fila["symbol"] for fila in diff.altas_catalogo] + reintentos
     fichas: Dict[str, dict] = {}
-    for fila in diff.altas_catalogo[:max_fichas]:
+    for symbol in todos_candidatos[:max_fichas]:
         try:
-            f = ficha_fn(fila["symbol"])
+            f = ficha_fn(symbol)
         except Exception as e:  # noqa: BLE001 — la ficha es best-effort
-            logger.debug("ficha %s falló: %s", fila["symbol"], e)
+            logger.debug("ficha %s falló: %s", symbol, e)
             f = None
         if f:
-            fichas[fila["symbol"]] = f
-    if len(diff.altas_catalogo) > max_fichas:
-        logger.info("universo: %d símbolos nuevos sin ficha esta corrida (tope %d)",
-                    len(diff.altas_catalogo) - max_fichas, max_fichas)
+            fichas[symbol] = f
+    if len(todos_candidatos) > max_fichas:
+        logger.info("universo: %d símbolos sin ficha esta corrida (tope %d); se reintentan "
+                    "mientras sigan pendientes sin ISIN",
+                    len(todos_candidatos) - max_fichas, max_fichas)
 
     hoy_iso = hoy.isoformat()
     ahora = datetime.now().isoformat(timespec="seconds")
@@ -168,6 +186,31 @@ def _sincronizar(hub, *, hoy: date, ficha_fn: Optional[FichaFn], max_fichas: int
                                  denominacion=f.get("denominacion"),
                                  vencimiento=f.get("vencimiento"),
                                  last_seen=hoy_iso, updated_at=ahora))
+        for symbol in reintentos:
+            f = fichas.get(symbol)
+            if not f:
+                continue
+            row = s.get(BymaCatalogORM, symbol)
+            if row is None:
+                continue
+            # Sólo rellena huecos: nunca pisa un valor ya cargado (misma regla que
+            # `catalog_enrich.enrich_isin_from_byma` — la fila viva manda).
+            if row.isin is None and f.get("isin"):
+                row.isin = f["isin"]
+            if row.emisor is None and f.get("emisor"):
+                row.emisor = f["emisor"]
+            if row.denominacion is None and f.get("denominacion"):
+                row.denominacion = f["denominacion"]
+            if row.vencimiento is None and f.get("vencimiento"):
+                row.vencimiento = f["vencimiento"]
+            if f.get("tipo_especie"):
+                nueva_categoria = _categoria(f["tipo_especie"], row.security_type or "",
+                                             row.panel or "")
+                if nueva_categoria != row.categoria:
+                    row.categoria = nueva_categoria
+                    nov_row = s.get(UniverseNovedadORM, symbol)
+                    if nov_row is not None:
+                        nov_row.categoria = nueva_categoria
         _marcar_last_seen(s, {sym for sym in vistos if sym in catalogo}, hoy_iso)
         res.nuevas = nov.registrar_nuevas_en(s, diff.nuevas, hoy=hoy)
         res.cargadas = nov.marcar_cargadas_en(s, diff.cargadas)
