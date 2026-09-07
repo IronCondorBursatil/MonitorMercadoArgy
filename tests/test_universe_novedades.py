@@ -58,3 +58,140 @@ def test_init_db_crea_universe_novedades_y_migra_byma_catalog(tmp_path, restore_
         row = conn.exec_driver_sql(
             "SELECT categoria FROM byma_catalog WHERE symbol='AL30'").fetchone()
     assert row is not None and row[0] == "Títulos Públicos"
+
+
+# ── diff puro ───────────────────────────────────────────────────────────────
+from datetime import datetime  # noqa: E402
+
+from core.infrastructure.byma import novedades as nov  # noqa: E402
+
+
+def _vistos(n: int, extra: dict | None = None) -> dict:
+    """n símbolos conocidos (bucket stocks) + extra {symbol: bucket}."""
+    d = {f"K{i:03d}": "stocks" for i in range(n)}
+    d.update(extra or {})
+    return d
+
+
+def _conocidos(n: int) -> set:
+    return {f"K{i:03d}" for i in range(n)}
+
+
+def test_meta_de_deriva_categoria_moneda_y_ticker_base_como_el_seed():
+    m = nov.meta_de("S29E7", "notes")
+    assert m["categoria"] == "Títulos Públicos" and m["panel"] == "Letras"
+    assert m["security_type"] == "GO" and m["ins_type"] == "BOND"
+    assert m["moneda"] == "ARS" and m["ticker_pesos"] == "S29E7"
+    d = nov.meta_de("BPOA8D", "bonds")
+    assert d["moneda"] == "MEP" and d["ticker_pesos"] == "BPOA8"
+    # ON: el seed agrupa las tres patas bajo la pata PESOS completa (AEC2D → AEC2O)
+    c = nov.meta_de("YMCXC", "corp")
+    assert c["moneda"] == "cable" and c["ticker_pesos"] == "YMCXO"
+    assert c["categoria"] == "Obligaciones Negociables"
+    assert (nov.meta_de("YMCXO", "corp")["ticker_pesos"]
+            == nov.meta_de("YMCXD", "corp")["ticker_pesos"] == "YMCXO")
+    # acciones/cedears: misma convención por sufijo que el seed (ALUAD → ALUA, MEP)
+    a = nov.meta_de("ALUAD", "stocks")
+    assert a["moneda"] == "MEP" and a["ticker_pesos"] == "ALUA"
+    assert nov.meta_de("XXX", "")["categoria"] == "Otros"   # bucket desconocido: no se inventa
+
+
+def test_un_simbolo_visto_que_nadie_conoce_es_nueva_con_su_procedencia():
+    diff = nov.clasificar(_vistos(60, {"S29E7": "notes", "D30O6": "notes"}),
+                          listados_byma={"S29E7"}, catalogo=_conocidos(60),
+                          registradas=set(), pendientes=set(), cargados=set())
+    assert diff.rechazo is None and diff.vistos == 62
+    assert [f["symbol"] for f in diff.nuevas] == ["D30O6", "S29E7"]
+    por = {f["symbol"]: f["source"] for f in diff.nuevas}
+    assert por == {"S29E7": "byma", "D30O6": "data912"}
+    assert diff.altas_catalogo == diff.nuevas
+
+
+def test_lo_conocido_no_es_novedad_ni_entra_al_catalogo():
+    diff = nov.clasificar(_vistos(60), set(), catalogo=_conocidos(60),
+                          registradas=set(), pendientes=set(), cargados=set())
+    assert diff.nuevas == [] and diff.altas_catalogo == []
+
+
+def test_lo_ya_cargado_en_instruments_entra_al_catalogo_pero_no_es_novedad():
+    """Un alta hecha a mano de algo que el CSV no tenía: se conoce el símbolo (va a
+    byma_catalog para el Universo) pero no hay nada que decidir."""
+    diff = nov.clasificar(_vistos(60, {"TSTX1O": "corp"}), set(), catalogo=_conocidos(60),
+                          registradas=set(), pendientes=set(), cargados={"TSTX1O"})
+    assert [f["symbol"] for f in diff.altas_catalogo] == ["TSTX1O"]
+    assert diff.nuevas == []
+
+
+def test_una_registrada_que_el_catalogo_perdio_vuelve_al_universo_sin_ser_novedad():
+    """byma_catalog re-sembrada a mano (force): la especie vuelve al universo, pero la
+    decisión que ya está en universe_novedades se respeta."""
+    diff = nov.clasificar(_vistos(60, {"ZZZ1": "corp"}), set(), catalogo=_conocidos(60),
+                          registradas={"ZZZ1"}, pendientes=set(), cargados=set())
+    assert [f["symbol"] for f in diff.altas_catalogo] == ["ZZZ1"]
+    assert diff.nuevas == []
+
+
+def test_una_pendiente_que_ya_se_cargo_pasa_a_cargada():
+    diff = nov.clasificar(_vistos(60, {"S29E7": "notes"}), set(),
+                          catalogo=_conocidos(60) | {"S29E7"}, registradas={"S29E7"},
+                          pendientes={"S29E7"}, cargados={"S29E7"})
+    assert diff.cargadas == ["S29E7"] and diff.nuevas == []
+
+
+def test_una_descartada_no_vuelve_a_ser_novedad():
+    diff = nov.clasificar(_vistos(60, {"ZZZ1": "corp"}), set(),
+                          catalogo=_conocidos(60) | {"ZZZ1"}, registradas={"ZZZ1"},
+                          pendientes=set(), cargados=set())
+    assert diff.nuevas == [] and diff.cargadas == []
+
+
+@pytest.mark.parametrize("n, ref, motivo", [
+    (0, None, "no tiene símbolos"),
+    (10, None, "anémica"),
+    (60, 1000, "corte parcial"),
+])
+def test_una_lectura_rota_se_rechaza_entera_sin_decidir_nada(n, ref, motivo):
+    diff = nov.clasificar(_vistos(n, {"S29E7": "notes"} if n else None), set(),
+                          catalogo=set(), registradas=set(), pendientes={"S29E7"},
+                          cargados={"S29E7"}, ref_vistos=ref)
+    assert diff.rechazo and motivo in diff.rechazo
+    assert diff.nuevas == [] and diff.altas_catalogo == [] and diff.cargadas == []
+
+
+def test_el_guard_relativo_no_aplica_sin_corrida_anterior():
+    diff = nov.clasificar(_vistos(60), set(), catalogo=_conocidos(60), registradas=set(),
+                          pendientes=set(), cargados=set(), ref_vistos=None)
+    assert diff.rechazo is None
+
+
+def test_clasificar_no_muta_lo_que_recibe():
+    vistos = _vistos(60, {"S29E7": "notes"})
+    copia = dict(vistos)
+    nov.clasificar(vistos, set(), catalogo=_conocidos(60), registradas=set(),
+                   pendientes=set(), cargados=set())
+    assert vistos == copia
+
+
+# ── agenda 08:00 AR ──────────────────────────────────────────────────────────
+def _ar(h, m=0, d=10):
+    return datetime(2026, 6, d, h, m, tzinfo=AR)
+
+
+def test_antes_de_las_8_duerme_hasta_las_8():
+    assert nov.proximo_despertar(_ar(7, 30), hecha_hoy=False) == 1800.0
+
+
+def test_despues_de_las_8_sin_corrida_del_dia_corre_ya():
+    assert nov.proximo_despertar(_ar(8, 0), hecha_hoy=False) == 0.0
+    assert nov.proximo_despertar(_ar(15, 45), hecha_hoy=False) == 0.0
+
+
+def test_con_la_corrida_hecha_duerme_hasta_manana_a_las_8():
+    assert nov.proximo_despertar(_ar(9, 0), hecha_hoy=True) == 23 * 3600.0
+    assert nov.proximo_despertar(_ar(7, 0), hecha_hoy=True) == 25 * 3600.0
+
+
+def test_categorias_sin_hoja_en_el_abm():
+    assert {"Acciones", "Cedears", "Índices", "Totales", "Otros"} <= nov.CATEGORIAS_SIN_HOJA
+    assert "Obligaciones Negociables" not in nov.CATEGORIAS_SIN_HOJA
+    assert "Títulos Públicos" not in nov.CATEGORIAS_SIN_HOJA
