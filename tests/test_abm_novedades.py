@@ -84,6 +84,7 @@ def test_la_pagina_del_abm_trae_la_pestana_novedades_primera(novedades):
     assert page.index('data-v="novedades"') < page.index('data-v="cargados"')
     assert 'hx-get="/abm/novedades"' in page
     assert 'class="abm-seg"' in page and "Universo BYMA" in page and 'id="abm-list"' in page
+    assert 'id="nov-results"' in page
 
 
 def test_un_alta_desde_el_abm_marca_la_novedad_como_cargada(novedades):

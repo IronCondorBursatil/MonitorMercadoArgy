@@ -1,14 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="abm2">
-  <!-- segmented: Cargados (completitud) / Universo BYMA (sin cargar) -->
+  <!-- segmented: Novedades (a decidir) / Cargados (completitud) / Universo BYMA (sin cargar) -->
   <div class="abm-seg" role="tablist">
-    <button type="button" data-v="cargados" class="on" onclick="abmSeg('cargados')">Cargados <span class="badge">{{ loaded_total }}</span></button>
+    <button type="button" data-v="novedades" class="on" onclick="abmSeg('novedades')">Novedades <span class="badge" id="nov-badge">{{ novedades }}</span></button>
+    <button type="button" data-v="cargados" onclick="abmSeg('cargados')">Cargados <span class="badge">{{ loaded_total }}</span></button>
     <button type="button" data-v="universo" onclick="abmSeg('universo')">Universo BYMA <span class="badge">{% if unloaded is not none %}{{ unloaded }} sin cargar{% else %}{{ byma_count }}{% endif %}</span></button>
   </div>
 
+  <!-- ===== NOVEDADES: especies nuevas en los feeds, por tipo de activo ===== -->
+  <section class="abm-view" id="view-novedades">
+    <div class="uni-tools">
+      <strong style="font-size:11px;color:var(--text-faint);letter-spacing:.4px">NOVEDADES DEL UNIVERSO</strong>
+      <span style="flex:1 1 auto"></span>
+      {% if current_user and current_user.is_admin %}
+      <button type="button" id="nov-refresh" class="uni-refreshbtn" title="Correr ahora la detección (la misma que corre a las 08:00)"
+              hx-post="/abm/novedades/refresh" hx-target="#nov-results" hx-swap="innerHTML" hx-disabled-elt="this">↻ Refrescar ahora</button>
+      {% endif %}
+    </div>
+    {# `novedades-refresh` lo dispara /abm/save (header HX-Trigger): un alta desde el
+       cajón saca la fila de acá sin recargar la página. #}
+    <div id="nov-results" class="uni-results" hx-get="/abm/novedades" hx-trigger="load, novedades-refresh from:body" hx-swap="innerHTML">
+      <div class="uni-empty">Cargando novedades…</div>
+    </div>
+  </section>
+
   <!-- ===== CARGADOS: tabla de completitud adaptativa por hoja ===== -->
-  <section class="abm-view" id="view-cargados">
+  <section class="abm-view" id="view-cargados" hidden>
     <div class="abm-tools2">
       <strong style="font-size:11px;color:var(--text-faint);letter-spacing:.4px">INSTRUMENTOS</strong>
       <input id="abm-q" class="abm-input" placeholder="Buscar ticker / emisor…" oninput="abmFilter()">
@@ -183,13 +201,27 @@
   .uni-tkc.priced.close { color:#2f7fd0; }
   .uni-plus { background:var(--accent); color:#fff; border:none; border-radius:5px; width:20px; height:20px; cursor:pointer; font-weight:700; line-height:1; padding:0; }
   .uni-plus:hover { filter:brightness(1.1); }
+  /* ---- Novedades ---- */
+  .nov-meta { padding:8px 10px; font-size:12px; color:var(--text-dim); }
+  .nov-flash { margin-left:10px; color:var(--accent); }
+  .nov-grupo { border-top:1px solid var(--panel-border); }
+  .nov-grupo > summary { cursor:pointer; padding:7px 10px; font-weight:600; font-size:12px; }
+  .nov-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .nov-table th, .nov-table td { padding:4px 8px; text-align:left; white-space:nowrap; border-bottom:1px solid var(--panel-border); }
+  .nov-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .nov-sym { font-weight:600; } .nov-emisor { max-width:280px; overflow:hidden; text-overflow:ellipsis; }
+  .nov-acts { display:flex; gap:6px; align-items:center; }
+  .nov-x { background:transparent; border:1px solid var(--panel-border); border-radius:5px; width:20px; height:20px; cursor:pointer; line-height:1; padding:0; color:var(--text-dim); }
+  .nov-x:hover { color:var(--neg); border-color:var(--neg); }
+  .nov-undo { background:transparent; border:1px solid var(--panel-border); border-radius:5px; padding:1px 8px; cursor:pointer; font-size:11px; color:var(--text-dim); }
+  .nov-nohoja { display:inline-block; width:20px; text-align:center; color:var(--text-faint); }
+  .nov-descartadas > summary { color:var(--text-faint); font-weight:500; }
 </style>
 
 <script>
   function abmSeg(v){
     document.querySelectorAll('.abm-seg button').forEach(function(b){ b.classList.toggle('on', b.dataset.v===v); });
-    document.getElementById('view-cargados').hidden = (v!=='cargados');
-    document.getElementById('view-universo').hidden = (v!=='universo');
+    ['novedades','cargados','universo'].forEach(function(id){ document.getElementById('view-'+id).hidden = (v!==id); });
     if(v==='universo'){ var q=document.getElementById('uni-q'); if(q) q.focus(); }
   }
   function abmOpenDrawer(){ document.getElementById('abm-scrim').classList.add('on'); document.getElementById('abm-drawer').classList.add('on'); }
