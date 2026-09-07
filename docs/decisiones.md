@@ -48,10 +48,13 @@ que corresponde. Ver `agents.md › §0.8 Fase 0`.
   y reiniciar el servicio (se regenera solo) o setear `MONITOR_JWT_SECRET_KEY` en el
   `EnvironmentFile`; invalida todas las sesiones (esperado). Admin: desde el ABM de usuarios
   o `scripts/init_admin.py` con `MONITOR_ADMIN_PASSWORD`.
-- **Estado**: **PENDIENTE de David** — rotar secretos está prohibido para el agente sin OK
-  explícito (`agents.md §0.1.6`). Verificación previa sugerida (solo lectura):
-  `ssh monitor-oci "stat -c '%y' /var/lib/monitor/jwt_secret"` (si la fecha es anterior al
-  2026-09-04, es el secreto heredado del droplet).
+- **Estado**: **HECHA el 2026-09-07** con OK de David ("hacelo" sobre la lista de pendientes).
+  El secreto JWT se borró y el restart de `deploy.sh` lo regeneró (archivo nuevo 16:39 UTC;
+  todas las sesiones quedaron invalidadas, esperado). La contraseña del `admin` se rotó con
+  un script de un solo uso sobre la `catalog.db` de prod (hash nuevo vía
+  `core.security.get_password_hash`); la contraseña nueva NO pasó por el chat: quedó en
+  `/var/lib/monitor/admin-password-2026-09-07.txt` (0600, owner ubuntu). **David: leerla por
+  ssh, guardarla en su gestor y borrar el archivo.**
 
 ## D4 · Canal de la alerta de staleness (Fase 3)
 

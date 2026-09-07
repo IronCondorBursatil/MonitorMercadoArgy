@@ -26,7 +26,10 @@ a producción. No repetir lo uno en lo otro.
 `ssh monitor-oci`, `cd` al repo, `bash deploy.sh [--upgrade]`. Hace, en orden y con
 `set -euo pipefail` (si algo falla antes del restart, el servicio viejo sigue arriba):
 
-1. `git pull origin main`.
+1. `git pull origin main`. **Ojo**: ese pull también actualiza `deploy.sh` en disco, pero bash
+   ya leyó el script y termina la corrida con la versión VIEJA (2026-09-07: el primer deploy
+   tras agregar los freezes no los escribió; el segundo sí). Un cambio en `deploy.sh` aplica
+   en el deploy siguiente — si tiene que aplicar ya, correrlo dos veces.
 2. Valida o crea el venv **3.12** y aborta si el intérprete es otra minor: `run.py` exige
    3.12.x, y un venv de otra versión instala todo bien y recién revienta en el healthcheck.
 3. `pip freeze` ANTES → `${MONITOR_DB_DIR:-/var/lib/monitor}/freeze/freeze-<stamp>-antes.txt`.

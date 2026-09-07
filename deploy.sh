@@ -24,6 +24,10 @@ echo "Iniciando despliegue de Monitor Renta Fija"
 echo "======================================"
 
 # 1. Traer los últimos cambios de GitHub
+# OJO: este pull también actualiza deploy.sh EN DISCO, pero bash ya leyó el script y sigue
+# ejecutando la versión VIEJA hasta el final (visto 2026-09-07: el primer deploy tras
+# agregar los freezes no los escribió). Un cambio en deploy.sh recién aplica en el deploy
+# SIGUIENTE; si hace falta que aplique ya, correrlo dos veces.
 echo ">>> Descargando últimas actualizaciones..."
 git pull origin main || git pull origin master
 
