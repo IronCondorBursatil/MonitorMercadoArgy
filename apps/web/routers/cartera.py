@@ -57,7 +57,12 @@ def _metrics_by_ticker(state) -> dict:
 
 
 def _quote(fx, method: str) -> Optional[float]:
-    """Lee una punta del provider de FX de forma tolerante (None si falla)."""
+    """Lee una punta del provider de FX de forma tolerante (None si falla).
+
+    Cotización = número real (int/float, NO bool) y positivo; todo lo demás es None. El
+    `try` cubre la llamada, no la comparación: un provider/mock que devolvía "n/a" o un
+    dict pasaba el `except` y reventaba en `v > 0` con TypeError → 500 en /cartera.
+    """
     if not fx:
         return None
     try:
@@ -65,7 +70,9 @@ def _quote(fx, method: str) -> Optional[float]:
         v = fn() if callable(fn) else None
     except Exception:
         return None
-    return v if (v and v > 0) else None
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return v if v > 0 else None
 
 
 def _fx_rates(fx) -> Tuple[Optional[float], Optional[float]]:

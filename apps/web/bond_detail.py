@@ -85,7 +85,13 @@ def _nominal_tna(instrument, tea):
 
 
 class _ZeroTamar:
-    """Indices provider stub que fuerza TAMAR=0 para el leg de tasa fija."""
+    """Indices provider stub que fuerza TAMAR=0 para el leg de tasa fija.
+
+    Implementa SOLO `get_tamar` (más un `_cache_tamar` vacío, que `pricing/tamar.py`
+    lee por getattr para el promedio): NO es un `IndicesProvider` completo, no tiene
+    `get_cer`. Por eso el leg TF sólo se resuelve para TAMAR PURO/DUAL — ver el guard
+    de `_resolve_instrument_and_leg`.
+    """
     _cache_tamar: dict = {}
 
     def get_tamar(self, d=None):
@@ -137,8 +143,18 @@ def _resolve_instrument_and_leg(ticker: str, repo, indices):
     instrument = repo.get_instrument_by_ticker(base_ticker)
     if instrument is None:
         return None
+    # El leg TF reemplaza el provider por `_ZeroTamar`, que sólo sabe `get_tamar`: sobre
+    # un CER o un DUAL_CER_TAMAR el pricing pide `get_cer` y revienta con AttributeError
+    # (500 en /bond/TX26_TF/detail, /cer y /metrics). TF sólo está definido donde TAMAR
+    # es el único índice que se consume —PURO/DUAL—; para el resto el sufijo es un
+    # ticker inexistente (404 / is_cer False), igual que cualquier ticker desconocido.
+    if leg == "TF" and not (instrument.is_tamar_puro or instrument.is_dual_tamar):
+        return None
     instrument, indices_override = _apply_leg(instrument, leg)
-    indices_eff = indices_override if indices_override is not None else indices
+    # `Any`: `indices` llega sin tipo (duck `IndicesProvider`) y la unión parcial con
+    # `_ZeroTamar` hacía que pyright viera `.get_cer` faltante en los consumidores —
+    # camino inalcanzable por el guard de arriba.
+    indices_eff: Any = indices_override if indices_override is not None else indices
     return base_ticker, instrument, indices_eff, leg, ticker_u
 
 

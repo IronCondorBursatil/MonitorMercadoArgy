@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import date
+from typing import Any
 
 from core.domain.fci.dataset import build_fci_dataset
 from core.domain.fci.derive import build_aum_index, ccy, norm
@@ -17,7 +18,7 @@ from core.infrastructure.fci_history import (
 
 logger = logging.getLogger(__name__)
 
-_CACHE = {"key": None, "data": None}
+_CACHE: dict[str, Any] = {"key": None, "data": None}
 _LOCK = threading.Lock()
 
 

@@ -21,6 +21,25 @@ auth en `docs/auth.md` y `.claude/rules/auth.md`.
 - El motor corre en `to_thread` desde `_refresh_loop`; los routers leen `AppState`, no
   llaman providers. Bajo pytest `MONITOR_DISABLE_LOOPS=1` (ningún loop arranca).
 
+### Receta: panel nuevo (lo que NO se ve desde el registro)
+
+1. `apps/web/routers/panels_schema.py`: entrada en `PANELS` (título, `{instrument_types}`,
+   columnas) + `PANEL_ORDER`; y los sets de comportamiento si aplican (`CCY_FILTER_PANELS`,
+   `PRICE_REQUIRED_PANELS`, `LEY_FILTER_PANELS`, `SETTLE_FILTER_PANELS`, `_HL_COL_KEY`).
+2. Si trae un `instrument_type` nuevo: PRIMERO `core/domain/instrument_groups.py` (un tipo no
+   registrado deja el bono invisible), después `apps/web/app.py::_ALL_TYPES` (lista
+   hardcodeada de grupos que el motor precia) y, si necesita strategy propia,
+   `core/domain/pricing/registry.py`.
+3. Si NO es un panel de bonos (estilo `valor_relativo`/`panel_lider`/`bei_*`/`futuros`):
+   builder propio en `apps/web/panels_rows.py` + dispatch en `_build_rows`; `futuros` tiene
+   además un special-case en `routers/panels.py::panel_rows`.
+4. `apps/web/templates/pages/index.html`: lista `wide` sólo si va a ancho completo.
+5. Tests que recorren `PANEL_ORDER` y lo van a ejercitar sin tocarlos:
+   `tests/test_aud_D2_web_panels_cols.py` (header == celdas), `tests/test_rem_R3_web_cols_storage.py`,
+   `tests/test_panels_router.py`. No hay permiso por panel: cuelgan del router home.
+6. No fijar el número de paneles en docs ni skills (`docs/flujo-web.md`, `/verificar-ui`
+   hablan de "los paneles de `PANEL_ORDER`").
+
 ## `on.js` es AUTO-GENERADO
 
 `apps/web/static/js/on.js` lo produce `scripts/build_on_static.py` desde `apps/web/on_src/`

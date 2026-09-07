@@ -82,7 +82,7 @@ Cada uno es la regla + su porqué. La historia y el detalle están en `docs/` (�
   cuelga de `_DB_DERIVED` para que `MONITOR_DB_DIR` lo reubique con el resto.
 - **Un `instrument_type` fuera de `core/domain/instrument_groups.py` deja el bono INVISIBLE**: el
   read-path filtra por igualdad exacta; la fila se carga y acumula precio pero no se precia ni
-  se muestra. `_resolve_instrument_type` es el ÚNICO que decide el tipo (avisa por WARNING si
+  se muestra. `core/infrastructure/repositories.py::_resolve_instrument_type` es el ÚNICO que decide el tipo (avisa por WARNING si
   lo asume o queda huérfano); `save_instrument` rechaza con `is_known_type()`; el estado vivo
   sale en el bloque `catalog` de `/api/health`. Nunca inventar el tipo del nombre de la hoja.
 
@@ -135,7 +135,9 @@ Las rules por path no se disparan con `Write` de un archivo nuevo; por eso viven
 - **Router nuevo**: `RequireTabPermission("<tab>")` en `apps/web/app.py`; `/security-review` antes de pushear.
 - **Script nuevo en `scripts/`**: `py -3.12` en el header; en prod corre con `MONITOR_DB_DIR`
   explícito; si escribe la DB, pasa por `scripts/op_guards.py` y es dry-run por default.
-- **Panel nuevo**: registrarlo en `PANELS`/`PANEL_ORDER` (`apps/web/routers/panels_schema.py`).
+- **Panel nuevo**: registrarlo en `PANELS`/`PANEL_ORDER` (`apps/web/routers/panels_schema.py`);
+  si no filtra por tipos (estilo futuros/VR/BEI) además su builder en `panels_rows._build_rows`.
+  Receta completa: `.claude/rules/web.md › Receta: panel nuevo`.
 
 ## Cuándo leer qué
 

@@ -34,7 +34,8 @@ que envuelve `supervise()`, ver `docs/arquitectura.md › Supervisión`) más
 ## Paneles SSR + SSE
 
 El registro de paneles es `PANELS`/`PANEL_ORDER` en `apps/web/routers/panels_schema.py`
-(14 paneles + home) — no fijar el número en otro lado.
+(el número lo da `PANEL_ORDER`; no fijarlo en ningún doc). Receta completa para agregar
+uno: `.claude/rules/web.md › Receta: panel nuevo`.
 
 Cada panel es un `<tbody hx-get="/panels/{id}/rows">` que renderiza un fragmento SSR desde
 `AppState`; el auto-refresh es **event-driven por SSE** (`/stream` pushea `refresh` por

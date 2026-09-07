@@ -127,7 +127,7 @@ class _Prep:
     underlying: str
     kind: str
     strike: float
-    month: str
+    month: int          # 1-12, el de OptionMeta → OptionContract
     month_code: str
     expiry: date
     spot: float

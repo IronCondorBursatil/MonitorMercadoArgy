@@ -1,6 +1,6 @@
 ---
 name: verificar-ui
-description: Verifica la app LOGUEADA en un browser headed vía Playwright MCP —home con los 14 paneles y precios, modal de detalle (T+0/T+1, Esc, foco), /fci y /on con sus fetch, una ruta extra opcional— con consola sin errores, screenshots en el scratchpad y tabla de resultados; reemplaza el «se verifica a mano» de tests/test_modal_a11y.py.
+description: Verifica la app LOGUEADA en un browser headed vía Playwright MCP —home con todos los paneles de PANEL_ORDER y precios, modal de detalle (T+0/T+1, Esc, foco), /fci y /on con sus fetch, una ruta extra opcional— con consola sin errores, screenshots en el scratchpad y tabla de resultados; reemplaza el «se verifica a mano» de tests/test_modal_a11y.py.
 argument-hint: "[base_url] [ruta_extra]"
 shell: powershell
 allowed-tools: mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_click, mcp__playwright__browser_press_key, mcp__playwright__browser_wait_for, mcp__playwright__browser_evaluate, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_tabs, mcp__playwright__browser_close, PowerShell(Invoke-RestMethod *)
@@ -15,7 +15,7 @@ verificación a mano, pero con el **Playwright MCP** (server `playwright`, brows
 pantalla, consola y red por página, y una tabla al final.
 
 Cubre lo que `/smoke` no puede (sin cookie no pasa de `/login`): el dashboard con sus
-14 paneles y precios vivos, el modal de detalle (toggle T+0/T+1, Esc, foco que vuelve),
+los paneles de `PANEL_ORDER` (14 al 2026-09-07) y precios vivos, el modal de detalle (toggle T+0/T+1, Esc, foco que vuelve),
 las dos apps cliente (`/fci` → `/fci/data`, `/on` → `/on/data`) y una ruta más si el cambio
 la tocó. **No reemplaza `pytest` ni `/gate`**: complementa.
 
@@ -31,7 +31,7 @@ la tocó. **No reemplaza `pytest` ni `/gate`**: complementa.
 
 ## Nombres reales (verificados en `apps/web/app.py`, `routers/*` y `panels_schema.py`)
 
-**14 paneles** (`PANEL_ORDER`), cada uno un `<tbody id="tbody-{id}" hx-get="/panels/{id}/rows">`:
+**Todos los paneles de `PANEL_ORDER`** (14 al 2026-09-07; el número lo da el registro), cada uno un `<tbody id="tbody-{id}" hx-get="/panels/{id}/rows">`:
 `bonares`, `cer`, `tasa_fija`, `tamar`, `dolar_linked`, `bopreales`,
 `obligaciones_negociables`, `provinciales`, `valor_relativo`, `panel_lider`, `futuros`,
 `bei_tenor`, `bei_sendero`, `bei_pares`. El número NO se fija acá: si `panels_schema.py`
@@ -61,7 +61,7 @@ cambia, cambia la lista.
   acción del MCP). Para lo que puede tardar más (el login humano, el primer `/fci/data`,
   un 8001 recién arrancado) usar el **loop**: `browser_wait_for {time: 10}` →
   `browser_evaluate` con la condición → repetir, máximo N vueltas, y reportar si se agota.
-- **Snapshots chicos.** El a11y tree de `/` con 14 paneles es enorme: usar `target` para
+- **Snapshots chicos.** El a11y tree de `/` con todos los paneles es enorme: usar `target` para
   acotar (`#modal`, `#tbody-bonares`) o `filename` para mandarlo al scratchpad. Los
   conteos van por `browser_evaluate`, no leyendo el árbol.
 - **Screenshots** al scratchpad de la sesión (path absoluto, el que lista el system
@@ -107,7 +107,7 @@ $h = Invoke-RestMethod "$base/api/health" -TimeoutSec 10
 5. Landing esperado: `/`. Si es otra pestaña (usuario sin `bonos`), navegar a `/` y, si
    da 403, anotar que el usuario no tiene la pestaña — no es un fallo de la UI.
 
-### 3. Home: 14 paneles, filas con precio, consola limpia
+### 3. Home: todos los paneles de `PANEL_ORDER`, filas con precio, consola limpia
 
 1. `browser_navigate {url: "<base>/"}` (aunque ya esté: fija el punto de partida de la
    consola y la red).

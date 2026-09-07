@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import date, datetime
+from typing import Any
 
 from apps.web.panels_rows import _ley_of
 from core.domain.currency import ccy_from_suffix as _ticker_ccy
@@ -32,7 +33,7 @@ _FX_NOTE = "Pata pesos (…O) valuada MEP (ley AR) / CCL (ley EXT). …D=MEP, �
 # DETECTAMOS, no desde la fecha que declara FIX (esa puede ser previa al primer corte).
 _CHG_WINDOW_DAYS = 7
 
-_CACHE = {"key": None, "data": None}
+_CACHE: dict[str, Any] = {"key": None, "data": None}
 _LOCK = threading.Lock()
 
 

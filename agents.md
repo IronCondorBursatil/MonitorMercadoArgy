@@ -618,9 +618,12 @@ lo que no requiere datos externos: hash del calendario (con prueba por mutación
 30/360 a mano (mutación probada), helper único `core/domain/missing.py` cableado en los
 tres bordes con test de texto, política de precisión y inventario de goldens en
 `docs/convenciones-financieras.md`, nota de PROCEDENCIA pendiente en
-`test_golden_referencia.py`. **Pendiente de David** porque no se puede fabricar: el golden
-de TTJ26 (falta la fecha de la validación IAMC y la serie TAMAR/CER de ese día), el golden
-de TX28 (falta un corte externo precio/TIR/paridad) y la procedencia de los 17 goldens.)*
+`test_golden_referencia.py`. Cerrado después el mismo día: **golden externo de TX28**
+(`tests/test_golden_tx28.py`, Banco Hipotecario 2026-09-03: TIR a 0,2 bp, paridad exacta,
+mutación probada — primer golden CER del repo) y la **procedencia** de los 17 goldens (la
+calculadora del broker del autor, anonimizada a propósito en a0c2e5f; el nombre no va al
+repo). **Queda pendiente** TAMAR: TTJ26 venció; sustitutos TTS26/TTD26 con corte en
+`docs/convenciones-financieras.md`.)*
 Golden ejecutable de TTJ26 contra el ancla IAMC (serie
 TAMAR/CER congelada en fixture, fecha fija, procedencia). Golden de **TX28** con CER de BCRA
 congelado y un corte externo capturado a mano (fecha, precio, TIR/paridad publicada).
@@ -636,9 +639,11 @@ mutación deliberada del motor (revertida después); equivalencia verde; gate ve
 — pyright 1.1.413, 78 archivos, **48 errores / 0 warnings**, 8 s, ruido manejable; detalle y
 candidatos a bug real en `docs/baseline-2026-09.md`. `pyrightconfig.json` versionado en modo
 basic; `pyright` instalado global por npm; plugin `pyright-lsp@claude-plugins-official`
-instalado (el marketplace oficial no estaba registrado en esta máquina: se agregó). Las
-tres tareas A/B las corre David en sesiones nuevas; el criterio de conservar/abandonar es
-el de abajo.)* Baseline `pyright` standalone (`pyrightconfig.json` modo
+instalado (el marketplace oficial no estaba registrado en esta máquina: se agregó). Triage
+de los 48 el mismo día: 4 bug real (una causa, `_ZeroTamar` sin `get_cer` → 500 en
+`<CER>_TF`), 2 riesgo latente, 19 falsos positivos, 23 ruido; bug y riesgo arreglados con
+TDD → 35 errores (`docs/baseline-2026-09.md`). Dato para el piloto: pyright encontró un 500
+real que ningún test cubría. Las tres tareas A/B las corre David en sesiones nuevas.)* Baseline `pyright` standalone (`pyrightconfig.json` modo
 basic sobre `core/domain` + `apps/web`); si el ruido es inmanejable sin excluir media base,
 cerrar con ese dato. Tres tareas representativas (glue de `apps/web`, `core/domain`, un
 router), mismo modelo e instrucciones, sin y con plugin. Métricas: defectos reales antes del

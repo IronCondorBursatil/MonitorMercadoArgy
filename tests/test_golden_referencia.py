@@ -11,12 +11,15 @@ VT, accrued, MD) son las que muestra la calculadora de referencia.
 
 PROCEDENCIA (agents.md §0.1.14; docs/convenciones-financieras.md › "inventario de
 goldens"): "la calculadora de referencia" de estas 13 anclas —y de las 2 dólar-linked de
-test_hard_dollar_fx.py y las 2 LECAP de test_cashflow_synth.py— NO quedó identificada
-(nombre de la herramienta/informe, fecha de la captura, archivo). Sin eso un tercero no
-puede reproducir la verdad de mercado ni saber si la referencia misma tenía un error
-metodológico que los goldens ratifican. PENDIENTE de David: completar acá la fuente y
-la fecha (settles 2026-06-01 / 2026-06-10) y guardar la captura en docs/. Todo golden
-NUEVO declara procedencia en su docstring desde la Fase 5.
+test_hard_dollar_fx.py y las 2 LECAP de test_cashflow_synth.py— es la **calculadora de
+bonos del broker del autor**, leída a mano en su web al momento del alta. El nombre del
+broker se sacó del repo A PROPÓSITO en el commit a0c2e5f (2026-08-31, anonimización por
+seguridad; este archivo se llamaba test_balanz_golden.py) — no volver a escribirlo acá.
+Fechas: anclas cargadas el 2026-06-04 (181358d) y el 2026-06-10 (51db7f6), con settles
+2026-06-01 y 2026-06-10; no se guardaron capturas. Límite que esto impone: si la
+calculadora del broker tuviera un error metodológico, estos goldens lo ratifican — un
+tercero independiente (IAMC/BYMA) sigue faltando (docs/pendiente.md). Todo golden NUEVO
+declara procedencia en su docstring desde la Fase 5.
 """
 
 from __future__ import annotations

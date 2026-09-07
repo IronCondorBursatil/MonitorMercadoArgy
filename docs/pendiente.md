@@ -17,15 +17,25 @@ de decisiones (`docs/decisiones.md`).
   como dependencia dura, así que el servidor instala ~60 paquetes del ecosistema Jupyter sin
   usarlos, y un freeze completo los pinea. También capa `pandas<3` y `holidays<0.45`. Salida:
   `--no-deps` o vendorizar la parte que se usa (payoff multi-leg). Fuera de alcance por ahora.
-- **`tests/test_daycount.py:107-120` es tautológico** (agents.md §0.6): compara
-  `DayCount.THIRTY_360` contra `days_30_360`, que es la función que lo implementa. Falta
-  agregar valores 30/360 calculados a mano para los casos 31→30 y 29-feb (Fase 5). **No**
-  copiar los símbolos vivos al motor legacy: `_legacy_engine.py` los comparte a propósito.
-- **Goldens externos: 0 para CER, 0 para TAMAR** (agents.md §0.6). Hay 13 ONs hard-dollar +
-  2 dólar-linked + 2 LECAP contra "la calculadora de referencia", sin procedencia registrada.
-  La validación IAMC de TTJ26 vive solo en el docstring de `core/domain/pricing/tamar.py`.
-  Candidato BONCER: TX28 (no TX26, que vence en 2026 con un solo flujo); falta el corte
-  externo (fecha + precio + CER del día + TIR/paridad publicada). Fase 5.
+- **Motor legacy**: `tests/_legacy_engine.py` comparte a propósito el solver, `pricing.metrics`
+  y `days_30_360` con producción. **No** copiárselos. (El test tautológico de 30/360 quedó
+  cubierto en la Fase 5 con 12 valores a mano: `test_days_30_360_valores_a_mano`.)
+- **Goldens externos** (agents.md §0.6). Los 13 ONs + 2 dólar-linked + 2 LECAP son contra la
+  calculadora del broker del autor (anonimizada a propósito en a0c2e5f; procedencia en el
+  docstring de `tests/test_golden_referencia.py`) — un tercero independiente (IAMC/BYMA) sigue
+  faltando para esos. **CER**: corte externo conseguido para TX28 (Banco Hipotecario, Informe
+  Diario, cierre 24hs BYMA del 2026-09-03: precio 1.719, TIR 8,82 %, paridad 93,14 %, MD 1,08)
+  → golden en `tests/test_golden_tx28.py` (verde o `xfail` documentado, según cuadre).
+  **TAMAR**: TTJ26 venció el 2026-06-30 (la validación IAMC del docstring de
+  `core/domain/pricing/tamar.py` es de junio y no se puede reproducir sin la serie de ese
+  día); sustitutos vivos con corte del mismo informe: TTS26 (169,10 / TIR 22,56 %) y TTD26
+  (169,00 / 24,78 %). IAMC no publica el informe diario desde 2026-05-26 y su feed en BYMA
+  open está paywalleado.
+- **`scripts/init_admin.py` usa `Base.metadata.create_all`** y no `init_db()` de
+  `catalog_repository` (hallazgo lateral de la prueba de docs 2026-09-07, ya señalado en
+  `docs/auditoria-2026-08-31.md` ítem 2.3, **no verificado en vivo**): sobre una DB restaurada
+  de un backup viejo, `create_all` no corre la migración de columnas y el login puede reventar
+  con `no such column: users.allowed_tabs`.
 - **Backfill del ancla TAMAR en producción**: `scripts/backfill_tamar_anchor.py` ya corrió en
   la `catalog.db` local (14 bonos, 2026-09-04); en el servidor exige servicio parado y
   `MONITOR_DB_DIR` explícito (`deploy/README-ops.md › Scripts manuales`). Ojo con qué compra:

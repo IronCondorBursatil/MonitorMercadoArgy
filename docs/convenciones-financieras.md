@@ -528,20 +528,24 @@ golden, es una foto del motor.
 
 | Familia | Cantidad | Instrumentos | Fuente externa | Procedencia | Test |
 |---|---|---|---|---|---|
-| ON hard-dollar (TIR, clean, accrued, V.Téc, MD) | **13** | CLISA (CLSIO), TLCPD, YM42D + anclas CICA, CACB, BPCV, BF40, CACD, OZC3, PLC4, PN35, YM37, TTC8 | «la calculadora de referencia» (settles 2026-06-01 / 2026-06-10) | **pendiente**: la fuente no está identificada en el repo | `tests/test_golden_referencia.py` |
+| ON hard-dollar (TIR, clean, accrued, V.Téc, MD) | **13** | CLISA (CLSIO), TLCPD, YM42D + anclas CICA, CACB, BPCV, BF40, CACD, OZC3, PLC4, PN35, YM37, TTC8 | «la calculadora de referencia» = la calculadora de bonos del broker del autor (nombre anonimizado a propósito en a0c2e5f), settles 2026-06-01 / 2026-06-10 | declarada en el docstring del test; sin capturas | `tests/test_golden_referencia.py` |
 | Cashflows sintetizados de ON (bancos) | 2 | BACH (30/360), BF37 (ACT/365) | ídem | pendiente | `test_golden_referencia.py:253-271` |
 | Dólar-linked soberano (TIR en USD, USD implícito) | **2** | D31M7, D31L6 | calculadora de referencia @ mayorista 1446,1064, settle 2026-06-10 | pendiente | `tests/test_hard_dollar_fx.py:157-193` |
 | LECAP (payoff sintetizado) | **2** | S29Y6 (132,0438), S15S6 (107,21) | referencia oficial (TNA 21,09 % de S29Y6) | pendiente | `tests/test_cashflow_synth.py:46-78` |
 | Calendario y `cer_base` contra BCRA | **6 fechas + 2 cer_base** | 4 feriados + 1 fecha espuria + 1 liquidación T+1; TZXS7/TZXS8/TZXM8 (723.06 → 2026-03-13), X29Y6/TZXA7 (651.89806 → 2025-11-12) | argentinadatos / Boletín Oficial; BCRA variable 30 | declarada en el docstring | `tests/test_holiday_calendar.py` |
-| **CER (TIR real / paridad)** | **0** | — | — | — | — |
+| **CER (TIR real / paridad / V.Téc / MD)** | **1 corte + 2 intradía** | TX28 @ 1.719 (cierre 24hs BYMA 2026-09-03): TIR 8,82 % · paridad 93,14 % · MD 1,08 → motor 8,822 % / 93,140 % / 1,081. Secundarios 2026-09-07: Bonistas @1738 (8,11 % / 93,89 % / VT 1851,03) y Docta @1737,50 | Banco Hipotecario, Informe Diario (PDF público); Bonistas.com; Docta | **declarada** en el docstring y en `tests/fixtures/tx28_2026-09-03.json` (valores textuales, URLs, serie CER BCRA var 30, fecha de captura, qué NO declara cada fuente) | `tests/test_golden_tx28.py` (17 tests; discrimina T+0, lag 0, day-count y CER ±1 %) |
 | **TAMAR / DUAL / DUAL_CER_TAMAR** | **0** ejecutables | TTJ26: precio 158,20 → V.Téc 146,39 / payback 164,32 / TIR EA 39,06 % | IAMC | solo docstring `core/domain/pricing/tamar.py:3-5` | — |
 
-- **Candidato BONCER**: **TX28** (ISIN ARARGE3209X6, emisión 2020-09-04, vto 2028-11-09,
-  cupón 2,25 %, `cer_base 22.5439510896` = CER BCRA del 2020-08-21, 5 flujos restantes).
-  **No TX26**: vence 2026-11-09 con un solo flujo (no ejercita cupones ni MD). Falta el corte
-  externo: fecha + precio + CER del día + TIR/paridad publicada por IAMC/BYMA.
-- **Candidato TAMAR**: TTJ26 contra el ancla IAMC, con la serie TAMAR/CER congelada en
-  fixture y fecha fija (`agents.md §0.8` Fase 5).
+- **BONCER cerrado (2026-09-07)**: el golden de TX28 confirma que la TIR publicada por el
+  mercado para un CER es **real sobre CER y efectiva anual**, y que el V.Téc usa el CER de
+  10 hábiles antes de la liquidación **T+1** con day-count 30/360 (T+0 → 8,735 %; sin lag →
+  9,733 %; ACT/365 → paridad 93,00 %: todos fuera de tolerancia). TX26 no sirve: vence
+  2026-11-09 con un solo flujo.
+- **TAMAR sigue pendiente**: TTJ26 venció el 2026-06-30 y el ancla IAMC del docstring no se
+  puede reproducir sin la serie TAMAR/CER de ese día. Sustitutos vivos con corte del mismo
+  Informe Diario (2026-09-03): TTS26 @169,10 → TIR 22,56 % / paridad 100,33 % / MD 0,03;
+  TTD26 @169,00 → 24,78 % / 100,27 % / 0,27. IAMC no publica el informe desde 2026-05-26 y su
+  feed en BYMA open está paywalleado.
 - Lo que sí cubre el resto de la red sin oráculo externo: equivalencia (todo el universo),
   invariantes property-based (round-trip, monotonía, cotas), goldens internos de calendario.
 

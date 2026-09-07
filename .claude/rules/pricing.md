@@ -22,8 +22,9 @@ uno nuevo: esas convenciones están en `CLAUDE.md`). Las convenciones financiera
   símbolos**: su cobertura independiente es `test_xirr_solver.py`, `test_golden_referencia.py`
   y `test_cashflow_synth.py`.
 - La equivalencia detecta regresiones, no errores de origen: para eso están los **goldens
-  externos** (`test_golden_referencia.py`, con procedencia y fecha fija). Hoy hay 0 para CER y
-  0 para TAMAR (`docs/pendiente.md`).
+  externos** (`test_golden_referencia.py` para ONs/DL/LECAP; `test_golden_tx28.py` para CER,
+  contra el Informe Diario del Banco Hipotecario del 2026-09-03: TIR a 0,2 bp, paridad exacta),
+  con procedencia y fecha fija. Falta TAMAR (`docs/pendiente.md`).
 
 ## 2. Float de punta a punta, sin Decimal — tolerancias canónicas
 

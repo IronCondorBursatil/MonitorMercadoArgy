@@ -75,7 +75,7 @@ def _get_user_from_token(request: Request, db: Session) -> Optional[UserORM]:
     if not payload:
         return _publish(request, None)
 
-    username: str = payload.get("sub")
+    username: Optional[str] = payload.get("sub")
     if username is None:
         return _publish(request, None)
 

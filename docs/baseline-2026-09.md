@@ -135,6 +135,15 @@ alcance de la Fase 6 es medir):**
   `apps/web/routers/abm.py:323,328` `.strip` sobre `UploadFile`;
   `core/domain/portfolio.py:236` `get_future_cashflows` sobre `object`.
 
+**Triage de los 48 (2026-09-07, leyendo cada sitio):** 4 BUG_REAL (una causa: `_ZeroTamar`
+sin `get_cer` → `<CER>_TF` o `<TXMJ*>_TF` en `/bond/{t}/detail|cer` daba 500), 2
+RIESGO_LATENTE (`_quote` de cartera comparaba `v > 0` fuera del `try`), 19 falsos positivos
+(narrowing que pyright no ve), 23 ruido de tipado. Arreglados el bug, el riesgo y 5
+anotaciones (`tests/test_bond_detail_leg_tf.py`, `tests/test_cartera_quote.py`; mutación
+probada) → **35 errores** después. Los 35 restantes son falsos positivos o anotaciones
+imprecisas documentadas en el triage; ninguno en `core/domain/pricing` revela un error de
+pricing.
+
 Criterio del piloto (agents.md §0.8 Fase 6): conservar el plugin solo si en tres tareas
 representativas señala ≥ 1 defecto real por tarea con < 10 diagnósticos por turno.
 
