@@ -128,6 +128,34 @@ def test_thirty_360_half_year_is_half():
     assert year_fraction(date(2026, 1, 1), date(2026, 7, 1), DayCount.THIRTY_360) == pytest.approx(0.5)
 
 
+# `test_thirty_360_matches_days_30_360` de arriba es TAUTOLÓGICO: `DayCount.THIRTY_360` se
+# implementa llamando a `days_30_360` (core/domain/daycount.py), así que compara la función
+# consigo misma y no fija la CONVENCIÓN. Estos valores están calculados A MANO desde la
+# definición 30/360 (ISDA "30/360 Bond Basis") que implementa cashflow_synth.days_30_360:
+#   d1 = min(d1, 30); si d2 == 31 y d1 >= 30 → d2 = 30; sin regla especial de febrero;
+#   días = 360·Δaño + 30·Δmes + (d2 − d1).
+# Es la convención de la Secretaría de Finanzas para LECAP/BONCAP (S29Y6: 359 días → payoff
+# 132.0438) y la de las ONs 30/360 (Telecom Clase 24 en test_golden_referencia). Fase 5 de
+# agents.md §0.8.
+@pytest.mark.parametrize("start,end,dias", [
+    (date(2026, 1, 1), date(2026, 7, 1), 180),      # medio año exacto
+    (date(2026, 1, 31), date(2026, 2, 28), 28),     # d1 31→30; febrero corto NO se ajusta: 28−30+30
+    (date(2026, 1, 30), date(2026, 2, 28), 28),     # d1 ya es 30: mismo resultado que el 31
+    (date(2026, 2, 28), date(2026, 3, 31), 33),     # d1=28 (<30) → d2=31 se queda: 30+3
+    (date(2026, 1, 31), date(2026, 7, 31), 180),    # 31→30 en los DOS extremos
+    (date(2026, 1, 30), date(2026, 7, 31), 180),    # d1=30 → d2 31→30
+    (date(2026, 1, 15), date(2026, 7, 31), 196),    # d1=15 (<30) → d2=31 se queda: 180+16
+    (date(2025, 12, 31), date(2026, 12, 31), 360),  # año completo entre 31s
+    (date(2024, 2, 29), date(2025, 2, 28), 359),    # bisiesto: d1=29, d2=28 → 360−1
+    (date(2026, 3, 31), date(2026, 4, 30), 30),     # 31→30 y 30: un mes
+    (date(2026, 6, 15), date(2031, 6, 15), 1800),   # 5 años
+    (date(2025, 5, 30), date(2026, 5, 29), 359),    # S29Y6: el caso del payoff 132.0438
+])
+def test_days_30_360_valores_a_mano(start, end, dias):
+    assert days_30_360(start, end) == dias
+    assert year_fraction(start, end, DayCount.THIRTY_360) == pytest.approx(dias / 360.0)
+
+
 # --------------------------------------------------------------------------- #
 # ACT/ACT ISDA — años completos, bisiestos, cruces de año
 # --------------------------------------------------------------------------- #

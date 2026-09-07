@@ -613,7 +613,15 @@ entradas vencidas del índice (pricing-equivalence resuelto; "droplet"; JWT/admi
 `/context` muestra la caída respecto de la baseline; en sesión nueva, tres preguntas "dónde
 vive X" y tres tareas que exigen abrir una doc se resuelven leyendo la doc correcta.
 
-**Fase 5 — Controles financieros.** Golden ejecutable de TTJ26 contra el ancla IAMC (serie
+**Fase 5 — Controles financieros.** *(Estado 2026-09-07: ejecutada en `fase-5-financiero`
+lo que no requiere datos externos: hash del calendario (con prueba por mutación), 12 valores
+30/360 a mano (mutación probada), helper único `core/domain/missing.py` cableado en los
+tres bordes con test de texto, política de precisión y inventario de goldens en
+`docs/convenciones-financieras.md`, nota de PROCEDENCIA pendiente en
+`test_golden_referencia.py`. **Pendiente de David** porque no se puede fabricar: el golden
+de TTJ26 (falta la fecha de la validación IAMC y la serie TAMAR/CER de ese día), el golden
+de TX28 (falta un corte externo precio/TIR/paridad) y la procedencia de los 17 goldens.)*
+Golden ejecutable de TTJ26 contra el ancla IAMC (serie
 TAMAR/CER congelada en fixture, fecha fija, procedencia). Golden de **TX28** con CER de BCRA
 congelado y un corte externo capturado a mano (fecha, precio, TIR/paridad publicada).
 Procedencia en los 17 goldens existentes. Hash del calendario (set derivado 2020–2029, sin

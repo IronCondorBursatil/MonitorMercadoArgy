@@ -8,6 +8,15 @@ convención declarada (ACT/365) el motor matchea la referencia.
 Se construyen vía `synth_cashflows` (mismo camino que la ABM) — deterministas,
 sin depender de la DB ni del CSV. Las referencias (precio, settle, TIR, clean,
 VT, accrued, MD) son las que muestra la calculadora de referencia.
+
+PROCEDENCIA (agents.md §0.1.14; docs/convenciones-financieras.md › "inventario de
+goldens"): "la calculadora de referencia" de estas 13 anclas —y de las 2 dólar-linked de
+test_hard_dollar_fx.py y las 2 LECAP de test_cashflow_synth.py— NO quedó identificada
+(nombre de la herramienta/informe, fecha de la captura, archivo). Sin eso un tercero no
+puede reproducir la verdad de mercado ni saber si la referencia misma tenía un error
+metodológico que los goldens ratifican. PENDIENTE de David: completar acá la fuente y
+la fecha (settles 2026-06-01 / 2026-06-10) y guardar la captura en docs/. Todo golden
+NUEVO declara procedencia en su docstring desde la Fase 5.
 """
 
 from __future__ import annotations

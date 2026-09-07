@@ -25,6 +25,7 @@ from datetime import date
 from typing import Dict, List, Optional
 
 from core.domain.interfaces import IMarketDataProvider
+from core.domain.missing import es_dato_ausente
 from core.domain.models import MarketSnapshot
 from core.infrastructure.async_http import ResilientClient
 from core.infrastructure.byma.field_map import SETTLE_24, SETTLE_CI
@@ -47,7 +48,7 @@ _DEPTH_FIELDS = ("px_bid", "px_ask", "v", "q_op")
 
 def _good(row: Optional[Data912Row]) -> Optional[Data912Row]:
     """La fila si trae precio real (>0); None si es 0/None (esqueleto o ilíquida)."""
-    return row if (row is not None and row.c and row.c > 0) else None
+    return row if (row is not None and not es_dato_ausente(row.c)) else None
 
 
 def _with_depth_of(base: Data912Row, live: Optional[Data912Row]) -> Data912Row:
@@ -148,13 +149,14 @@ class ProviderHub:
         for rows in (snaps or {}).values():
             seen_this_cycle.update(rows.keys())
         # Persistir los últimos valores BYMA para retención stale (anti-floor en ventana K).
-        # Solo precios reales (c>0): un 0 no es dato (especie ilíquida/esqueleto) y no debe
+        # Solo precios reales: un 0 no es dato (especie ilíquida/esqueleto) y no debe
         # quedar retenido como "último valor bueno" ni reinyectarse en un ciclo vacío.
+        # La regla vive en core/domain/missing (misma que ccp<=0 en FCI y tem:0 en letras).
         if seen_this_cycle:
             for settle, rows in (snaps or {}).items():
                 prev = self._last_active_rows.setdefault(settle, {})
                 for sym, row in rows.items():
-                    if row is not None and row.c and row.c > 0:
+                    if row is not None and not es_dato_ausente(row.c):
                         prev[sym] = row
         # Actualizar contadores: visto → reset a K; ausente → decrementar.
         all_tracked = set(self._active_sym_counts) | seen_this_cycle
@@ -253,7 +255,7 @@ class ProviderHub:
             # de la propia activa; recién sin ninguna alternativa se muestra el 0 (mejor un 0
             # explícito que ocultar la especie).
             for sym, row in active_rows.items():
-                if row is not None and row.c and row.c > 0:
+                if row is not None and not es_dato_ausente(row.c):
                     base[sym] = row
                     continue
                 fb = _good(floor_rows.get(sym)) or _good(last.get(sym))

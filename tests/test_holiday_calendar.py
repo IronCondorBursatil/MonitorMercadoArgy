@@ -47,3 +47,44 @@ def test_settlement_t1_salta_feriado():
     # y caer el miércoles 2026-03-25.
     s = settlement_byma("2026-03-20", lag=1)
     assert s.date() == date(2026, 3, 25)
+
+
+# --------------------------------------------------------------------------- #
+# Hash del calendario (Fase 5 de agents.md §0.8). TODO el settlement y el lag CER cuelgan
+# de data/feriados_ar.xlsx: una edición silenciosa del Excel (o un `py core/holiday_engine.py`
+# sin argumentos, que lo REESCRIBE desde las APIs) mueve el V.Téc de cada bono indexado sin
+# que ningún spot-check lo note. Se hashea el conjunto DERIVADO restringido a la cobertura
+# (2020–2029), no los bytes del xlsx (un re-save de Excel cambia metadata) ni años fuera de
+# cobertura (dependen de la versión de pandas_market_calendars). Si este test se pone rojo
+# por un cambio LEGÍTIMO del calendario, se actualiza el hash EN EL MISMO COMMIT, con el
+# motivo (feriado nuevo/trasladado y su fuente oficial).
+# --------------------------------------------------------------------------- #
+_HASH_FERIADOS_2020_2029 = "56aed962fb13dc47164060044ce7a1dab7deede6f02a0e1c959c12a3d5ad2818"
+
+
+def _hash_calendario(fechas) -> str:
+    import hashlib
+    return hashlib.sha256("\n".join(sorted(d.isoformat() for d in fechas)).encode()).hexdigest()
+
+
+def test_calendario_ar_2020_2029_no_cambio_en_silencio():
+    from core import holiday_engine as he
+
+    fer = he._ar_holidays()
+    assert he._ar_cobertura() == (2020, 2029), "cambió la cobertura del Excel de feriados"
+    en_cobertura = {d for d in fer if 2020 <= d.year <= 2029}
+    assert len(en_cobertura) == 197, f"{len(en_cobertura)} feriados en 2020-2029 (esperaba 197)"
+    assert _hash_calendario(en_cobertura) == _HASH_FERIADOS_2020_2029, (
+        "el conjunto de feriados 2020-2029 cambió: si es legítimo, actualizá el hash con el "
+        "motivo y la fuente oficial en el mismo commit")
+
+
+def test_el_hash_del_calendario_detecta_un_feriado_de_mas_o_de_menos():
+    """Prueba por mutación del guard de arriba (sin tocar el Excel): un feriado agregado o
+    sacado cambia el hash."""
+    from core import holiday_engine as he
+
+    base = {d for d in he._ar_holidays() if 2020 <= d.year <= 2029}
+    assert _hash_calendario(base) == _HASH_FERIADOS_2020_2029
+    assert _hash_calendario(base | {date(2027, 7, 15)}) != _HASH_FERIADOS_2020_2029
+    assert _hash_calendario(base - {date(2026, 3, 24)}) != _HASH_FERIADOS_2020_2029

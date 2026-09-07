@@ -32,6 +32,7 @@ from typing import Dict, List, Optional
 from config.settings import settings
 from core.domain.fci import ARD_FCI_ENDPOINTS as _ARD_FCI
 from core.domain.fci.derive import norm as _norm, to_float as _f
+from core.domain.missing import es_dato_ausente
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -224,7 +225,7 @@ def net_flow_series(series: Dict[date, dict]) -> Dict[date, float]:
     espurio gigante en el panel FCI.
     """
     days = sorted(d for d, v in series.items()
-                  if v and (v.get("ccp") or 0) > 0 and v.get("vcp") is not None)
+                  if v and not es_dato_ausente(v.get("ccp")) and v.get("vcp") is not None)
     out: Dict[date, float] = {}
     for i in range(1, len(days)):
         prev, cur = series[days[i - 1]], series[days[i]]

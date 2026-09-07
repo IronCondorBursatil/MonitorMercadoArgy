@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Dict, List, Optional
 
+from core.domain.missing import valor_o_none
+
 # El prefijo del ticker decide el tipo. Los dos pertenecen a `instrument_groups`
 # (TASA_FIJA): un tipo de fantasía dejaría el bono invisible en todos los paneles.
 _CLASE_POR_PREFIJO = {"S": "LECAP", "T": "BONCAP"}
@@ -135,11 +137,8 @@ def _alta_desde(ticker: str, emision: date, vto: date, vpv: float,
     """Los `fields` que espera `save_instrument(sheet="Tasa_Fija", ...)`, más el
     único flujo. El nombre de las claves es el del `SHEET_SCHEMAS` del ABM."""
     # `tem` en 0 es dato ausente: se deja vacío en vez de persistir una tasa de 0%,
-    # que después se lee como si el dato existiera.
-    try:
-        tem_val = float(tem) or None
-    except (TypeError, ValueError):
-        tem_val = None
+    # que después se lee como si el dato existiera (regla única: core/domain/missing).
+    tem_val = valor_o_none(tem)
     return {
         "ticker": ticker,
         "ticker_ars": ticker,
