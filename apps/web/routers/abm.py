@@ -33,7 +33,11 @@ from apps.web.bond_detail import calculate
 from apps.web.deps import (
     get_fx, get_hub, get_indices, get_provider, get_repo, get_state,
 )
+from apps.web.deps_auth import get_admin_user_html
 from apps.web.templates import TEMPLATES as _TEMPLATES
+from apps.web.universe_service import META_ULTIMA_CORRIDA
+from config.settings import settings
+from core.infrastructure.byma import novedades as nov_store
 from core.infrastructure.byma.universe import (
     categories, count, count_unloaded, prefill_for, search_byma_grouped,
 )
@@ -85,6 +89,7 @@ def abm_page(request: Request, state=Depends(get_state)):
         "unloaded": unloaded,
         "byma_cats": categories(),
         "byma_count": count(),
+        "novedades": state.novedades(),
     })
 
 
@@ -178,6 +183,76 @@ def abm_universe(request: Request, q: str = "", cat: str = "", page: int = 0,
         ctx["asof"] = lr.strftime("%H:%M:%S") if lr else None
         return _TEMPLATES.TemplateResponse(request, "fragments/abm_universe.html", ctx)
     return _TEMPLATES.TemplateResponse(request, "fragments/abm_universe_rows.html", ctx)
+
+
+# ── Novedades del universo (spec 2026-09-07 §3) ───────────────────────────────
+def _attach_px_novedades(grupos, hub) -> None:
+    """Precio y volumen del día por símbolo desde el snapshot vivo (best-effort)."""
+    try:
+        snap = hub.snapshot() if hub else {}
+    except Exception:  # noqa: BLE001 — el hub puede no estar listo
+        snap = {}
+    for g in grupos:
+        for f in g["filas"]:
+            row = snap.get(f["symbol"])
+            c = getattr(row, "c", None) if row is not None else None
+            f["px"] = float(c) if c else None
+            f["vol_f"] = _fmt_monto(getattr(row, "v", None)) if row is not None else "—"
+
+
+def _render_novedades(request: Request, hub, flash: str = "") -> HTMLResponse:
+    grupos = nov_store.agrupadas("nueva")
+    _attach_px_novedades(grupos, hub)
+    return _TEMPLATES.TemplateResponse(request, "fragments/abm_novedades.html", {
+        "grupos": grupos,
+        "descartadas": nov_store.listar("descartada"),
+        "total": sum(len(g["filas"]) for g in grupos),
+        "flash": flash,
+        "ultima": nov_store.leer_meta(META_ULTIMA_CORRIDA),
+    })
+
+
+@router.get("/abm/novedades", response_class=HTMLResponse)
+def abm_novedades(request: Request, hub=Depends(get_hub)):
+    """Especies nuevas en los feeds, agrupadas por tipo de activo, con Cargar/Descartar."""
+    return _render_novedades(request, hub)
+
+
+@router.post("/abm/novedades/{symbol}/descartar", response_class=HTMLResponse)
+def abm_novedad_descartar(symbol: str, request: Request, hub=Depends(get_hub),
+                          state=Depends(get_state)):
+    nov_store.descartar(symbol)
+    state.set_novedades(nov_store.contar_nuevas())
+    return _render_novedades(request, hub)
+
+
+@router.post("/abm/novedades/{symbol}/restaurar", response_class=HTMLResponse)
+def abm_novedad_restaurar(symbol: str, request: Request, hub=Depends(get_hub),
+                          state=Depends(get_state)):
+    nov_store.restaurar(symbol)
+    state.set_novedades(nov_store.contar_nuevas())
+    return _render_novedades(request, hub)
+
+
+@router.post("/abm/novedades/refresh", response_class=HTMLResponse)
+async def abm_novedades_refresh(request: Request, hub=Depends(get_hub),
+                                state=Depends(get_state),
+                                _admin=Depends(get_admin_user_html)):
+    """«Refrescar ahora»: la misma corrida que el loop de las 08:00, a demanda (admin)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from apps.web.universe_service import sincronizar_universo
+
+    hoy = datetime.now(ZoneInfo(settings.timezone)).date()
+    try:
+        res = await asyncio.to_thread(sincronizar_universo, hub, hoy=hoy)
+        state.set_novedades(res.pendientes)
+        flash = res.resumen()
+    except Exception as e:  # noqa: BLE001 — el operador tiene que ver el motivo
+        logger.exception("refresh manual de novedades falló")
+        flash = "la corrida falló: %s: %s" % (type(e).__name__, e)
+    return _render_novedades(request, hub, flash=flash)
 
 
 def _live_metrics(state, values: dict, key: str):
@@ -304,15 +379,23 @@ async def abm_save(request: Request, sheet: str = Form(...),
         # son ~130-200 ms de I/O+CPU sincrónico. En la corrutina frenaban el event loop
         # y con él todos los SSE. CLAUDE.md ya decía que esto corría en to_thread.
         def _save():
-            abm_store.save_instrument(sheet, fields, cashflows)
+            res = abm_store.save_instrument(sheet, fields, cashflows)
             repo.reload()                              # refresca el cache desde SQLite
-        await asyncio.to_thread(_save)
+            # Si el ticker (o una pata) era una novedad pendiente, pasa a `cargada`.
+            return nov_store.marcar_cargadas(res["tickers"])
+        cargadas = await asyncio.to_thread(_save)
     except (ValueError, KeyError) as e:
         # NUNCA tragar el error: el operador tiene que saber que NO se guardó
         # (antes esto era `pass` y el alta "desaparecía" sin aviso).
         logger.warning("ABM save falló (%s): %s", sheet, e)
         return _render_list(request, sheet, state, error=str(e))
-    return _render_list(request, sheet, state)
+    if cargadas:
+        state.set_novedades(await asyncio.to_thread(nov_store.contar_nuevas))
+    resp = _render_list(request, sheet, state)
+    # La pestaña Novedades escucha este evento y se refresca sola (la respuesta va a
+    # #abm-list, que está oculto cuando el alta arranca desde Novedades).
+    resp.headers["HX-Trigger"] = "novedades-refresh"
+    return resp
 
 
 @router.post("/abm/cashflows", response_class=HTMLResponse)

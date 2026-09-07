@@ -1,0 +1,53 @@
+{# Novedades del universo (spec 2026-09-07): especies vistas en los feeds que el universo
+   no tenía, agrupadas por tipo de activo. «＋» abre el cajón prefillado (mismo camino que
+   el ＋ del Universo); «✕» descarta (reversible, grupo al pie). Sólo hay ＋ donde el ABM
+   tiene hoja (ON, títulos públicos): acciones/cedears/índices no se cargan por acá. #}
+<div class="nov-meta">
+  {% if total %}<b>{{ total }}</b> pendiente{{ 's' if total != 1 else '' }}{% else %}Sin novedades pendientes{% endif %}
+  {% if ultima %} · última corrida {{ ultima }}{% endif %}
+  {% if flash %}<span class="nov-flash">{{ flash }}</span>{% endif %}
+</div>
+{% for g in grupos %}
+<details class="nov-grupo" open>
+  <summary>{{ g.categoria }} <span class="badge">{{ g.filas|length }}</span></summary>
+  <table class="nov-table">
+    <thead><tr><th>Símbolo</th><th>Denominación</th><th>Emisor</th><th>Mon.</th><th>Vto.</th><th class="num">Precio</th><th class="num">Vol. día</th><th>Fuente</th><th>Visto</th><th></th></tr></thead>
+    <tbody>
+    {% for f in g.filas %}
+    <tr>
+      <td class="nov-sym">{{ f.symbol }}</td>
+      <td>{{ f.denominacion or '—' }}</td>
+      <td class="nov-emisor">{{ f.emisor or '—' }}</td>
+      <td>{{ f.moneda or '—' }}</td>
+      <td>{{ f.vencimiento or '—' }}</td>
+      <td class="num">{{ '%.2f'|format(f.px) if f.px else '—' }}</td>
+      <td class="num">{{ f.vol_f }}</td>
+      <td>{{ f.source }}</td>
+      <td>{{ f.first_seen }}</td>
+      <td class="nov-acts">
+        {% if f.cargable %}<button type="button" class="uni-plus" title="dar de alta (cajón prefillado)"
+                hx-get="/abm/form?prefill={{ f.symbol|urlencode }}" hx-target="#abm-editor" hx-swap="innerHTML"
+                onclick="abmOpenDrawer()">＋</button>{% else %}<span class="nov-nohoja" title="sin hoja en el ABM">—</span>{% endif %}
+        <button type="button" class="nov-x" title="descartar (reversible)"
+                hx-post="/abm/novedades/{{ f.symbol|urlencode }}/descartar" hx-target="#nov-results" hx-swap="innerHTML">✕</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endfor %}
+{% if descartadas %}
+<details class="nov-grupo nov-descartadas">
+  <summary>Descartadas <span class="badge">{{ descartadas|length }}</span></summary>
+  <table class="nov-table"><tbody>
+  {% for f in descartadas %}
+  <tr>
+    <td class="nov-sym">{{ f.symbol }}</td><td>{{ f.categoria }}</td><td class="nov-emisor">{{ f.emisor or '—' }}</td><td>{{ f.first_seen }}</td>
+    <td class="nov-acts"><button type="button" class="nov-undo" title="volver a pendientes"
+        hx-post="/abm/novedades/{{ f.symbol|urlencode }}/restaurar" hx-target="#nov-results" hx-swap="innerHTML">restaurar</button></td>
+  </tr>
+  {% endfor %}
+  </tbody></table>
+</details>
+{% endif %}
