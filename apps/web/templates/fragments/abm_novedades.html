@@ -2,6 +2,11 @@
    no tenía, agrupadas por tipo de activo. «＋» abre el cajón prefillado (mismo camino que
    el ＋ del Universo); «✕» descarta (reversible, grupo al pie). Sólo hay ＋ donde el ABM
    tiene hoja (ON, títulos públicos): acciones/cedears/índices no se cargan por acá. #}
+{# El badge de la pestaña vive FUERA de #nov-results: viaja como swap out-of-band en cada
+   render del fragment (descartar / restaurar / refrescar / el `novedades-refresh` que
+   dispara /abm/save), que es la única forma de que no quede con la cuenta del último
+   GET /abm. #}
+<span class="badge" id="nov-badge" hx-swap-oob="true">{{ total }}</span>
 <div class="nov-meta">
   {% if total %}<b>{{ total }}</b> pendiente{{ 's' if total != 1 else '' }}{% else %}Sin novedades pendientes{% endif %}
   {% if ultima %} · última corrida {{ ultima }}{% endif %}

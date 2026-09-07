@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Callable, Dict, List, Optional, Set
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from core.infrastructure.byma import novedades as nov
 from core.infrastructure.byma.universe import _categoria, _loaded_ids
@@ -34,6 +34,11 @@ META_ULTIMOS_VISTOS = "universe_ultimos_vistos"   # cuántos símbolos vio (guar
 _MAX_FICHAS = 200   # fichas BYMA por corrida (una POST sync por símbolo); el resto se
                     # reintenta en corridas siguientes mientras la novedad siga pendiente
                     # sin ISIN
+
+# Orden de prioridad del tope de fichas, por `security_type` de la fila: los títulos
+# públicos y letras (GO) antes que las ON (CORP). Lo que no tiene hoja en el ABM
+# (`novedades.CATEGORIAS_SIN_HOJA`) ni siquiera entra a la cola.
+_RANK_FICHA = {"GO": 0, "CORP": 1}
 
 # Una corrida por vez: el loop de las 08:00 y «Refrescar ahora» corren en hilos distintos
 # y las dos leerían el mismo `catalogo` para después insertar el mismo PK.
@@ -145,19 +150,30 @@ def _sincronizar(hub, *, hoy: date, ficha_fn: Optional[FichaFn], max_fichas: int
     # corrida en que se altearon puede haberse quedado sin ficha (tope o falla) y, una vez
     # en el catálogo, `diff.altas_catalogo` no las vuelve a traer. Acotado a PENDIENTES
     # sin ISIN a propósito: no hay que gastar el tope en los ~664 símbolos del CSV seed
-    # que nunca tuvieron ISIN (no son novedad).
+    # que nunca tuvieron ISIN (no son novedad). Y acotado, además, a lo CARGABLE (BYMA no
+    # tiene ficha de acciones/cedears: esas pendientes se llevaban un lugar del tope en
+    # cada corrida) y a lo que tiene fila en el catálogo (join interno: sin fila no hay
+    # dónde escribir el resultado de la ficha).
     altas_symbols = {fila["symbol"] for fila in diff.altas_catalogo}
+    sin_hoja = sorted(nov.CATEGORIAS_SIN_HOJA)
     with SessionLocal() as s:
         candidatos_pendientes = s.execute(
             select(UniverseNovedadORM.symbol)
-            .outerjoin(BymaCatalogORM, BymaCatalogORM.symbol == UniverseNovedadORM.symbol)
-            .where(UniverseNovedadORM.estado == "nueva", BymaCatalogORM.isin.is_(None))
+            .join(BymaCatalogORM, BymaCatalogORM.symbol == UniverseNovedadORM.symbol)
+            .where(UniverseNovedadORM.estado == "nueva", BymaCatalogORM.isin.is_(None),
+                   func.coalesce(BymaCatalogORM.categoria, "").notin_(sin_hoja))
         ).scalars().all()
     reintentos = sorted(sym for sym in candidatos_pendientes if sym not in altas_symbols)
 
-    # Ficha técnica para símbolos nuevos + pendientes sin ISIN. Red, FUERA de la transacción.
+    # Ficha técnica para símbolos nuevos + pendientes sin ISIN. Red, FUERA de la
+    # transacción. El tope es el recurso escaso de la corrida: se gasta sólo donde el ABM
+    # tiene hoja (para una acción/cedear la ficha responde `data: []`) y primero en
+    # títulos públicos/letras, que si no quedaban detrás de cualquier símbolo alfabético.
     ficha_fn = ficha_fn or _ficha_byma_factory()
-    todos_candidatos = [fila["symbol"] for fila in diff.altas_catalogo] + reintentos
+    cargables = sorted(
+        (f for f in diff.altas_catalogo if f["categoria"] not in nov.CATEGORIAS_SIN_HOJA),
+        key=lambda f: (_RANK_FICHA.get(f["security_type"] or "", 2), f["symbol"]))
+    todos_candidatos = [fila["symbol"] for fila in cargables] + reintentos
     fichas: Dict[str, dict] = {}
     for symbol in todos_candidatos[:max_fichas]:
         try:
@@ -169,7 +185,7 @@ def _sincronizar(hub, *, hoy: date, ficha_fn: Optional[FichaFn], max_fichas: int
             fichas[symbol] = f
     if len(todos_candidatos) > max_fichas:
         logger.info("universo: %d símbolos sin ficha esta corrida (tope %d); se reintentan "
-                    "mientras sigan pendientes sin ISIN",
+                    "mientras sigan pendientes, cargables y sin ISIN",
                     len(todos_candidatos) - max_fichas, max_fichas)
 
     hoy_iso = hoy.isoformat()
@@ -190,9 +206,7 @@ def _sincronizar(hub, *, hoy: date, ficha_fn: Optional[FichaFn], max_fichas: int
             f = fichas.get(symbol)
             if not f:
                 continue
-            row = s.get(BymaCatalogORM, symbol)
-            if row is None:
-                continue
+            row = s.get(BymaCatalogORM, symbol)   # existe: el join de arriba es interno
             # Sólo rellena huecos: nunca pisa un valor ya cargado (misma regla que
             # `catalog_enrich.enrich_isin_from_byma` — la fila viva manda).
             if row.isin is None and f.get("isin"):

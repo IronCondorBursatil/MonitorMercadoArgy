@@ -264,6 +264,64 @@ def test_una_pendiente_con_isin_no_se_reintenta(base):
     assert pedidas == []
 
 
+def test_la_ficha_no_se_gasta_en_categorias_sin_hoja_y_prioriza_titulos_publicos(base):
+    """El tope de fichas es el recurso escaso de la corrida (una POST BYMA por símbolo).
+    Para acciones/cedears/índices la ficha responde `data: []` SIEMPRE y encima ordenan
+    primero por alfabético: el tope se agotaba ahí y los títulos públicos y las ON —lo
+    único que el ABM puede cargar— se quedaban sin metadata corrida tras corrida."""
+    _seed_catalogo(60)
+    pedidas = []
+
+    def ficha(symbol):
+        pedidas.append(symbol)
+        return None
+
+    svc.sincronizar_universo(_hub({"AAPLD": "cedears", "YMCXO": "corp", "S29E7": "notes"}),
+                             hoy=HOY, ficha_fn=ficha, max_fichas=2)
+    assert pedidas == ["S29E7", "YMCXO"]        # letra/título público antes que la ON
+    assert "AAPLD" not in pedidas
+    assert _fila("AAPLD") is not None           # pero el cedear igual entra al universo
+
+
+def test_una_pendiente_sin_hoja_no_se_reintenta(base):
+    """El reintento se acota igual: una acción pendiente (que nunca va a tener ficha) se
+    llevaba un lugar del tope en TODAS las corridas siguientes."""
+    _seed_catalogo(60)
+    with SessionLocal.begin() as s:
+        s.add(BymaCatalogORM(symbol="GGAL2", categoria="Acciones"))
+        s.add(BymaCatalogORM(symbol="YMCXO", categoria="Obligaciones Negociables"))
+        nov.registrar_nuevas_en(s, [
+            {"symbol": "GGAL2", "source": "byma", "categoria": "Acciones"},
+            {"symbol": "YMCXO", "source": "byma", "categoria": "Obligaciones Negociables"},
+        ], hoy=HOY)
+    pedidas = []
+
+    def ficha(symbol):
+        pedidas.append(symbol)
+        return None
+
+    svc.sincronizar_universo(_hub({}), hoy=HOY, ficha_fn=ficha)
+    assert pedidas == ["YMCXO"]
+
+
+def test_una_pendiente_sin_fila_en_el_catalogo_no_gasta_ficha(base):
+    """Con el outer join una novedad sin fila en `byma_catalog` (isin NULL por la
+    extensión del join) entraba a los candidatos, gastaba una ficha y después se
+    descartaba sola: no hay fila donde escribir el resultado."""
+    _seed_catalogo(60)
+    with SessionLocal.begin() as s:
+        nov.registrar_nuevas_en(s, [{"symbol": "HUERFANA", "source": "byma",
+                                     "categoria": "Obligaciones Negociables"}], hoy=HOY)
+    pedidas = []
+
+    def ficha(symbol):
+        pedidas.append(symbol)
+        return {"isin": "ARFANTASMA01"}
+
+    svc.sincronizar_universo(_hub({}), hoy=HOY, ficha_fn=ficha)
+    assert pedidas == []
+
+
 def test_una_corrida_que_revienta_a_mitad_no_deja_nada_a_medias(base, monkeypatch):
     """Spec §5: diff+upsert son UNA transacción. `escribir_meta_en` es la última escritura
     del bloque: si revienta, catálogo, last_seen y novedades tienen que volver atrás."""

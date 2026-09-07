@@ -382,7 +382,15 @@ async def abm_save(request: Request, sheet: str = Form(...),
             res = abm_store.save_instrument(sheet, fields, cashflows)
             repo.reload()                              # refresca el cache desde SQLite
             # Si el ticker (o una pata) era una novedad pendiente, pasa a `cargada`.
-            return nov_store.marcar_cargadas(res["tickers"])
+            # Best-effort A PROPÓSITO: el alta ya está en SQLite, así que un fallo acá no
+            # puede volverse un 500 que le diga al operador que NO se guardó. La corrida
+            # de las 08:00 la marca `cargada` igual (el símbolo ya está en `instruments`).
+            try:
+                return nov_store.marcar_cargadas(res["tickers"])
+            except Exception:  # noqa: BLE001
+                logger.warning("ABM: alta guardada pero no pude marcar la novedad como "
+                               "cargada", exc_info=True)
+                return []
         cargadas = await asyncio.to_thread(_save)
     except (ValueError, KeyError) as e:
         # NUNCA tragar el error: el operador tiene que saber que NO se guardó

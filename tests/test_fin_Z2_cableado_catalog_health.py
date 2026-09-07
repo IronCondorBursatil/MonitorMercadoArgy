@@ -144,7 +144,7 @@ def test_el_catalogo_vacio_se_ve_en_el_badge_y_no_lo_borra_un_refresh(monkeypatc
 def test_el_reload_que_revienta_en_el_reconcile_llega_a_record_error(monkeypatch):
     """`_startup_reconcile` envolvía TODO en un `except` que sólo loguea: si el
     reload del catálogo fallaba, el cache quedaba viejo y no se veía en ningún lado."""
-    from core.infrastructure.byma import catalog_enrich, universe
+    from core.infrastructure.byma import catalog_enrich
 
     def _boom():
         raise RuntimeError("db bloqueada")
@@ -157,7 +157,6 @@ def test_el_reload_que_revienta_en_el_reconcile_llega_a_record_error(monkeypatch
     monkeypatch.setattr(catalog_enrich, "enrich_isin_from_byma", lambda: 0)
     monkeypatch.setattr(catalog_enrich, "enrich_isin_from_ficha", lambda: 0)
     monkeypatch.setattr(catalog_enrich, "enrich_ficha_meta", lambda: 0)
-    monkeypatch.setattr(universe, "ingest_byma_catalog", lambda: 0)
 
     class _Hub:
         async def refresh_all(self):
@@ -175,7 +174,7 @@ def test_el_reload_que_revienta_en_el_reconcile_llega_a_record_error(monkeypatch
 def test_el_reconcile_republica_la_salud_del_catalogo(monkeypatch):
     """El reconcile da de alta filas (acciones, ONs, patas) → puede traer tipos
     huérfanos nuevos; la señal tiene que quedar actualizada, no la del boot."""
-    from core.infrastructure.byma import catalog_enrich, universe
+    from core.infrastructure.byma import catalog_enrich
 
     monkeypatch.setattr(app_mod, "get_repo", lambda: _fake_repo(orphans=["NUEVO"]))
     monkeypatch.setattr(app_mod, "_reconcile_catalog", lambda hub: 1)
@@ -183,7 +182,6 @@ def test_el_reconcile_republica_la_salud_del_catalogo(monkeypatch):
     monkeypatch.setattr(catalog_enrich, "enrich_isin_from_byma", lambda: 0)
     monkeypatch.setattr(catalog_enrich, "enrich_isin_from_ficha", lambda: 0)
     monkeypatch.setattr(catalog_enrich, "enrich_ficha_meta", lambda: 0)
-    monkeypatch.setattr(universe, "ingest_byma_catalog", lambda: 0)
 
     class _Hub:
         async def refresh_all(self):

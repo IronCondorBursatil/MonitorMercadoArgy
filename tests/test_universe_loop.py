@@ -172,6 +172,7 @@ def test_una_corrida_rechazada_espera_el_tick_y_reintenta(monkeypatch):
     llamadas = _cablear(monkeypatch,
                         resultado=svc.Resultado(rechazo="lectura anémica: 10 símbolos (< 50)",
                                                 pendientes=1))
+    monkeypatch.setattr(app_mod, "_UNIVERSE_REINTENTO_ARRANQUE_SEC", 1.0)
     monkeypatch.setattr(app_mod, "_UNIVERSE_REINTENTO_SEC", 1.0)
     app = _fake_app()
 
@@ -184,6 +185,31 @@ def test_una_corrida_rechazada_espera_el_tick_y_reintenta(monkeypatch):
             assert llamadas["sync"] == 1, "reintentó sin esperar el tick (busy loop)"
             assert not task.done(), "el rechazo terminó el loop"
             assert await _esperar(lambda: llamadas["sync"] >= 2, timeout=3.0), "no reintentó"
+        finally:
+            await _cancelar(task)
+
+    asyncio.run(run())
+
+
+def test_el_primer_rechazo_tras_el_boot_reintenta_rapido(monkeypatch):
+    """El PRIMER intento después de un boot compite con el `refresh_all` de
+    `_startup_reconcile`: el hub todavía está vacío y la corrida se rechaza siempre. Con
+    el tick de una hora la primera corrida del día llegaba una hora tarde; el reintento
+    corto la trae a los minutos. Del segundo rechazo en adelante manda el tick largo."""
+    llamadas = _cablear(monkeypatch,
+                        resultado=svc.Resultado(rechazo="el hub no tiene símbolos",
+                                                pendientes=0))
+    monkeypatch.setattr(app_mod, "_UNIVERSE_REINTENTO_ARRANQUE_SEC", 0.3)
+    monkeypatch.setattr(app_mod, "_UNIVERSE_REINTENTO_SEC", 5.0)
+    app = _fake_app()
+
+    async def run():
+        task = asyncio.create_task(app_mod._universe_loop(app))
+        try:
+            assert await _esperar(lambda: llamadas["sync"] >= 2, timeout=2.0), \
+                "el primer rechazo esperó el tick largo"
+            assert not await _esperar(lambda: llamadas["sync"] >= 3, timeout=1.5), \
+                "el segundo rechazo no usó el tick largo"
         finally:
             await _cancelar(task)
 

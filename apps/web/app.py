@@ -305,7 +305,8 @@ async def _startup_reconcile(app: FastAPI) -> None:
     """Al arranque: trae un snapshot de Data912 y reconcilia el catálogo —
     completa las patas de moneda (MEP/CABLE) de soberanos ya cargados (mismo bono)
     y da de alta las acciones como categoría 'Acciones'. Los tickers de renta fija
-    genuinamente nuevos quedan para el alta manual (sidebar del ABM)."""
+    genuinamente nuevos NO se cargan acá: los aflora el job diario `_universe_loop`, que
+    los deja en la pestaña «Novedades» del ABM para que el operador decida."""
     from core.infrastructure.byma.catalog_enrich import (
         enrich_ficha_meta, enrich_isin_from_byma, enrich_isin_from_ficha,
     )
@@ -604,6 +605,12 @@ async def _bei_loop(app: FastAPI) -> None:
 # reventó. La corrida normal la agenda `novedades.proximo_despertar` (08:00 AR, 1×/día).
 _UNIVERSE_REINTENTO_SEC = 3600
 
+# El PRIMER intento después de un boot compite con el `refresh_all` de
+# `_startup_reconcile`: el hub todavía no tiene la rueda y la corrida se rechaza siempre.
+# Con el tick largo, la primera corrida del día llegaba una hora tarde; el reintento corto
+# la trae a los minutos del arranque. Del segundo rechazo en adelante manda el tick largo.
+_UNIVERSE_REINTENTO_ARRANQUE_SEC = 120
+
 
 async def _universe_loop(app: FastAPI) -> None:
     """Novedades del universo (spec 2026-09-07): 1×/día a partir de las 08:00 AR compara lo
@@ -613,7 +620,8 @@ async def _universe_loop(app: FastAPI) -> None:
     Lee el snapshot ACUMULADO del hub y no pide la rueda de nuevo: a las 08:00 BYMA
     responde `data: []` (pre-market) y un fetch fresco rechazaría la corrida todos los
     días. Idempotente por día (sello en `schema_meta`), restart-safe; si la lectura se
-    rechaza o revienta, reintenta cada hora. Red/SQLite van en `to_thread`."""
+    rechaza o revienta, reintenta cada hora (el primer rechazo tras el boot, a los dos
+    minutos: ver `_UNIVERSE_REINTENTO_ARRANQUE_SEC`). Red/SQLite van en `to_thread`."""
     from datetime import datetime as _dt
     from zoneinfo import ZoneInfo
 
@@ -629,6 +637,7 @@ async def _universe_loop(app: FastAPI) -> None:
         raise
     except Exception:  # noqa: BLE001 — sin contador inicial el loop igual sirve
         logger.exception("universe loop: no pude leer el contador inicial")
+    primer_intento = True
     while True:
         try:
             now = _dt.now(tz)
@@ -638,10 +647,13 @@ async def _universe_loop(app: FastAPI) -> None:
                 await asyncio.sleep(espera)
                 continue
             res = await asyncio.to_thread(sincronizar_universo, app.state.hub, hoy=now.date())
+            espera_rechazo = (_UNIVERSE_REINTENTO_ARRANQUE_SEC if primer_intento
+                              else _UNIVERSE_REINTENTO_SEC)
+            primer_intento = False
             state.set_novedades(res.pendientes)
             logger.info(res.resumen())
             if res.rechazo:
-                await asyncio.sleep(_UNIVERSE_REINTENTO_SEC)
+                await asyncio.sleep(espera_rechazo)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 — una corrida caída no puede tumbar el lifespan

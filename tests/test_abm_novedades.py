@@ -12,7 +12,7 @@ from apps.web.app import app
 from core.infrastructure.byma import novedades as nov
 from core.infrastructure.db.catalog_repository import init_db
 from core.infrastructure.db.engine import SessionLocal
-from core.infrastructure.db.models import BymaCatalogORM, UniverseNovedadORM
+from core.infrastructure.db.models import BymaCatalogORM, InstrumentORM, UniverseNovedadORM
 from tests._clock import ref_date
 from tests.test_abm_router import _con_preview
 
@@ -63,6 +63,10 @@ def test_el_fragment_agrupa_por_categoria_y_solo_ofrece_cargar_donde_hay_hoja(no
     assert 'hx-get="/abm/form?prefill=TSNVGG"' not in html      # acción: sin hoja → sin ＋
     assert 'hx-post="/abm/novedades/TSNVGG/descartar"' in html  # pero sí Descartar
     assert "2028-01-31" in html                                  # vencimiento de la ficha
+    # El badge de la pestaña vive fuera de #nov-results: sin este swap out-of-band se
+    # quedaba con la cuenta del render de /abm tras descartar/restaurar/cargar.
+    assert 'id="nov-badge" hx-swap-oob="true"' in html
+    assert ">2<" in html                                         # las dos pendientes
 
 
 def test_descartar_y_restaurar_actualizan_estado_y_contador(novedades):
@@ -85,6 +89,7 @@ def test_la_pagina_del_abm_trae_la_pestana_novedades_primera(novedades):
     assert 'hx-get="/abm/novedades"' in page
     assert 'class="abm-seg"' in page and "Universo BYMA" in page and 'id="abm-list"' in page
     assert 'id="nov-results"' in page
+    assert 'id="nov-refresh"' in page          # el bypass corre como admin: ve el botón
 
 
 def test_un_alta_desde_el_abm_marca_la_novedad_como_cargada(novedades):
@@ -104,6 +109,32 @@ def test_un_alta_desde_el_abm_marca_la_novedad_como_cargada(novedades):
             with SessionLocal() as s:
                 assert s.get(UniverseNovedadORM, "TSNV1O").estado == "cargada"
             assert app_mod.app.state.app_state.novedades() == nov.contar_nuevas()
+        finally:
+            c.delete("/abm/instrument/TSNV1O")
+
+
+def test_un_fallo_al_marcar_la_novedad_no_rompe_el_alta(novedades, monkeypatch):
+    """El alta ya está en SQLite cuando se marca la novedad: si `marcar_cargadas` revienta
+    (base tomada), un 500 le dice al operador que NO se guardó y lo manda a cargarlo de
+    nuevo. Es best-effort: la corrida de las 08:00 la marca `cargada` igual."""
+    def _boom(_tickers):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(nov, "marcar_cargadas", _boom)
+    fields = {
+        "sheet": "Obligaciones_Negociables",
+        "ticker_ars": "TSNV1O", "ticker_mep": "", "ticker_ccl": "",
+        "short_name": "NOVEDAD S.A.", "tipo": "HARD DOLLAR", "ley_aplicable": "Argentina",
+        "fecha_emision": "2026-01-31", "fecha_vencimiento": "2028-01-31",
+        "cupon anual %": "8", "frecuencia pagos": "2",
+        "base calculo": "ACT/365", "tipo amortizacion": "bullet",
+    }
+    with TestClient(app) as c:
+        try:
+            r = c.post("/abm/save", data=_con_preview(fields))
+            assert r.status_code == 200 and "No se guardó" not in r.text
+            with SessionLocal() as s:
+                assert s.get(InstrumentORM, "TSNV1O") is not None   # el alta SÍ quedó
         finally:
             c.delete("/abm/instrument/TSNV1O")
 
@@ -144,8 +175,13 @@ def test_refrescar_ahora_exige_admin():
         with TestClient(app) as c:
             c.post("/login", data={"username": "bob", "password": "bobpass"})
             assert c.get("/abm/novedades", follow_redirects=False).status_code == 200
+            # ...y tampoco se le OFRECE: el botón sólo se pinta para un admin.
+            assert 'id="nov-refresh"' not in c.get("/abm", follow_redirects=False).text
             r = c.post("/abm/novedades/refresh", follow_redirects=False)
             assert r.status_code == 403
+        with TestClient(app) as c:
+            c.post("/login", data={"username": "admin", "password": "adminpass"})
+            assert 'id="nov-refresh"' in c.get("/abm", follow_redirects=False).text
         with TestClient(app) as c:
             r = c.post("/abm/novedades/refresh",
                        headers={"Origin": "http://evil.example"}, follow_redirects=False)

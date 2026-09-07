@@ -31,8 +31,6 @@ from core.infrastructure.db.models import BymaCatalogORM, UniverseNovedadORM
 
 logger = logging.getLogger(__name__)
 
-ESTADOS = ("nueva", "cargada", "descartada")
-
 # Guard de la lectura entera (criterio hermano de ratings/letras): por debajo del piso
 # ABSOLUTO el hub todavía no vio la rueda (arranque pre-market); por debajo del piso
 # RELATIVO a la corrida anterior es un corte parcial (breaker abierto, panel vacío).
@@ -102,12 +100,6 @@ class Diff:
     cargadas: List[str] = field(default_factory=list)         # pendientes ya en instruments
     vistos: int = 0
     rechazo: Optional[str] = None
-
-    def resumen(self) -> str:
-        if self.rechazo:
-            return "universo: corrida RECHAZADA (%s)" % self.rechazo
-        return "universo: %d vistos, +%d al catálogo, %d nueva(s), %d pasan a cargada" % (
-            self.vistos, len(self.altas_catalogo), len(self.nuevas), len(self.cargadas))
 
 
 def _guard(n_vistos: int, ref_vistos: Optional[int]) -> Optional[str]:

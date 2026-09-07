@@ -62,16 +62,15 @@ Cada uno es la regla + su porqué. La historia y el detalle están en `docs/` (�
   ABM o append/upsert (`scripts/load_bond.py`).
 - **`universe.ingest_byma_catalog()` es DESTRUCTIVA** (DELETE+INSERT del CSV) y desde el
   job de novedades la tabla tiene estado propio (`last_seen`, símbolos del feed, ficha):
-  se rechaza con filas `last_seen` salvo `force=True` (server parado, backup previo). No
-  hay script: es una operación de REPL (`py -3.12 -c "from core.infrastructure.byma.universe
-  import ingest_byma_catalog; ingest_byma_catalog(force=True)"`) con el server parado y
-  backup previo.
+  se rechaza con filas `last_seen` salvo `force=True`. No hay script: es una operación de
+  REPL (`py -3.12 -c "from core.infrastructure.byma.universe import ingest_byma_catalog;
+  ingest_byma_catalog(force=True)"`) con el server parado y backup previo.
 - **Alta automática de letras = la ÚNICA escritura automática en `instruments`**
-  (el job diario de novedades del universo —`_universe_loop`, 08:00 AR— escribe SOLO
-  `byma_catalog` y `universe_novedades`, nunca `instruments`; spec
-  `docs/superpowers/specs/2026-09-07-novedades-universo-design.md`)
   (`apps/web/letras_service.py` + `core/infrastructure/letras_sync.py`, al final de
-  `_price_history_loop`, DESPUÉS del backup). Reglas duras, fijadas por tests: **sólo agrega**
+  `_price_history_loop`, DESPUÉS del backup); el job diario de novedades del universo
+  (`_universe_loop`, 08:00 AR) escribe SOLO `byma_catalog` y `universe_novedades`, nunca
+  `instruments` (spec `docs/superpowers/specs/2026-09-07-novedades-universo-design.md`).
+  Reglas duras, fijadas por tests: **sólo agrega**
   (sin update ni delete; las diferencias se reportan por WARNING), **sólo con dato completo**
   (sin `fechaEmision` no hay alta), **nunca una vencida**, **`tem: 0` es dato AUSENTE**, y
   descarta el payload ENTERO si trae <60 % de las letras vivas que ya hay. Escribe por
