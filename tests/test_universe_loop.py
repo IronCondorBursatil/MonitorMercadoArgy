@@ -171,18 +171,18 @@ def test_una_corrida_rechazada_espera_el_tick_y_reintenta(monkeypatch):
     llamadas = _cablear(monkeypatch,
                         resultado=svc.Resultado(rechazo="lectura anémica: 10 símbolos (< 50)",
                                                 pendientes=1))
-    monkeypatch.setattr(app_mod, "_UNIVERSE_REINTENTO_SEC", 0.3)
+    monkeypatch.setattr(app_mod, "_UNIVERSE_REINTENTO_SEC", 1.0)
     app = _fake_app()
 
     async def run():
         task = asyncio.create_task(app_mod._universe_loop(app))
         try:
             assert await _esperar(lambda: llamadas["sync"] == 1)
-            assert app.state.app_state.novedades() == 1        # publica lo pendiente igual
+            assert await _esperar(lambda: app.state.app_state.novedades() == 1)  # publica lo pendiente igual
             await asyncio.sleep(0.1)
             assert llamadas["sync"] == 1, "reintentó sin esperar el tick (busy loop)"
             assert not task.done(), "el rechazo terminó el loop"
-            assert await _esperar(lambda: llamadas["sync"] >= 2, timeout=2.0), "no reintentó"
+            assert await _esperar(lambda: llamadas["sync"] >= 2, timeout=3.0), "no reintentó"
         finally:
             await _cancelar(task)
 
@@ -191,7 +191,7 @@ def test_una_corrida_rechazada_espera_el_tick_y_reintenta(monkeypatch):
 
 def test_una_corrida_rota_no_tumba_el_loop_y_espera_el_tick(monkeypatch):
     llamadas = _cablear(monkeypatch, error=RuntimeError("SQLite locked"))
-    monkeypatch.setattr(app_mod, "_UNIVERSE_REINTENTO_SEC", 0.3)
+    monkeypatch.setattr(app_mod, "_UNIVERSE_REINTENTO_SEC", 1.0)
     app = _fake_app()
 
     async def run():
@@ -201,6 +201,8 @@ def test_una_corrida_rota_no_tumba_el_loop_y_espera_el_tick(monkeypatch):
             await asyncio.sleep(0.1)
             assert llamadas["sync"] == 1, "reintentó sin esperar el tick tras la excepción"
             assert not task.done(), "la excepción de la corrida tumbó el loop"
+            assert await _esperar(lambda: llamadas["sync"] >= 2, timeout=3.0), \
+                "no reintentó tras la excepción"
         finally:
             await _cancelar(task)
 
