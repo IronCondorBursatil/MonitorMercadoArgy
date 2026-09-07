@@ -21,6 +21,12 @@ calificaciones de **FIX SCR**.
 > día en la auditoría 2026-09 — pero su descripción de la capa **web** sigue siendo vieja
 > (era http.server + SPA `app.js`, con `_get_columns`/`Snapshot.__init__`/Gridstack y los
 > endpoints `/api/*`). Para todo lo que sea web, la verdad es la de acá.
+>
+> **Antes de proponer una herramienta, tocar dependencias, configurar el agente
+> (permisos/hooks/skills) o ejecutar el plan de fases: leer `agents.md › §0 PROTOCOLO IA`**
+> (biblia del 2026-09-07: versiones reales laptop/prod/CI, veredictos de herramientas,
+> mecánica verificada de Claude Code, hechos del repo, plan por fases, glosario). Manda
+> sobre el resto de `agents.md`.
 
 ## Cómo correr
 
