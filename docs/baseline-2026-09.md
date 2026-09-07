@@ -100,6 +100,44 @@ degraded_loops [] · loop_crashes_24h 0 · catalog {orphans 1, defaulted 158, se
 descartadas). Hash del set (`sha256` de las ISO ordenadas unidas por `\n`):
 `56aed962fb13dc47164060044ce7a1dab7deede6f02a0e1c959c12a3d5ad2818`.
 
+## Pyright (Fase 6 — baseline antes del piloto)
+
+`npx pyright@latest --pythonpath <py312>` con `pyrightconfig.json` en modo **basic** sobre
+`core/domain` + `apps/web` (sin `static/` ni `on_src/`), 2026-09-07:
+
+| Medida | Valor |
+|---|---|
+| pyright | 1.1.413 |
+| Archivos analizados | 78 |
+| Errores / warnings / info | **48 / 0 / 0** (≈ 0,6 por archivo) |
+| Tiempo | 8 s |
+| Por regla | reportArgumentType 21 · reportAttributeAccessIssue 8 · reportOptionalMemberAccess 7 · reportReturnType 4 · reportCallIssue 3 · reportOperatorIssue 2 · reportAssignmentType 1 · reportOptionalCall 1 · reportUndefinedVariable 1 |
+| Por archivo (top) | bond_detail.py 11 · instruments_abm.py 7 · app.py 4 · xirr.py 3 · cartera.py 3 · models.py 3 |
+
+Conclusión de la baseline: el ruido es **manejable** (no hace falta excluir media base), así
+que el piloto sigue. Los 21 `reportArgumentType` son casi todos `Path | None` de
+`settings.*` pasados a parámetros `_PathLike` (los defaults se resuelven en
+`model_post_init`, pyright no lo ve): ruido tipable con un `assert`/narrowing, no bugs.
+
+**Candidatos a bug real que dejó la baseline (anotados, NO corregidos en el piloto —
+alcance de la Fase 6 es medir):**
+
+- `core/domain/models.py:197` `reportUndefinedVariable: "DayCount" is not defined` —
+  **falso positivo verificado**: es una forward-ref en string (`-> "DayCount"`) con import
+  function-local para romper el ciclo models→daycount→cashflow_synth→models (`noqa: F821`).
+  Se tipa con `if TYPE_CHECKING: from core.domain.daycount import DayCount`.
+- `apps/web/bond_detail.py:376,401,402,420,421` `reportOptionalMemberAccess` sobre un
+  `Instrument | None` (`instrument_type`, `maturity_date`, `emission_date`).
+- `apps/web/bond_detail.py:753,815,928,969` `_ZeroTamar` sin `get_cer` (stub que se pasa
+  donde se espera un `IndicesProvider` completo).
+- `apps/web/instruments_abm.py:970` `.upper` sobre `None`; `core/domain/options/analytics.py:118`
+  `reportOptionalCall`; `apps/web/routers/cartera.py:118` `.decode` sobre `memoryview`;
+  `apps/web/routers/abm.py:323,328` `.strip` sobre `UploadFile`;
+  `core/domain/portfolio.py:236` `get_future_cashflows` sobre `object`.
+
+Criterio del piloto (agents.md §0.8 Fase 6): conservar el plugin solo si en tres tareas
+representativas señala ≥ 1 defecto real por tarea con < 10 diagnósticos por turno.
+
 ## Cómo repetir la baseline
 
 ```powershell

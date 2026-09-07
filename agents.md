@@ -632,7 +632,13 @@ los bordes de ingesta (hoy repetido en `provider_hub`, `fci_history`, `letras_sy
 guardián + línea en `CLAUDE.md`. Aceptación: los goldens nuevos se ponen rojos ante una
 mutación deliberada del motor (revertida después); equivalencia verde; gate verde.
 
-**Fase 6 — Piloto pyright-lsp.** Baseline `pyright` standalone (`pyrightconfig.json` modo
+**Fase 6 — Piloto pyright-lsp.** *(Estado 2026-09-07: baseline hecha en `fase-6-pyright`
+— pyright 1.1.413, 78 archivos, **48 errores / 0 warnings**, 8 s, ruido manejable; detalle y
+candidatos a bug real en `docs/baseline-2026-09.md`. `pyrightconfig.json` versionado en modo
+basic; `pyright` instalado global por npm; plugin `pyright-lsp@claude-plugins-official`
+instalado (el marketplace oficial no estaba registrado en esta máquina: se agregó). Las
+tres tareas A/B las corre David en sesiones nuevas; el criterio de conservar/abandonar es
+el de abajo.)* Baseline `pyright` standalone (`pyrightconfig.json` modo
 basic sobre `core/domain` + `apps/web`); si el ruido es inmanejable sin excluir media base,
 cerrar con ese dato. Tres tareas representativas (glue de `apps/web`, `core/domain`, un
 router), mismo modelo e instrucciones, sin y con plugin. Métricas: defectos reales antes del

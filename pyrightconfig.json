@@ -1,0 +1,17 @@
+{
+  "_": [
+    "Piloto pyright-lsp (agents.md §0.8 Fase 6). Modo `basic` a propósito: el default actual de",
+    "pyright es `standard` y este codebase nunca tuvo type-check. Baseline 2026-09-07 en basic:",
+    "78 archivos, 48 errores, 0 warnings, 8 s (docs/baseline-2026-09.md). Alcance = el motor y",
+    "la capa web; scripts/ y tests/ quedan afuera hasta que el piloto lo justifique. Lo lee el",
+    "plugin pyright-lsp (diagnósticos por edición) y `npx pyright` a mano. Reversión: borrar",
+    "este archivo + `claude plugin uninstall pyright-lsp` + `npm uninstall -g pyright`."
+  ],
+  "include": ["core/domain", "apps/web"],
+  "exclude": ["**/__pycache__", "apps/web/static", "apps/web/on_src"],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Windows",
+  "reportMissingImports": true,
+  "reportMissingModuleSource": false
+}
