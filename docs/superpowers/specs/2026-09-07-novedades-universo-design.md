@@ -129,10 +129,11 @@ no crítico; el semáforo de precios no se toca). Bajo pytest no arranca
   aparece en categorías que tienen hoja en el ABM (Títulos Públicos, ON); Acciones,
   Cedears, Índices y demás sólo ofrecen Descartar (las acciones ya se registran solas al
   arranque; el resto no se precia).
-- **Prefill enriquecido**: además de lo que ya precarga `prefill_for`, una especie del panel
-  **Letras** con prefijo `S`+dígito abre la hoja Tasa Fija con `clase=LECAP`, y `T`+dígito
-  con `clase=BONCAP` (TO26/TY30P/TTM26 —letra después de la T— NO reciben clase: son
-  BONTE/duales y el operador decide). El vencimiento de la ficha prefillea
+- **Prefill enriquecido**: además de lo que ya precarga `prefill_for`, un **Título Público**
+  (categoría BYMA `Títulos Públicos`, sea del panel Letras o Títulos Públicos) cuyo ticker es
+  `S`+dígito abre la hoja Tasa Fija con `clase=LECAP`, y `T`+dígito con `clase=BONCAP`
+  (TO26/TY30P/TTM26 —letra después de la T— NO reciben clase; una ON con ticker T+dígito como
+  T641O tampoco: su categoría es ON). El vencimiento de la ficha prefillea
   `fecha_pago`/`fecha_vencimiento` según la hoja. Nunca se inventa un tipo: manda el
   invariante de `instrument_groups`.
 - Al guardar un alta cuyo símbolo está en `universe_novedades`, la novedad pasa a

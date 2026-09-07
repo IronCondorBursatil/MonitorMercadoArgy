@@ -2,7 +2,7 @@
 cancelaciones **seguidas**, no acumularlas de por vida.
 
 `consecutive_cancels` sólo volvía a 0 cuando la corrida terminaba por excepción o
-por retorno — algo que los 5 loops reales (todos `while True` con `except
+por retorno — algo que los 6 loops reales (todos `while True` con `except
 CancelledError: raise` + `except Exception` catch-all) NUNCA hacen. O sea: para
 producción el contador era acumulado de por vida del proceso, y cinco
 cancelaciones espurias espaciadas por DÍAS de operación sana mataban el loop igual

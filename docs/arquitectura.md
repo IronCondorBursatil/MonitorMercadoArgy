@@ -50,7 +50,7 @@ core/infrastructure/
   db/        engine.py (SQLite+WAL, reconfigurable p/ tests) · models.py (ORM 2.0, + sheet/raw_fields del ABM) · catalog_repository.py (CatalogRepository, drop-in del ExcelRepo; reseed_with_meta; `type_health` → /api/health) · backup.py
   async_http.py circuit_breaker.py provider_hub.py   ingesta async (httpx + breaker + pool + semáforo por host). `ProviderHub.refresh_all` mergea la fuente activa con el FLOOR Data912 (`_apply_floor`) y `HubMarketDataProvider` la expone al motor; ambos CABLEADOS al refresh loop.
   _tls.py    política de verificación TLS por host (siempre verifica; allowlist vacía; perilla `MONITOR_TLS_NO_VERIFY_HOSTS`).
-  byma/      capa BYMA: sources.py (`MarketSource` byma_open | byma_realtime | data912 + `make_source`, el registry que elige la fuente live) · field_map.py (fila BYMA → `Data912Row`, puro) · credentials.py (BYMADATA_USER/PASS al `.env`, se cargan desde la UI y aplican en caliente) · universe.py (seed `titulos_final.csv` → tabla `byma_catalog` + buscador del ABM) · catalog_products.py (cauciones/índices/SENEBI del tab Catálogo) · catalog_enrich.py (ISIN/emisor/tipo) · chart_history.py + series_historicas.py (cierres diarios; `chart` es el default y es estrictamente mejor) · index_history.py
+  byma/      capa BYMA: sources.py (`MarketSource` byma_open | byma_realtime | data912 + `make_source`, el registry que elige la fuente live) · field_map.py (fila BYMA → `Data912Row`, puro) · credentials.py (BYMADATA_USER/PASS al `.env`, se cargan desde la UI y aplican en caliente) · universe.py (seed `titulos_final.csv` → tabla `byma_catalog` + buscador del ABM; ingesta destructiva, ver CLAUDE.md) · catalog_products.py (cauciones/índices/SENEBI del tab Catálogo) · catalog_enrich.py (ISIN/emisor/tipo) · chart_history.py + series_historicas.py (cierres diarios; `chart` es el default y es estrictamente mejor) · index_history.py — `universe_novedades` (triage de especies nuevas; nunca se borra una fila) y columnas `last_seen`/`denominacion`/`vencimiento` en `byma_catalog`
   schemas.py           Data912Row (validación Pydantic en el borde de ingesta)
   repositories.py data912_provider.py indices_provider.py fx_provider.py futures_provider.py rem_provider.py cafci_provider.py argentinadatos_provider.py bondterminal_provider.py
   on_catalog.py        siembra de ONs desde `data/obligaciones_negociables.csv`. `ingest()` es DESTRUCTIVO (ver CLAUDE.md); su único caller con guard es `apps/web/app.py::_ensure_obligaciones_negociables`. Lo que se llevaría puesto sobre una DB poblada: las ON que viven SOLO en la DB — las de bancos del ABM (BACH 30/360, BF37/BPCV/BYCV/CACB/CICA) y las de `scripts/load_bond.py` / `scripts/ingest_irsa_ons.py`.
@@ -63,7 +63,7 @@ core/infrastructure/
   repositories.build_instrument()   parser de fila → Instrument, COMPARTIDO por el loader Excel y el ABM SQLite; `_resolve_instrument_type` es el único que decide el `instrument_type` (y avisa por WARNING cuando lo asume o queda huérfano)
 core/security.py       hash bcrypt + JWT HS256 (create/decode). Ver `docs/auth.md`.
 apps/web/
-  app.py               FastAPI + lifespan (5 loops supervisados + `_startup_reconcile`; el motor corre vía to_thread). MONITOR_DISABLE_LOOPS en tests. `/api/health` público y recortado.
+  app.py               FastAPI + lifespan (6 loops supervisados + `_startup_reconcile`; el motor corre vía to_thread). MONITOR_DISABLE_LOOPS en tests. `/api/health` público y recortado.
   state.py deps.py      AppState (snapshot vivo + revision/wait_for_change p/ SSE + `loop_crashes`/`degraded_loops` + salud del catálogo) + Depends (get_repo→CatalogRepository, get_state, get_hub, ...)
   supervisor.py         `supervise()` — reinicia con backoff el loop que termine por lo que sea (ver abajo)
   deps_auth.py security_web.py   login/permisos por pestaña (`RequireTabPermission`) · CSRF por validación de origen + headers de seguridad (`SecurityHeadersMiddleware`, `reject_cross_site`)
@@ -81,8 +81,8 @@ run.py scripts/ tests/ data/ config/ deploy/ .claude/ .github/workflows/
 
 ## Supervisión de los loops
 
-`apps/web/supervisor.py`: los 5 loops del lifespan (`_refresh_loop`, `_options_loop`,
-`_bei_loop`, `_price_history_loop`, `_ratings_loop`) van envueltos en `supervise()`, que
+`apps/web/supervisor.py`: los 6 loops del lifespan (`_refresh_loop`, `_options_loop`,
+`_bei_loop`, `_price_history_loop`, `_ratings_loop`, `_universe_loop`) van envueltos en `supervise()`, que
 los **reinicia** si terminan por lo que sea (excepción, retorno o *cancelación espuria*)
 con backoff 1s→60s, y reporta el motivo por `record_error`. Motivo: `asyncio.create_task`
 es fire-and-forget — el 2026-09-01 `_refresh_loop` murió mudo a las 12:45
@@ -100,7 +100,7 @@ Si el refresh loop falla, `AppState.record_error` lo registra y el header lo mue
 
 **Severidad por loop** (`state._CRITICAL_LOOPS`): la caída del loop **refresh** es
 crítica (badge rojo "sin datos" + `status: degraded`, con retención de 300s para que no
-se la coma el ciclo siguiente); la de los laterales (ratings/bei/price_history/options)
+se la coma el ciclo siguiente); la de los laterales (ratings/bei/price_history/options/universe)
 es degradación **parcial** — va a `status()["loop_crashes"]` (24hs, con motivo) y a
 `degraded_loops` (ventana de 300s, sólo nombres, también en `/api/health`), sin apagar
 el semáforo de unos precios que están frescos: el badge la muestra en **ámbar** ("loop

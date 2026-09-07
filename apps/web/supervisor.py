@@ -87,7 +87,7 @@ async def supervise(
             # "Seguidas" = de una RÁFAGA. Si el loop venía corriendo sano, esta
             # cancelación no forma parte de la ráfaga anterior y el presupuesto
             # arranca de cero. Sin esto el contador era acumulado de por vida del
-            # proceso (los 5 loops reales nunca retornan ni dejan escapar una
+            # proceso (los 6 loops reales nunca retornan ni dejan escapar una
             # Exception, así que el reset de más abajo es inalcanzable en prod):
             # cinco cancelaciones espurias espaciadas por días mataban el loop.
             if ran_for >= healthy_after:

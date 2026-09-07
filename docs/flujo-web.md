@@ -5,9 +5,9 @@ Movido desde `CLAUDE.md` en la Fase 4 (agents.md §0.8). Para la capa web, la ve
 es histórica). Las reglas que aplican al tocar `apps/web/**` cargan solas desde
 `.claude/rules/web.md`; la autenticación está en `docs/auth.md`.
 
-## Lifespan: 5 loops supervisados + un reconcile
+## Lifespan: 6 loops supervisados + un reconcile
 
-`run.py`→uvicorn→`app.py`. El **lifespan** arranca **5 loops supervisados** (los mismos 5
+`run.py`→uvicorn→`app.py`. El **lifespan** arranca **6 loops supervisados** (los mismos 6
 que envuelve `supervise()`, ver `docs/arquitectura.md › Supervisión`) más
 `_startup_reconcile` (corre 1× y termina — por eso NO se supervisa). Bajo pytest
 (`MONITOR_DISABLE_LOOPS=1`) no arranca ninguno.
@@ -30,6 +30,14 @@ que envuelve `supervise()`, ver `docs/arquitectura.md › Supervisión`) más
   letras nuevas** (`apps/web/letras_service.py`; reglas en CLAUDE.md).
 - `_ratings_loop`: 1 corte por día de FIX SCR (si ya está el de hoy no re-scrapea; tras un
   corte nuevo invalida el cache de `ratings`).
+- `_universe_loop` — novedades del universo: 1×/día a partir de las 08:00 AR compara el
+  snapshot acumulado del hub contra `byma_catalog` ∪ `instruments` ∪ patas ∪
+  `universe_novedades`, registra las especies nuevas (estado `nueva`) y publica el contador
+  (`AppState.novedades` → badge del header y `/api/health.novedades`). Nunca escribe
+  `instruments`; guard de lectura rota (0 / <50 / <60 % de la corrida anterior / universo
+  vacío / corrida en curso) → reintento horario. «Refrescar ahora» (POST admin en el ABM)
+  corre la misma función. La siembra del CSV en `byma_catalog` corre en el lifespan ANTES
+  de crear las tasks, sólo si la tabla está vacía.
 
 ## Paneles SSR + SSE
 
