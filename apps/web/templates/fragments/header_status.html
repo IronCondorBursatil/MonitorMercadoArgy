@@ -3,7 +3,7 @@
      ROJO  "sin datos"    → el ciclo de PRECIOS está fallando (`last_error`, que hoy
                             sólo marcan el refresh loop y sus propios errores).
      ÁMBAR "loop caído"   → degradación PARCIAL: se cayó un loop LATERAL
-                            (ratings/bei/price_history/options). Los precios están
+                            (ratings/bei/price_history/options/universe). Los precios están
                             bien, pero calificaciones/BEI/rendimientos se congelan y
                             hasta ahora eso no se veía en ningún lado (el incidente
                             del 2026-09-01 duró 22hs por mudo). Retención de 300s en
@@ -17,4 +17,9 @@
   <span class="meta meta-stale" title="Precios al día ({{ st.last_refresh[11:19] if st.last_refresh else '' }}), pero se cayó/reinició: {% for c in st.loop_crashes if c.loop in st.degraded_loops %}{{ c.loop }} ({{ c.reason }}) · {{ c.at[:19] }}{{ '; ' if not loop.last }}{% endfor %}"><span class="live live-stale"></span>loop caído: {{ st.degraded_loops|join(', ') }}</span>
 {%- else -%}
   <span class="meta" title="Al día"><span class="live"></span>act {{ st.last_refresh[11:19] if st.last_refresh else '' }}</span>
+{%- endif -%}
+{#- Novedades del universo (spec 2026-09-07): ADITIVO al semáforo, nunca cambia sus
+    textos. Sólo si hay pendientes y el usuario tiene la pestaña ABM. -#}
+{%- if st.novedades and has_tab("abm") -%}
+  <a class="meta meta-nov" href="/abm" title="Especies nuevas en los feeds que el universo no tenía — pendientes de decidir en el ABM">✦ {{ st.novedades }} novedad{{ 'es' if st.novedades != 1 else '' }}</a>
 {%- endif -%}

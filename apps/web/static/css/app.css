@@ -58,6 +58,9 @@ header .meta-stale { color: #e8b339; }
 header .meta-err { color: #ef6b6b; }
 header .live-stale { background: #e8b339; box-shadow: 0 0 6px #e8b339; }
 header .live-err { background: #ef6b6b; box-shadow: 0 0 6px #ef6b6b; }
+/* Novedades del universo: link al ABM, al lado del semáforo. */
+header .meta-nov { color: var(--accent); font-weight: 600; text-decoration: none; margin-left: 8px; }
+header .meta-nov:hover { text-decoration: underline; }
 header nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 header nav a { color: var(--text); text-decoration: none; font-size: 13px; font-weight: 500;
               padding: 5px 10px; border-radius: 4px; }

@@ -229,3 +229,14 @@ def test_status_y_health_llevan_el_contador_sin_tickers():
             with SessionLocal.begin() as s:
                 s.execute(delete(UniverseNovedadORM)
                           .where(UniverseNovedadORM.symbol == "TSNVHLTH"))
+
+
+def test_el_badge_del_header_linkea_al_abm_solo_si_hay_novedades():
+    with TestClient(app_mod.app) as c:
+        app_mod.app.state.app_state.set_novedades(0)
+        assert "novedad" not in c.get("/health/badge").text
+        app_mod.app.state.app_state.set_novedades(2)
+        html = c.get("/health/badge").text
+    assert "2 novedades" in html and 'href="/abm"' in html and "meta-nov" in html
+    # lo de siempre sigue ahí (bajo test nunca hubo refresh → 'datos viejos' o 'sin datos')
+    assert ("datos viejos" in html) or ("sin datos" in html)
