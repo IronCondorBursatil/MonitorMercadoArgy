@@ -210,6 +210,8 @@ def test_el_lifespan_encamina_la_caida_de_un_loop_lateral_al_canal_por_loop(monk
     monkeypatch.setattr(app_mod, "_ratings_loop", _muere)
     for nombre in ("_refresh_loop", "_options_loop", "_bei_loop", "_price_history_loop"):
         monkeypatch.setattr(app_mod, nombre, _dormido)
+    # sin esto el boot ingiere el CSV real de 4.700 filas en el sandbox
+    monkeypatch.setattr(app_mod, "_seed_byma_universe", lambda: 0)
 
     visto = {}
 

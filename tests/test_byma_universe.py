@@ -3,6 +3,7 @@
 import csv
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from jinja2 import Environment, FileSystemLoader
 
@@ -54,7 +55,7 @@ def test_ingest_and_search(tmp_db):
     ])
     assert universe.ingest_byma_catalog(csvp) == 4
     assert universe.count() == 4
-    # idempotente (delete + insert)
+    # idempotente sobre filas del CSV (sin last_seen); con estado del job se rechaza sin force
     assert universe.ingest_byma_catalog(csvp) == 4 and universe.count() == 4
 
     # por ticker (LIKE) → ambas patas
@@ -341,3 +342,23 @@ def test_universe_shell_shows_asof_time():
     html = _render("fragments/abm_universe.html", rows=_sample_rows(1), q="", cat="",
                    page=0, has_next=False, total=1, asof="14:03:22")
     assert "act 14:03:22" in html
+
+
+def test_reingerir_con_estado_del_job_se_rechaza_salvo_force(tmp_db):
+    """Desde el job diario `byma_catalog` tiene estado propio (`last_seen`, símbolos del
+    feed, ficha): re-sembrar del CSV lo pisaría. Sólo con `force=True`."""
+    from core.infrastructure.db.catalog_repository import init_db
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import BymaCatalogORM
+    csvp = tmp_db / "t.csv"
+    _write(csvp, [["AL30", "AL30", "ARS", "GO", "0", "primary", "", "True", "Titulos Publicos",
+                   "ARARGE3209S6", "", "BOND", "REP. ARGENTINA"]])
+    assert universe.ingest_byma_catalog(csvp) == 1
+    init_db()
+    with SessionLocal.begin() as s:
+        s.add(BymaCatalogORM(symbol="S29E7", categoria="Títulos Públicos", last_seen="2026-09-07"))
+    with pytest.raises(RuntimeError, match="last_seen"):
+        universe.ingest_byma_catalog(csvp)
+    assert universe.count() == 2                       # no tocó nada
+    assert universe.ingest_byma_catalog(csvp, force=True) == 1
+    assert universe.count() == 1

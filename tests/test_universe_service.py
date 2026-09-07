@@ -315,3 +315,87 @@ def test_jamas_escribe_instruments(base):
     svc.sincronizar_universo(_hub({"S29E7": "notes"}), hoy=HOY, ficha_fn=_sin_ficha)
     with SessionLocal() as s:
         assert s.execute(select(InstrumentORM)).scalars().all() == []
+
+
+# ── siembra del universo: sólo si está vacía, en el lifespan, nunca por debajo del job ─
+def test_seed_byma_universe_siembra_solo_la_tabla_vacia(base, monkeypatch):
+    """`ingest_byma_catalog` es DELETE+INSERT: correrla sobre una tabla poblada borraba lo
+    que el job diario agrega (S29E7, last_seen). Ahora sólo siembra la tabla VACÍA."""
+    from apps.web import app as app_mod
+    from core.infrastructure.byma import universe
+    llamadas = []
+    monkeypatch.setattr(universe, "ingest_byma_catalog",
+                        lambda *a, **k: llamadas.append(1) or 7)
+
+    assert app_mod._seed_byma_universe() == 7          # vacía → siembra
+    assert llamadas == [1]
+    with SessionLocal.begin() as s:
+        s.add(BymaCatalogORM(symbol="S29E7", categoria="Títulos Públicos", last_seen="2026-09-07"))
+    assert app_mod._seed_byma_universe() == 0          # poblada → ni la toca
+    assert llamadas == [1]
+    assert _fila("S29E7").last_seen == "2026-09-07"
+
+
+def test_startup_reconcile_ya_no_siembra_el_universo(base, monkeypatch):
+    """La siembra era el 6º paso de `_startup_reconcile` (después de minutos de fichas, en
+    paralelo con el primer diff del job). Ahora vive en el lifespan: reconciliar no toca
+    `ingest_byma_catalog` ni `_seed_byma_universe`, y llega hasta el final."""
+    import asyncio
+
+    from apps.web import app as app_mod
+    from apps.web.state import AppState
+    from core.infrastructure.byma import catalog_enrich, universe
+    llamadas = []
+    monkeypatch.setattr(universe, "ingest_byma_catalog",
+                        lambda *a, **k: llamadas.append("ingest") or 0)
+    monkeypatch.setattr(app_mod, "_seed_byma_universe", lambda: llamadas.append("seed") or 0)
+    monkeypatch.setattr(app_mod, "_reconcile_catalog", lambda hub: 0)
+    monkeypatch.setattr(app_mod, "_backfill_legs", lambda: llamadas.append("legs") or 0)
+    for fn in ("enrich_isin_from_byma", "enrich_isin_from_ficha", "enrich_ficha_meta"):
+        monkeypatch.setattr(catalog_enrich, fn, lambda *a, **k: 0)
+    monkeypatch.setattr(app_mod, "get_repo", lambda: SimpleNamespace(
+        type_health={"orphans": [], "defaulted": []}, seed_error=None,
+        get_all_instruments=lambda: [], reload=lambda: None))
+
+    class _HubBoot:
+        async def refresh_all(self):
+            return {}
+
+    fake_app = SimpleNamespace(state=SimpleNamespace(hub=_HubBoot(), app_state=AppState()))
+    asyncio.run(app_mod._startup_reconcile(fake_app))
+    assert llamadas == ["legs"], llamadas      # llegó al final SIN sembrar
+
+
+def _stub_loops_para_siembra(monkeypatch, evento):
+    """Loops y reconcile por no-ops; la siembra avisa por `evento`. (La Task 6 suma
+    `_universe_loop` a esta lista.)"""
+    import asyncio
+
+    from apps.web import app as app_mod
+
+    async def _noop(app):
+        return None
+
+    for nombre in ("_startup_reconcile", "_refresh_loop", "_options_loop", "_bei_loop",
+                   "_price_history_loop", "_ratings_loop"):
+        monkeypatch.setattr(app_mod, nombre, _noop)
+    monkeypatch.setattr(app_mod, "_seed_byma_universe", lambda: evento.set() or 0)
+    return asyncio
+
+
+def test_el_lifespan_siembra_el_universo_antes_de_cualquier_loop(monkeypatch):
+    """Sin `MONITOR_DISABLE_LOOPS` el lifespan siembra (best-effort) ANTES de crear las
+    tasks; con la variable puesta (pytest) no toca nada."""
+    from fastapi.testclient import TestClient
+
+    from apps.web import app as app_mod
+    evento = threading.Event()
+    _stub_loops_para_siembra(monkeypatch, evento)
+    monkeypatch.delenv("MONITOR_DISABLE_LOOPS", raising=False)
+    with TestClient(app_mod.app):
+        assert evento.wait(5.0), "el lifespan no llamó a _seed_byma_universe"
+
+    evento.clear()
+    monkeypatch.setenv("MONITOR_DISABLE_LOOPS", "1")
+    with TestClient(app_mod.app):
+        assert not evento.wait(0.3)

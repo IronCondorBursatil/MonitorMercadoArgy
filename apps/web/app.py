@@ -285,6 +285,22 @@ def _backfill_legs() -> int:
         return 0
 
 
+def _seed_byma_universe() -> int:
+    """Siembra `byma_catalog` desde el CSV **sólo si está vacía** (sync, en to_thread).
+
+    Mismo modelo que las ON (`_ensure_obligaciones_negociables`): el CSV es semilla de
+    bootstrap, no la verdad. La llama el lifespan ANTES de crear cualquier task —el job
+    de novedades (`_universe_loop`) necesita la línea de base y, dentro de
+    `_startup_reconcile`, la siembra era el 6º paso (minutos de fichas) corriendo en
+    paralelo con el primer diff. Re-sembrar a propósito = `ingest_byma_catalog(force=True)`
+    con el server parado y backup previo: pierde lo que agregó el job (símbolos nuevos,
+    `last_seen`, ficha) hasta la corrida siguiente."""
+    from core.infrastructure.byma.universe import count, ingest_byma_catalog
+    if count() > 0:
+        return 0
+    return ingest_byma_catalog()
+
+
 async def _startup_reconcile(app: FastAPI) -> None:
     """Al arranque: trae un snapshot de Data912 y reconcilia el catálogo —
     completa las patas de moneda (MEP/CABLE) de soberanos ya cargados (mismo bono)
@@ -293,7 +309,6 @@ async def _startup_reconcile(app: FastAPI) -> None:
     from core.infrastructure.byma.catalog_enrich import (
         enrich_ficha_meta, enrich_isin_from_byma, enrich_isin_from_ficha,
     )
-    from core.infrastructure.byma.universe import ingest_byma_catalog
 
     try:
         await app.state.hub.refresh_all()
@@ -305,8 +320,6 @@ async def _startup_reconcile(app: FastAPI) -> None:
         # Campos ricos de la ficha (ley/moneda/amortización/interés/montos) → para
         # el ABM y el catálogo de productos. Idempotente, best-effort.
         await asyncio.to_thread(enrich_ficha_meta)
-        # Universo BYMA navegable (tabla byma_catalog) para el buscador del ABM.
-        universe = await asyncio.to_thread(ingest_byma_catalog)
         # Completar patas cotizantes faltantes (soberanos + ON) deduciendo el grupo
         # por el universo BYMA (mismo ISIN). Idempotente. Requiere byma_catalog cargado.
         legs = await asyncio.to_thread(_backfill_legs)
@@ -326,8 +339,7 @@ async def _startup_reconcile(app: FastAPI) -> None:
         # con ellas tipos huérfanos nuevos. Corre igual si el reload falló: entonces
         # el reporte describe el cache que efectivamente se está sirviendo.
         await _publish_catalog_health(app, get_repo())
-        logger.info("Startup: catálogo +%d filas, %d ISIN, %d especies BYMA, +%d patas.",
-                    n, enriched, universe, legs)
+        logger.info("Startup: catálogo +%d filas, %d ISIN, +%d patas.", n, enriched, legs)
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -668,6 +680,14 @@ async def lifespan(app: FastAPI):
     app.state.options_pool = _crear_pool_de_opciones()
     if not os.environ.get("MONITOR_DISABLE_LOOPS"):
         _on_crash = _crash_reporter(app)
+        # Siembra del universo (CSV → byma_catalog, sólo si está vacía) ANTES de crear
+        # cualquier task: el job de novedades necesita la línea de base. Best-effort: un
+        # CSV ilegible no bloquea el arranque (el job rechaza sin línea de base y avisa).
+        try:
+            await asyncio.to_thread(_seed_byma_universe)
+        except Exception:  # noqa: BLE001
+            logger.warning("siembra de byma_catalog falló (no bloquea el arranque)",
+                           exc_info=True)
         # `_startup_reconcile` NO se supervisa: corre una vez y terminar es su contrato.
         # Los otros cinco son `while True` — si terminan, es una caída (ver supervisor.py).
         tasks = [asyncio.create_task(_startup_reconcile(app))]

@@ -111,6 +111,8 @@ def _stub_loops(monkeypatch, evento: threading.Event):
                    "_price_history_loop"):
         monkeypatch.setattr(app_mod, nombre, _noop)
     monkeypatch.setattr(app_mod, "_ratings_loop", _spy)
+    # sin esto el boot ingiere el CSV real de 4.700 filas en el sandbox
+    monkeypatch.setattr(app_mod, "_seed_byma_universe", lambda: 0)
 
 
 def test_lifespan_registra_el_ratings_loop(monkeypatch):

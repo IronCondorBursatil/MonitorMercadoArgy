@@ -2,7 +2,10 @@
 `byma_catalog` + búsqueda (ticker/ISIN/emisor/categoría) para la pestaña ABM.
 
 Tabla de REFERENCIA navegable, separada del catálogo de pricing (`instruments`):
-se puede borrar y reingerir sin pérdida. Una fila por símbolo cotizante (~6.4k).
+es derivada SÓLO hasta que corre el job diario de novedades
+(`apps/web/universe_service.py`); después tiene estado propio (símbolos que sólo
+existen por el feed, `last_seen`, ficha) y un re-seed lo pierde — ver
+`ingest_byma_catalog(force=...)`. Una fila por símbolo cotizante (~6.4k).
 """
 
 from __future__ import annotations
@@ -43,9 +46,15 @@ def _categoria(tipo_especie: str, security_type: str, panel: str) -> str:
     return security_type or "Otros"
 
 
-def ingest_byma_catalog(csv_path: Optional[Path] = None) -> int:
-    """Carga `byma_catalog` desde el CSV (delete + insert, idempotente). Devuelve
-    cuántas filas quedaron. 0 si el CSV no existe."""
+def ingest_byma_catalog(csv_path: Optional[Path] = None, *, force: bool = False) -> int:
+    """Carga `byma_catalog` desde el CSV (delete + insert). Devuelve cuántas filas
+    quedaron; 0 si el CSV no existe.
+
+    DESTRUCTIVA. Desde el job diario de novedades la tabla tiene estado propio (símbolos
+    que sólo existen por el feed, `last_seen`, ficha): si hay filas con `last_seen` se
+    rechaza salvo `force=True` (server parado y backup previo). El único caller
+    automático es `apps.web.app._seed_byma_universe`, que sólo la llama con la tabla
+    vacía."""
     if csv_path is None:
         from config.settings import settings
         csv_path = settings.byma_catalog_csv
@@ -81,6 +90,16 @@ def ingest_byma_catalog(csv_path: Optional[Path] = None) -> int:
             })
 
     init_db()
+    if not force:
+        with SessionLocal() as s:
+            con_estado = s.execute(
+                select(func.count()).select_from(BymaCatalogORM)
+                .where(BymaCatalogORM.last_seen.is_not(None))).scalar()
+        if con_estado:
+            raise RuntimeError(
+                "byma_catalog tiene %d fila(s) con last_seen (el job de novedades ya "
+                "corrió): re-sembrar del CSV las pisaría. Usá force=True con el server "
+                "parado y backup previo." % con_estado)
     with SessionLocal.begin() as s:
         s.execute(delete(BymaCatalogORM))
         if rows:

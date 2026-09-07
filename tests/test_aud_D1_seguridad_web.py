@@ -263,6 +263,8 @@ def test_lifespan_arranca_los_cinco_loops_bajo_supervisor(monkeypatch):
     monkeypatch.setattr(app_mod, "_refresh_loop", _muere)
     for nombre in ("_options_loop", "_bei_loop", "_price_history_loop", "_ratings_loop"):
         monkeypatch.setattr(app_mod, nombre, _dormido)
+    # sin esto el boot ingiere el CSV real de 4.700 filas en el sandbox
+    monkeypatch.setattr(app_mod, "_seed_byma_universe", lambda: 0)
 
     visto = {}
 
