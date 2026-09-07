@@ -65,11 +65,15 @@ data/cartera.json
 secrets/
 *.secret
 
-# Claude Code: estado local (settings.local, etc.) — no se trackea
-.claude/
+# Claude Code: SOLO el estado personal se ignora. `.claude/settings.json`, `.claude/hooks/`,
+# `.claude/skills/` y `.claude/rules/` SE VERSIONAN (permisos, hooks y skills del proyecto,
+# ver agents.md §0.8 Fase 2). Antes se ignoraba `.claude/` entero y nada de eso entraba a git.
+.claude/settings.local.json
 
 # Worktrees de Superpowers: NUNCA project-local (OneDrive). Ver "Flujo Superpowers"
 # en CLAUDE.md — usar la tool nativa o el path global ~/.config/superpowers/worktrees/.
 .worktrees/
 worktrees/
+# Superpowers 6.x escribe scratch de spec-driven development dentro del árbol.
+.superpowers/
 

@@ -1,0 +1,74 @@
+# Decisiones — registro de las que son de David, con la recomendación del agente
+
+Formato: **decisión · recomendación · estado · consecuencias**. El agente plantea; David decide.
+Cuando una decisión se toma, se anota acá la fecha y quién la tomó, y se aplica en la fase
+que corresponde. Ver `agents.md › §0.8 Fase 0`.
+
+## D1 · Mudar el repo fuera de OneDrive (p. ej. `C:\dev\monitor`)
+
+- **Recomendación**: **sí**. OneDrive sincroniza `.git`, `.superpowers/`, los watchers de
+  pyright y cualquier venv; git + GitHub ya son el backup. El límite de 5 MB por archivo de
+  OneDrive es el motivo por el que no hay venv en el proyecto.
+- **Estado**: **PENDIENTE de David** (no lo puede hacer el agente: requiere cerrar sesiones y
+  mover la carpeta).
+- **Procedimiento seguro** (verificado contra la doc de Claude Code, 2026-09-07): la memoria
+  auto, los transcripts y el entry de trust/MCP en `~/.claude.json` están atados al *slug* de
+  la ruta (`c--Users-david-OneDrive-Monitores---Data912`); mover la carpeta los deja huérfanos.
+  1. Con Claude Code cerrado, agregar a `.claude/settings.local.json` (o al global):
+     `"autoMemoryDirectory": "C:/Users/david/.claude/memory-monitores"` y **copiar** ahí el
+     contenido de `~/.claude/projects/c--Users-david-OneDrive-Monitores---Data912/memory/`.
+  2. Mover la carpeta a `C:\dev\monitor`.
+  3. Abrir Claude Code ahí, aceptar el trust dialog; `.claude/settings.local.json` viaja solo
+     porque vive dentro del árbol.
+  4. Opcional: renombrar `~/.claude/projects/<slug-viejo>/` al slug nuevo
+     (`C--dev-monitor`) para conservar los transcripts; `claude --resume <id>` los encuentra
+     igual cross-project (v2.1.223+).
+- **Consecuencias si no se hace**: nada rompe hoy; el riesgo es OneDrive pisando `.git` en
+  una sincronización y `.superpowers/`/`.playwright-mcp/` subiendo basura a la nube.
+
+## D2 · Política de deploy respecto de las versiones
+
+- **A** (recomendada): `deploy.sh --upgrade` instala dentro de las cotas de
+  `requirements.txt`, así prod converge a la resolución que el CI validó ese día; con freeze
+  antes y después, el rollback es `pip install -r <freeze-anterior>`.
+- **B**: mantener el default actual (sin `--upgrade`: prod solo cambia de versiones cuando el
+  venv se recrea) y agregar `deploy.sh --rebuild` explícito.
+- **Estado**: **PENDIENTE de David**. Mientras tanto la Fase 1 implementa el mecanismo sin
+  cambiar el comportamiento por default: `deploy.sh` sigue instalando sin `--upgrade`, gana
+  el flag `--upgrade` (opción A a demanda) y escribe el freeze antes y después en
+  `${MONITOR_DB_DIR:-/var/lib/monitor}/freeze/`. Elegir A = correr `bash deploy.sh --upgrade`.
+- **Consecuencias**: con A, un deploy de código puede mover versiones (por eso el freeze);
+  con B, prod queda como foto y el drift laptop/CI/prod se reabre en cada rebuild.
+
+## D3 · Rotación de secretos en producción
+
+- **Qué**: el secreto JWT (`/var/lib/monitor/jwt_secret`, migrado tal cual desde el droplet
+  el 2026-09-04) y la contraseña del admin por defecto que la memoria marcaba "por rotar".
+- **Recomendación**: rotar ambos **antes de la Fase 1** si no se hizo. JWT: borrar el archivo
+  y reiniciar el servicio (se regenera solo) o setear `MONITOR_JWT_SECRET_KEY` en el
+  `EnvironmentFile`; invalida todas las sesiones (esperado). Admin: desde el ABM de usuarios
+  o `scripts/init_admin.py` con `MONITOR_ADMIN_PASSWORD`.
+- **Estado**: **PENDIENTE de David** — rotar secretos está prohibido para el agente sin OK
+  explícito (`agents.md §0.1.6`). Verificación previa sugerida (solo lectura):
+  `ssh monitor-oci "stat -c '%y' /var/lib/monitor/jwt_secret"` (si la fecha es anterior al
+  2026-09-04, es el secreto heredado del droplet).
+
+## D4 · Canal de la alerta de staleness (Fase 3)
+
+- **Recomendación**: email de GitHub por fallo del workflow programado (cero infraestructura
+  nueva). GitHub notifica al dueño/último editor del workflow cuando un run falla.
+- **Estado**: **adoptada por default por el agente el 2026-09-07** (reversible: es un
+  workflow). Límites a conocer: los `schedule` de GitHub corren con demora variable y se
+  desactivan solos tras 60 días sin actividad en el repo — un commit cualquiera los reactiva.
+- **Alternativa**: cron en el servidor + chequeo de edad dentro de `/smoke`, si el email no
+  alcanza.
+
+## Decisiones ya tomadas durante la auditoría (2026-09-07)
+
+- Ramas apiladas in-place en vez de worktree, una por fase (`fase-0-baseline` →
+  `fase-1-drift` → …); `main` no se toca hasta que David mergea. Motivo: los hooks y
+  permisos de la Fase 2 se prueban en este directorio.
+- `gh` se instala en la Fase 0 (no en la 1): la regla de cierre de cada fase lo necesita.
+- Fase 5.6 del brief original (copiar los símbolos vivos al motor legacy) **descartada**:
+  reemplazada por valores 30/360 a mano en `test_daycount.py` (ver `agents.md §0.6`).
+- Fase 3.4: sin endpoint nuevo; se monitorea `/api/health` que ya existe y es público.
