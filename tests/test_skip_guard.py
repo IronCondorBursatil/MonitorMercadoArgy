@@ -36,6 +36,17 @@ def test_bash_y_tzset_dependen_de_la_plataforma():
     assert set(skips_prohibidos([BASH, TZSET], "linux")) == {BASH, TZSET}
 
 
+def test_el_skip_especifico_de_windows_se_tolera_en_linux():
+    # tests/test_timezone.py tiene DOS marcas: `_solo_unix` (reason "time.tzset() es sólo
+    # Unix", que en Linux NO debe aparecer) y `_solo_windows` (reason "específico de Windows
+    # (sin tzset)", que en Linux es un skip LEGÍTIMO). La primera versión del guard matcheaba
+    # cualquier "tzset" y puso rojo el CI de la Fase 3 (run 34138568237) por el segundo.
+    windows_only = "específico de Windows (sin tzset)"
+    assert skips_prohibidos([windows_only], "linux") == []
+    assert skips_prohibidos([windows_only], "win32") == []
+    assert skips_prohibidos([TZSET, windows_only], "linux") == [TZSET]
+
+
 def test_otros_motivos_se_toleran():
     assert skips_prohibidos([OTRO], "win32") == []
     assert skips_prohibidos([OTRO], "linux") == []

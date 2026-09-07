@@ -27,7 +27,10 @@ from collections.abc import Iterable
 
 _NODE = re.compile(r"\bnode(?:\.js)?\b", re.I)
 _BASH = re.compile(r"requiere bash", re.I)
-_TZSET = re.compile(r"tzset", re.I)
+# El motivo EXACTO de `_solo_unix` en tests/test_timezone.py. Su gemelo `_solo_windows`
+# ("específico de Windows (sin tzset)") es un skip legítimo en Linux: matchear "tzset" a
+# secas lo denunciaba y puso rojo el CI de la Fase 3.
+_TZSET = re.compile(r"tzset\(\) es s[oó]lo unix", re.I)
 
 
 def skips_prohibidos(reasons: Iterable[str], platform: str | None = None) -> list[str]:
