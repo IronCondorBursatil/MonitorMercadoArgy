@@ -241,8 +241,8 @@ def test_login_sin_ninguna_pestana_avisa_en_vez_de_rebotar(usuarios_landing):
 
 # ── Hallazgo 8: el wiring de los loops del lifespan no estaba aserteado ─────
 @pytest.mark.noauth
-def test_lifespan_arranca_los_cinco_loops_bajo_supervisor(monkeypatch):
-    """Red de seguridad del wiring: los 5 loops tienen que existir Y estar envueltos
+def test_lifespan_arranca_los_seis_loops_bajo_supervisor(monkeypatch):
+    """Red de seguridad del wiring: los 6 loops tienen que existir Y estar envueltos
     en `supervise` (un loop suelto que muere no se reinicia — incidente 2026-09-01)."""
     import apps.web.app as app_mod
 
@@ -261,7 +261,8 @@ def test_lifespan_arranca_los_cinco_loops_bajo_supervisor(monkeypatch):
 
     monkeypatch.setattr(app_mod, "_startup_reconcile", _noop)
     monkeypatch.setattr(app_mod, "_refresh_loop", _muere)
-    for nombre in ("_options_loop", "_bei_loop", "_price_history_loop", "_ratings_loop"):
+    for nombre in ("_options_loop", "_bei_loop", "_price_history_loop", "_ratings_loop",
+                   "_universe_loop"):
         monkeypatch.setattr(app_mod, nombre, _dormido)
     # sin esto el boot ingiere el CSV real de 4.700 filas en el sandbox
     monkeypatch.setattr(app_mod, "_seed_byma_universe", lambda: 0)
@@ -277,7 +278,7 @@ def test_lifespan_arranca_los_cinco_loops_bajo_supervisor(monkeypatch):
     asyncio.run(_correr())
 
     esperados = {"loop:refresh", "loop:options", "loop:bei",
-                 "loop:price_history", "loop:ratings"}
+                 "loop:price_history", "loop:ratings", "loop:universe"}
     assert esperados <= visto["tasks"], esperados - visto["tasks"]
     assert corridas["refresh"] >= 2, "el loop caído no se reinició (¿sin supervise?)"
     assert visto["last_error"] and "refresh" in visto["last_error"], visto["last_error"]

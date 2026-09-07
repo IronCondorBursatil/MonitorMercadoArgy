@@ -367,20 +367,16 @@ def test_startup_reconcile_ya_no_siembra_el_universo(base, monkeypatch):
 
 
 def _stub_loops_para_siembra(monkeypatch, evento):
-    """Loops y reconcile por no-ops; la siembra avisa por `evento`. (La Task 6 suma
-    `_universe_loop` a esta lista.)"""
-    import asyncio
-
+    """Loops y reconcile por no-ops; la siembra avisa por `evento`."""
     from apps.web import app as app_mod
 
     async def _noop(app):
         return None
 
     for nombre in ("_startup_reconcile", "_refresh_loop", "_options_loop", "_bei_loop",
-                   "_price_history_loop", "_ratings_loop"):
+                   "_price_history_loop", "_ratings_loop", "_universe_loop"):
         monkeypatch.setattr(app_mod, nombre, _noop)
     monkeypatch.setattr(app_mod, "_seed_byma_universe", lambda: evento.set() or 0)
-    return asyncio
 
 
 def test_el_lifespan_siembra_el_universo_antes_de_cualquier_loop(monkeypatch):

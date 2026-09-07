@@ -599,6 +599,56 @@ async def _bei_loop(app: FastAPI) -> None:
             logger.exception("BEI loop iteration failed")
 
 
+# Tick de reintento del job de novedades del universo cuando la corrida del día se
+# rechazó (hub sin rueda: server reiniciado antes de las 11:00, breaker abierto) o
+# reventó. La corrida normal la agenda `novedades.proximo_despertar` (08:00 AR, 1×/día).
+_UNIVERSE_REINTENTO_SEC = 3600
+
+
+async def _universe_loop(app: FastAPI) -> None:
+    """Novedades del universo (spec 2026-09-07): 1×/día a partir de las 08:00 AR compara lo
+    que el hub vio en la rueda anterior contra el universo conocido y deja las especies
+    nuevas en `universe_novedades` para el triage del ABM. NUNCA escribe `instruments`.
+
+    Lee el snapshot ACUMULADO del hub y no pide la rueda de nuevo: a las 08:00 BYMA
+    responde `data: []` (pre-market) y un fetch fresco rechazaría la corrida todos los
+    días. Idempotente por día (sello en `schema_meta`), restart-safe; si la lectura se
+    rechaza o revienta, reintenta cada hora. Red/SQLite van en `to_thread`."""
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+
+    from apps.web.universe_service import sincronizar_universo, ultima_corrida
+    from core.infrastructure.byma.novedades import contar_nuevas, proximo_despertar
+
+    tz = ZoneInfo(settings.timezone)
+    state = app.state.app_state
+    try:
+        # El badge no espera a las 08:00: publicar lo persistido apenas arranca.
+        state.set_novedades(await asyncio.to_thread(contar_nuevas))
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001 — sin contador inicial el loop igual sirve
+        logger.exception("universe loop: no pude leer el contador inicial")
+    while True:
+        try:
+            now = _dt.now(tz)
+            hecha = (await asyncio.to_thread(ultima_corrida)) == now.date().isoformat()
+            espera = proximo_despertar(now, hecha_hoy=hecha)
+            if espera > 0:
+                await asyncio.sleep(espera)
+                continue
+            res = await asyncio.to_thread(sincronizar_universo, app.state.hub, hoy=now.date())
+            state.set_novedades(res.pendientes)
+            logger.info(res.resumen())
+            if res.rechazo:
+                await asyncio.sleep(_UNIVERSE_REINTENTO_SEC)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — una corrida caída no puede tumbar el lifespan
+            logger.exception("universe loop iteration failed")
+            await asyncio.sleep(_UNIVERSE_REINTENTO_SEC)
+
+
 def _crash_reporter(app: FastAPI):
     """`on_crash` del supervisor → `AppState.record_loop_crash(name, reason)`.
 
@@ -689,7 +739,7 @@ async def lifespan(app: FastAPI):
             logger.warning("siembra de byma_catalog falló (no bloquea el arranque)",
                            exc_info=True)
         # `_startup_reconcile` NO se supervisa: corre una vez y terminar es su contrato.
-        # Los otros cinco son `while True` — si terminan, es una caída (ver supervisor.py).
+        # Los otros seis son `while True` — si terminan, es una caída (ver supervisor.py).
         tasks = [asyncio.create_task(_startup_reconcile(app))]
         tasks += [
             asyncio.create_task(
@@ -702,6 +752,7 @@ async def lifespan(app: FastAPI):
                 ("bei", _bei_loop),
                 ("price_history", _price_history_loop),
                 ("ratings", _ratings_loop),
+                ("universe", _universe_loop),
             )
         ]
     try:
@@ -843,7 +894,7 @@ def health(repo=Depends(get_repo), state=Depends(get_state)):
     st = state.status()
     return {
         # `status` habla de los PRECIOS (el refresh loop). La caída de un loop
-        # lateral (ratings/bei/price_history/options) NO lo degrada —eso sería
+        # lateral (ratings/bei/price_history/options/universe) NO lo degrada —eso sería
         # gritar 'sin datos' con el snapshot fresco de hace 5s— pero se reporta
         # aparte en `degraded_loops` para que ops la vea. Sólo NOMBRES: el motivo
         # es el string crudo de una excepción y este endpoint es público.
@@ -866,6 +917,9 @@ def health(repo=Depends(get_repo), state=Depends(get_state)):
         # bootstrap falló. Sólo CUENTAS y un booleano — el motivo crudo del fallo
         # (paths del servidor) y el inventario de tickers se quedan del lado privado.
         "catalog": st["catalog"],
+        # Novedades del universo pendientes de decidir (especies nuevas en los feeds).
+        # Sólo la CUENTA: los símbolos viven en el ABM, detrás de login.
+        "novedades": st["novedades"],
         "ok": st["ok"],
     }
 

@@ -22,7 +22,7 @@ _LOOP_CRASH_RE = re.compile(r"^loop (\S+) cayó \((.*)\)")
 # Loops cuya caída es CRÍTICA: apagan el semáforo (badge rojo "sin datos" +
 # /api/health degradado) porque sin ellos la app no tiene qué mostrar. Sólo el
 # refresh loop produce el snapshot que sirven los paneles; ratings/bei/options/
-# price_history alimentan funciones LATERALES y su caída es una degradación
+# price_history/universe alimentan funciones LATERALES y su caída es una degradación
 # PARCIAL: queda en `loop_crashes`/`degraded_loops` (y en el log), pero no pinta de
 # rojo un panel de precios que está perfecto. Antes, con la retención de 300s, que
 # se cayera el scraper de calificaciones dejaba el header en "sin datos" 5 minutos.
@@ -85,6 +85,9 @@ class AppState:
         self._bei: Optional[dict] = None  # tablas crudas de compute_bei_tables
         self._options: list = []          # list[OptionItem] del último refresh (vacío hasta que arme)
         self._options_by_ticker: Dict[str, object] = {}
+        # Novedades del universo en estado `nueva` (spec 2026-09-07). Lo publica
+        # `_universe_loop` (y el ABM al descartar/cargar); lo leen el badge y /api/health.
+        self._novedades: int = 0
         # Fuente de datos activa (mode/label/delayed) — la setea el lifespan y el
         # endpoint de switch; el header la muestra.
         self._data_source: Dict[str, object] = {"mode": "", "label": "", "delayed": False}
@@ -281,6 +284,9 @@ class AppState:
             # `_catalog_error`— es el catálogo VACÍO por una siembra fallida: ahí
             # literalmente no hay datos que servir.
             "catalog": self.catalog_status(),
+            # Contador de novedades del universo (especies nuevas sin decidir). Sólo la
+            # CUENTA: el detalle vive en el ABM, detrás de login y permiso de pestaña.
+            "novedades": self._novedades,
             "ok": (not is_stale) and error is None,
         }
 
@@ -323,6 +329,12 @@ class AppState:
 
     def bei_tables(self) -> Optional[dict]:
         return self._bei
+
+    def set_novedades(self, n: int) -> None:
+        self._novedades = int(n or 0)   # un escritor a la vez; asignación atómica
+
+    def novedades(self) -> int:
+        return self._novedades
 
     def set_data_source(self, mode: str, label: str, delayed: bool) -> None:
         """Setea la fuente de datos activa (un solo escritor a la vez)."""

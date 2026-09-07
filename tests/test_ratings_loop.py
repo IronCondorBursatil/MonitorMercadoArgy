@@ -108,7 +108,7 @@ def _stub_loops(monkeypatch, evento: threading.Event):
         await asyncio.sleep(3600)   # queda viva hasta el cancel del lifespan
 
     for nombre in ("_startup_reconcile", "_refresh_loop", "_options_loop", "_bei_loop",
-                   "_price_history_loop"):
+                   "_price_history_loop", "_universe_loop"):
         monkeypatch.setattr(app_mod, nombre, _noop)
     monkeypatch.setattr(app_mod, "_ratings_loop", _spy)
     # sin esto el boot ingiere el CSV real de 4.700 filas en el sandbox
