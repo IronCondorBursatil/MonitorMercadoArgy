@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -278,11 +279,29 @@ _CAT_SHEET = {
 }
 
 
+# Clase de una LETRA por el prefijo del ticker. Sólo cuando es inequívoco: `S`+dígito es
+# una LECAP y `T`+dígito una BONCAP (T15E7). `T`+letra son BONTE/duales (TO26, TY30P,
+# TTM26): no se inventa nada, la hoja queda en Soberanos y el operador decide.
+_LETRA_LECAP = re.compile(r"^S\d")
+_LETRA_BONCAP = re.compile(r"^T\d")
+
+
+def _clase_letra(symbol: str) -> Optional[str]:
+    sym = (symbol or "").upper().strip()
+    if _LETRA_LECAP.match(sym):
+        return "LECAP"
+    if _LETRA_BONCAP.match(sym):
+        return "BONCAP"
+    return None
+
+
 def prefill_for(key: str) -> Optional[dict]:
-    """Para el ＋Alta del Universo: dado el `key` de un grupo (ISIN / ticker_pesos /
-    symbol), devuelve {sheet, fields} para abrir el form prefilleado. Toma las patas
-    `primary` por moneda (ARS→ticker_ars, MEP→ticker_mep, cable→ticker_ccl), ISIN,
-    emisor y ley (del prefijo ISIN). La hoja se deduce de la categoría (default ON)."""
+    """Para el ＋Alta del Universo / Novedades: dado el `key` de un grupo (ISIN /
+    ticker_pesos / symbol), devuelve {sheet, fields} para abrir el form prefilleado. Toma
+    las patas `primary` por moneda (ARS→ticker_ars, MEP→ticker_mep, cable→ticker_ccl),
+    ISIN, emisor y ley (del prefijo ISIN). La hoja se deduce de la categoría (default ON);
+    una letra del panel BYMA «Letras» va a Tasa Fija con la clase por prefijo, y el
+    vencimiento de la ficha (si el job lo trajo) prefillea el campo de la hoja."""
     key = (key or "").strip().upper()
     if not key:
         return None
@@ -297,11 +316,13 @@ def prefill_for(key: str) -> Optional[dict]:
         return None
     slot_field = {"pesos": "ticker_ars", "mep": "ticker_mep", "cable": "ticker_ccl"}
     fields: dict = {}
-    isin = emisor = categoria = None
+    isin = emisor = categoria = panel = vencimiento = None
     for o in rows:
         isin = isin or o.isin
         emisor = emisor or o.emisor
         categoria = categoria or o.categoria
+        panel = panel or o.panel
+        vencimiento = vencimiento or o.vencimiento
         if o.clase_liquidacion != "primary":
             continue
         slot = _MONEDA_SLOT.get(o.moneda)
@@ -309,8 +330,15 @@ def prefill_for(key: str) -> Optional[dict]:
         if f and not fields.get(f):
             fields[f] = (o.symbol or "").upper()
     sheet = _CAT_SHEET.get(categoria or "", "Obligaciones_Negociables")
+    if panel == "Letras":
+        clase = _clase_letra(fields.get("ticker_ars") or key)
+        if clase:
+            sheet = "Tasa_Fija"
+            fields["clase"] = clase
     fields["short_name"] = emisor or ""
     fields["isin"] = isin or ""
+    if vencimiento:
+        fields["fecha_pago" if sheet == "Tasa_Fija" else "fecha_vencimiento"] = vencimiento
     if sheet == "Obligaciones_Negociables":
         fields["tipo"] = "HARD DOLLAR"
         ley = _legislacion(isin)

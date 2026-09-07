@@ -362,3 +362,55 @@ def test_reingerir_con_estado_del_job_se_rechaza_salvo_force(tmp_db):
     assert universe.count() == 2                       # no tocó nada
     assert universe.ingest_byma_catalog(csvp, force=True) == 1
     assert universe.count() == 1
+
+
+# ── prefill enriquecido (novedades, spec 2026-09-07 §3) ─────────────────────
+def _uni_row(symbol, **kw):
+    from core.infrastructure.db.models import BymaCatalogORM
+    base = dict(symbol=symbol, ticker_pesos=symbol, moneda="ARS", clase_liquidacion="primary",
+                cotiza=1, categoria="Títulos Públicos", panel="Letras")
+    base.update(kw)
+    return BymaCatalogORM(**base)
+
+
+def test_una_letra_del_panel_letras_prefillea_tasa_fija_con_clase_y_vencimiento(tmp_db):
+    from core.domain.instrument_groups import is_known_type
+    from core.infrastructure.db.catalog_repository import init_db
+    from core.infrastructure.db.engine import SessionLocal
+    init_db()
+    with SessionLocal.begin() as s:
+        s.add(_uni_row("S29E7", vencimiento="2027-01-29"))
+        s.add(_uni_row("T15E7", vencimiento="2027-01-15"))
+    pf = universe.prefill_for("S29E7")
+    assert pf["sheet"] == "Tasa_Fija"
+    assert pf["fields"]["clase"] == "LECAP" and is_known_type("LECAP")
+    assert pf["fields"]["fecha_pago"] == "2027-01-29"
+    assert pf["fields"]["ticker_ars"] == "S29E7"
+    assert universe.prefill_for("T15E7")["fields"]["clase"] == "BONCAP"
+
+
+def test_un_bonte_o_dual_del_panel_letras_no_recibe_una_clase_inventada(tmp_db):
+    from core.infrastructure.db.catalog_repository import init_db
+    from core.infrastructure.db.engine import SessionLocal
+    init_db()
+    with SessionLocal.begin() as s:
+        s.add(_uni_row("TO26"))
+        s.add(_uni_row("TTM26"))
+    for sym in ("TO26", "TTM26"):
+        pf = universe.prefill_for(sym)
+        assert pf["sheet"] == "Soberanos" and "clase" not in pf["fields"], sym
+    assert universe._clase_letra("TY30P") is None
+    assert universe._clase_letra("S31G6") == "LECAP" and universe._clase_letra("T30J7") == "BONCAP"
+
+
+def test_el_vencimiento_de_la_ficha_prefillea_fecha_vencimiento_en_una_on(tmp_db):
+    from core.infrastructure.db.catalog_repository import init_db
+    from core.infrastructure.db.engine import SessionLocal
+    init_db()
+    with SessionLocal.begin() as s:
+        s.add(_uni_row("YMCXO", categoria="Obligaciones Negociables", panel="Oblig. Negociables",
+                       isin="ARYPFS000001", emisor="YPF S.A.", vencimiento="2029-06-30"))
+    pf = universe.prefill_for("YMCXO")
+    assert pf["sheet"] == "Obligaciones_Negociables"
+    assert pf["fields"]["fecha_vencimiento"] == "2029-06-30"
+    assert pf["fields"]["tipo"] == "HARD DOLLAR" and pf["fields"]["short_name"] == "YPF S.A."
