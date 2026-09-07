@@ -1,0 +1,127 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -3.12 -m pytest *)",
+      "Bash(py -3.12 -m ruff *)",
+      "Bash(py -3.12 -m pip show *)",
+      "Bash(py -3.12 -m pip check)",
+      "Bash(py -3.12 scripts/relock.py *)",
+      "Bash(py -3.12 scripts/build_on_static.py*)",
+      "Bash(pwsh scripts/check.ps1*)",
+      "Bash(git status*)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push origin *)",
+      "Bash(gh run *)",
+      "Bash(gh pr *)",
+      "Bash(gh workflow *)",
+      "Bash(gh auth status*)",
+      "PowerShell(py -3.12 -m pytest *)",
+      "PowerShell(py -3.12 -m ruff *)",
+      "PowerShell(py -3.12 -m pip show *)",
+      "PowerShell(py -3.12 -m pip check)",
+      "PowerShell(py -3.12 scripts/relock.py *)",
+      "PowerShell(py -3.12 scripts/build_on_static.py*)",
+      "PowerShell(pwsh scripts/check.ps1*)",
+      "PowerShell(git status*)",
+      "PowerShell(git diff *)",
+      "PowerShell(git log *)",
+      "PowerShell(git show *)",
+      "PowerShell(git branch *)",
+      "PowerShell(git add *)",
+      "PowerShell(git commit *)",
+      "PowerShell(git push origin *)",
+      "PowerShell(gh run *)",
+      "PowerShell(gh pr *)",
+      "PowerShell(gh workflow *)",
+      "PowerShell(gh auth status*)"
+    ],
+    "ask": [
+      "Bash(git checkout *)",
+      "Bash(git restore *)",
+      "Bash(git reset *)",
+      "Bash(git clean *)",
+      "Bash(git stash drop *)",
+      "Bash(git stash clear*)",
+      "Bash(git branch -D *)",
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(py -3.12 -m pip install *)",
+      "Bash(py -3.12 -c *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "PowerShell(git checkout *)",
+      "PowerShell(git restore *)",
+      "PowerShell(git reset *)",
+      "PowerShell(git clean *)",
+      "PowerShell(git stash drop *)",
+      "PowerShell(git stash clear*)",
+      "PowerShell(git branch -D *)",
+      "PowerShell(pip install *)",
+      "PowerShell(pip3 install *)",
+      "PowerShell(py -3.12 -m pip install *)",
+      "PowerShell(py -3.12 -c *)",
+      "PowerShell(python *)",
+      "PowerShell(python3 *)",
+      "PowerShell(ssh *)",
+      "PowerShell(scp *)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(Stop-Process *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(//**/monitor/jwt_secret)",
+      "Edit(apps/web/static/js/on.js)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f *)",
+      "Bash(curl -k *)",
+      "Bash(curl --insecure *)",
+      "Bash(curl * -k *)",
+      "Bash(curl * --insecure*)",
+      "PowerShell(git push --force*)",
+      "PowerShell(git push -f*)",
+      "PowerShell(git push * --force*)",
+      "PowerShell(git push * -f *)",
+      "PowerShell(curl -k *)",
+      "PowerShell(curl --insecure *)",
+      "PowerShell(Invoke-WebRequest * -SkipCertificateCheck*)",
+      "PowerShell(Invoke-RestMethod * -SkipCertificateCheck*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py",
+            "args": ["-3.12", "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py"],
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Edit(**/on.js)",
+            "command": "py",
+            "args": ["-3.12", "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

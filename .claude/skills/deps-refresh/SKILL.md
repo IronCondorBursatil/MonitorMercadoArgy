@@ -21,7 +21,8 @@ la suite ya aprobó en Linux x86 + ARM. Nunca desde un `pip freeze` de Windows (
 
 2. **Bajar el artifact** (`freeze-ubuntu-latest`; el closure aarch64 es idéntico):
    `gh run download <id> -n freeze-ubuntu-latest -D "$env:TEMP\freeze"`
-   Sin `gh auth`, fallback en este orden:
+   El artifact **exige autenticación aunque el repo sea público** (verificado 2026-09-07:
+   `GET .../artifacts/<id>/zip` sin token → 401). Sin `gh auth`, fallback en este orden:
    a. el freeze `*-despues.txt` más nuevo de `/var/lib/monitor/freeze/` en el servidor
       (`scp monitor-oci:/var/lib/monitor/freeze/<archivo> "$env:TEMP\freeze\"`) — es una
       resolución Linux aarch64 sobre la que la app está corriendo;

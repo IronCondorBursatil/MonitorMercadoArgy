@@ -371,9 +371,14 @@ antes de afirmarlo.
   con **exit 0**; `permissionDecision` ∈ allow/deny/ask (`reason` solo se muestra en deny).
   **Exit 0 sin salida = sin decisión** (sigue el flujo normal; no aprueba). **Exit 1 NO
   bloquea** (error no bloqueante). **Exit 2 bloquea siempre** (aunque el JSON diga allow),
-  mensaje por stderr. Una ruta mal escrita → exit 127 → **no bloqueante, el gate queda
-  "silently disabled"** (solo un aviso `<hook> hook error` en la transcripción): probar cada
-  hook con una llamada deliberada tras configurarlo.
+  mensaje por stderr. Una ruta mal escrita en **forma shell** → exit 127 → no bloqueante, el
+  gate queda "silently disabled" (solo un aviso `<hook> hook error` en la transcripción).
+  **Pero en forma exec con un intérprete** (`"command": "py", "args": [..., "guard.py"]`)
+  es el intérprete el que sale, y `python` sale con **exit 2** cuando no encuentra el script
+  → **bloquea TODO Bash/PowerShell** hasta que el archivo exista (observado 2026-09-07 en la
+  Fase 2: ~10 min sin shell por escribir `settings.json` antes que `guard.py`). Orden
+  correcto: primero el script, después el settings; y probar cada hook con una llamada
+  deliberada tras configurarlo.
 - Tipos: `command`, `http`, `mcp_tool`, `prompt`, `agent` (experimental). Timeouts default:
   600 s command/http/mcp_tool, 30 s prompt, 60 s agent. `/hooks` es un visor **read-only**;
   los cambios en settings los toma el file watcher sin reiniciar. Debug: `claude --debug` o
