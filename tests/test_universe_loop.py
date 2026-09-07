@@ -11,6 +11,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
@@ -240,3 +241,39 @@ def test_el_badge_del_header_linkea_al_abm_solo_si_hay_novedades():
     assert "2 novedades" in html and 'href="/abm"' in html and "meta-nov" in html
     # lo de siempre sigue ahí (bajo test nunca hubo refresh → 'datos viejos' o 'sin datos')
     assert ("datos viejos" in html) or ("sin datos" in html)
+
+
+@pytest.mark.noauth
+def test_el_badge_de_novedades_respeta_el_permiso_de_la_pestana_abm():
+    """`has_tab("abm")` es la mitad del guard que el bypass de conftest no puede probar:
+    un usuario sin la pestaña ABM no ve el link aunque haya novedades."""
+    from apps.web.routers import auth as auth_router
+    from core.infrastructure.db.engine import get_engine
+    from core.infrastructure.db.models import Base, UserORM
+    from core.security import get_password_hash
+
+    Base.metadata.create_all(bind=get_engine())
+    auth_router._login_attempts.clear()
+    with SessionLocal() as s:
+        s.query(UserORM).delete()
+        s.add(UserORM(username="admin", hashed_password=get_password_hash("adminpass"),
+                      is_admin=True, allowed_tabs=["*"]))
+        s.add(UserORM(username="bob", hashed_password=get_password_hash("bobpass"),
+                      is_admin=False, allowed_tabs=["bonos"]))
+        s.commit()
+    try:
+        with TestClient(app_mod.app) as c:
+            c.post("/login", data={"username": "bob", "password": "bobpass"})
+            app_mod.app.state.app_state.set_novedades(2)
+            r = c.get("/health/badge", follow_redirects=False)
+            assert r.status_code == 200
+            assert "novedad" not in r.text and "meta-nov" not in r.text
+        with TestClient(app_mod.app) as c:
+            c.post("/login", data={"username": "admin", "password": "adminpass"})
+            app_mod.app.state.app_state.set_novedades(2)
+            assert "2 novedades" in c.get("/health/badge", follow_redirects=False).text
+    finally:
+        with SessionLocal() as s:
+            s.query(UserORM).delete()
+            s.commit()
+        auth_router._login_attempts.clear()
