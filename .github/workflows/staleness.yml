@@ -1,0 +1,49 @@
+# Alerta de staleness de PRODUCCIÓN (agents.md §0.8 Fase 3, docs/decisiones.md D4).
+#
+# Motivo: el 2026-09-01 el refresh loop murió en silencio y la app sirvió el mismo snapshot
+# ~22 horas; se detectó en producción, no en el código. `/api/health` ya expone la edad del
+# último refresh (`age_seconds`, `is_stale` con umbral 30 s) y es público (sin auth, sin
+# secretos). Este workflow lo consulta cada hora y FALLA si la app está stale, degradada o
+# con loops caídos en las últimas 24 h: GitHub avisa el fallo por email al dueño del
+# workflow, sin infraestructura nueva.
+#
+# Límites de GitHub: los `schedule` corren con demora variable (minutos, a veces más) y se
+# desactivan solos tras 60 días sin actividad en el repo (un commit cualquiera los
+# reactiva). `workflow_dispatch` permite probarlo a mano.
+#
+# No se crea ningún endpoint nuevo: el conjunto de rutas públicas está fijado por
+# tests/test_aud_G_tests_route_auth.py (_PUBLIC_PATHS). `last_refresh` viene en hora ART
+# naive: por eso se mira `age_seconds` y no el timestamp.
+name: staleness
+
+on:
+  schedule:
+    - cron: '17 * * * *'   # cada hora, minuto 17 (evita la congestión de :00)
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Consultar /api/health de producción
+        run: |
+          set -euo pipefail
+          URL="http://129.80.148.166/api/health"
+          BODY="$(curl -fsS --max-time 20 "$URL")" || { echo "!!! sin respuesta de $URL"; exit 1; }
+          echo "$BODY" | jq .
+          STATUS="$(echo "$BODY" | jq -r '.status')"
+          STALE="$(echo "$BODY" | jq -r '.is_stale')"
+          AGE="$(echo "$BODY" | jq -r '.age_seconds')"
+          CRASHES="$(echo "$BODY" | jq -r '.loop_crashes_24h')"
+          INSTR="$(echo "$BODY" | jq -r '.instruments')"
+          FAIL=0
+          [ "$STATUS" = "ok" ]        || { echo "!!! status=$STATUS (esperaba ok)"; FAIL=1; }
+          [ "$STALE" = "false" ]      || { echo "!!! is_stale=$STALE, age_seconds=$AGE"; FAIL=1; }
+          [ "${CRASHES:-0}" = "0" ]   || { echo "!!! loop_crashes_24h=$CRASHES"; FAIL=1; }
+          [ "${INSTR:-0}" -gt 0 ]     || { echo "!!! instruments=$INSTR"; FAIL=1; }
+          if [ "$FAIL" = 1 ]; then
+            echo "Producción NO está sana: revisar journalctl -u monitores.service en monitor-oci"
+            exit 1
+          fi
+          echo "OK: status=$STATUS age_seconds=$AGE instruments=$INSTR"

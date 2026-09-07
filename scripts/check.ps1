@@ -1,15 +1,16 @@
 # Gate de calidad local (M0.2): ruff + pytest. Falla (exit 1) si cualquiera falla.
 #
-# No hay CI. Este es el "¿está verde el repo?" canónico — correrlo antes de pushear a
-# origin/main (github.com/IronCondorBursatil/MonitorMercadoArgy): el deploy del droplet
-# lo hace deploy.sh desde main. Equivale a un CI gate, ejecutado a mano.
+# Es la corrida LOCAL (Windows) del mismo gate que corre el CI en Linux x86 + ARM
+# (.github/workflows/gate.yml → scripts/check.sh) en cada push. Correrlo antes de pushear a
+# origin/main (github.com/IronCondorBursatil/MonitorMercadoArgy): el deploy a producción
+# (deploy.sh en el servidor Oracle) sale de main. Skips esperados en Windows: 3
+# (time.tzset() es sólo Unix); un skip por node es rojo (tests/_skip_guard.py).
 #
 # Uso:
 #   pwsh scripts/check.ps1            # ruff + pytest completo
 #   pwsh scripts/check.ps1 -Fast     # ruff + pytest -x (corta en el 1er fallo)
 #
-# Opcional: instalarlo como git hook pre-push:
-#   "pwsh -File scripts/check.ps1" > .git/hooks/pre-push  (y chmod +x en Git Bash)
+# Como git hook pre-push (recomendado): pwsh scripts/install-hooks.ps1 [-Fast]
 
 param([switch]$Fast)
 

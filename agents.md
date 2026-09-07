@@ -595,7 +595,12 @@ limpio: push → `gh run watch --exit-status` → ssh deploy.sh → `/smoke` →
 `/smoke` corren; `/hooks` lista los hooks; sesión nueva sin errores de hook. Reversión:
 `git revert` + restaurar el backup del settings global.
 
-**Fase 3 — CI y verificación.** `actions/setup-node` en ambas patas (los 29 tests node de
+**Fase 3 — CI y verificación.** *(Estado 2026-09-07: ejecutada en `fase-3-ci`. Guard de
+skips = `tests/_skip_guard.py` cableado en `conftest.py` (motivos, no cuenta; probado con
+un skip `node` deliberado → exit 1); pre-push instalado en esta máquina con
+`scripts/install-hooks.ps1`; `staleness.yml` escrito — la prueba "alerta disparada y
+recibida" queda para David tras el merge, porque los `schedule`/`workflow_dispatch`
+corren desde `main`.)* `actions/setup-node` en ambas patas (los 29 tests node de
 `fci.js` corren en ARM) + `pytest -rs` con lista de *reasons* esperados por plataforma (falla
 ante uno nuevo). Pre-push hook con instalador `scripts/install-hooks.ps1`; contenido de
 `.git/hooks/pre-push` (finales **LF**):

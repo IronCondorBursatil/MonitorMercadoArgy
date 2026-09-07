@@ -267,3 +267,42 @@ def _cartera_aislada(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(cartera_store, "_PATH", str(caja / "cartera.json"))
     monkeypatch.setattr(cartera_store, "_LEGACY_PATH", str(caja / "no-hay-legacy.json"))
     yield
+
+
+# --------------------------------------------------------------------------- #
+# Guard de skips (Fase 3, agents.md §0.8): un skip silencioso en el CI es invisible.
+# El runner ARM llegó a "2445 passed / 32 skipped" (29 = los tests node de fci.js, la
+# única cobertura de comportamiento del JS) sin que nada lo denunciara. Se clasifican
+# los MOTIVOS (tests/_skip_guard.py), no la cuenta, que depende del entorno. Si hay
+# prohibidos, la sesión termina con exit 1 y el resumen los lista.
+# --------------------------------------------------------------------------- #
+_SKIP_REASONS: list[str] = []
+_SKIPS_MALOS: list[str] = []
+
+
+def pytest_runtest_logreport(report):
+    if report.skipped and not hasattr(report, "wasxfail"):
+        lr = report.longrepr
+        reason = lr[2] if isinstance(lr, tuple) and len(lr) == 3 else str(lr)
+        _SKIP_REASONS.append(reason)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtestloop(session):
+    yield
+    from tests._skip_guard import skips_prohibidos
+
+    _SKIPS_MALOS[:] = skips_prohibidos(_SKIP_REASONS)
+    if _SKIPS_MALOS:
+        # _main() lee session.testsfailed apenas vuelve este hook → ExitCode.TESTS_FAILED
+        session.testsfailed += len(_SKIPS_MALOS)
+
+
+def pytest_terminal_summary(terminalreporter):
+    if _SKIPS_MALOS:
+        terminalreporter.section("SKIPS PROHIBIDOS (tests/_skip_guard.py)", sep="!", red=True)
+        for reason in _SKIPS_MALOS:
+            terminalreporter.line(f"  {reason}")
+        terminalreporter.line(
+            f"  {len(_SKIPS_MALOS)} skip(s) que no se toleran en {sys.platform}: "
+            "un skip por node es rojo en toda plataforma; bash/tzset solo se toleran en Windows.")

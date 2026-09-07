@@ -36,6 +36,14 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      # node es requisito del gate: los tests de comportamiento de fci.js (29) corren el
+      # IIFE en node y se saltean en silencio si falta — así llegó el runner ARM a
+      # "2445 passed / 32 skipped" sin que nadie lo notara. tests/_skip_guard.py ahora
+      # pone rojo un skip por node en cualquier plataforma.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Instalar dependencias de runtime (las que instala deploy.sh)
         run: pip install -r requirements.txt
 
@@ -63,3 +71,12 @@ jobs:
         env:
           TMPDIR: /tmp
         run: bash scripts/check.sh
+
+      # Informativo, no bloqueante: CVEs conocidas en lo instalado (el mismo closure que
+      # instala deploy.sh). Cuando aparezca una que importe, se decide a mano (cota o
+      # upgrade); no se rompe el gate por una advisory de una transitiva de Jupyter.
+      - name: pip-audit (no bloqueante)
+        continue-on-error: true
+        run: |
+          pip install --quiet pip-audit
+          pip-audit --skip-editable
