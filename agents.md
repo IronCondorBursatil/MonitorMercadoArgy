@@ -204,7 +204,16 @@
 | scipy | (ver lock) | 1.18.1 | ídem | — |
 | Dev (no van a prod) | pytest 9.0.3 · hypothesis 6.155.2 · ruff 0.15.16 | — | mismos | pineados en `requirements-dev.txt` |
 
-Hechos:
+**Actualización 2026-09-07 (Fase 1, rama `fase-1-drift`)**: la columna "Laptop" de la tabla
+describe el estado ANTERIOR. Ese día `requirements.txt` recibió las cotas de la última
+columna, `requirements.lock` se regeneró desde el freeze de prod con `scripts/relock.py`
+(20 pins actualizados, `uvloop==0.22.1 ; sys_platform != 'win32'` agregado) y la laptop se
+instaló desde él: **laptop = prod** en todas las sensibles (fastapi 0.141.1, starlette 1.6.0,
+uvicorn 0.52.4, numpy 2.5.2, scipy 1.18.1, pydantic 2.13.5, SQLAlchemy 2.0.52, httpx 0.28.1,
+optionlab 1.8.5). Gate local con esas versiones: 2631 passed / 3 skipped. Aviso de pip sin
+efecto en el Monitor: `ccxt` (paquete global ajeno) pide `certifi==2026.6.17`.
+
+Hechos (estado previo a la Fase 1, conservado como evidencia):
 
 - `requirements.txt`: 24 deps de runtime, **21 completamente abiertas**, 2 con cota inferior
   (`SQLAlchemy>=2`, `pydantic>=2`), **1** con cota superior (`bcrypt<4.0.0`, el precedente).
@@ -539,7 +548,10 @@ sin rotar, con OK explícito; (4) canal de la alerta de staleness (email de GitH
 workflow fallido = cero infraestructura). Aceptación: baseline archivada; Superpowers 6.3
 operativo; decisiones registradas.
 
-**Fase 1 — Drift de versiones.** Primer entregable: `gh run view <id> --log` de las corridas →
+**Fase 1 — Drift de versiones.** *(Estado 2026-09-07: ejecutada en `fase-1-drift`; queda
+pendiente la tabla de versiones del CI porque exige `gh auth login`. Mecanismo del lock:
+`scripts/relock.py` + tests + skill `/deps-refresh`; fuente usada: freeze de prod.)*
+Primer entregable: `gh run view <id> --log` de las corridas →
 tabla laptop / CI / prod de las deps sensibles (cierra el único DESCONOCIDO). Cotas
 superiores (tabla §0.3). Lock regenerado desde el freeze x86 del CI + markers (regla §0.3.2);
 target = resolución del CI. Test de paridad (§0.3.3). `gate.yml` con freeze artifact (§0.3.4).

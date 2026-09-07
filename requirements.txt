@@ -3,21 +3,28 @@
 # Programs (py -3.12). El antiguo "Store Python" ya no existe. Instalar con:
 #   py -3.12 -m pip install -r requirements.txt
 #   (equiv.: & "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m pip install -r requirements.txt)
+#
+# POLÍTICA DE VERSIONES (agents.md §0.3): este archivo lo instalan producción (deploy.sh) y el
+# CI, con resolución ABIERTA a propósito. Las deps "sensibles a forma" llevan COTA SUPERIOR
+# (nunca `==`, que rompería ese diseño): acota lo que un venv fresco puede traer sin renunciar
+# a patch/minor. Precedente: bcrypt<4.0.0. Motivo: FastAPI 0.141 cambió `include_router` y
+# dejó ciego un guard de auth en prod mientras la laptop corría 0.136 (2026-09-04). Las
+# versiones exactas validadas viven en requirements.lock (regenerar con scripts/relock.py).
 
 # --- núcleo financiero (sin cambios) ---
-numpy
+numpy<3
 scipy
-pandas
+pandas                   # sin cota propia: optionlab la capa en <3 (pandas 3.x no entra)
 python-dateutil
-holidays
+holidays                 # sin cota propia: optionlab la capa en <0.45
 pandas-market-calendars
 openpyxl                 # solo seeding (scripts/ingest_master.py)
 websockets               # futures_provider
 
 # --- nuevas (reingeniería) ---
-fastapi
-uvicorn[standard]
-httpx
+fastapi>=0.141,<0.150    # 0.141 = la forma de include_router que corre prod (tests/_routes.py)
+uvicorn[standard]>=0.52,<1
+httpx<1
 # requests: ficha técnica BYMA — requests.Session en byma/catalog_enrich (la corre el
 # _startup_reconcile del lifespan) + scripts/byma_enrich_seed_isin. Las dos sesiones sacan
 # su verificación TLS de core/infrastructure/_tls.py (política única del repo).
@@ -25,8 +32,9 @@ requests
 jinja2
 python-multipart
 sse-starlette
-SQLAlchemy>=2
-pydantic>=2
+starlette<2              # transitiva (fastapi/sse-starlette); cota explícita: afecta routing y SSE
+SQLAlchemy>=2,<2.1
+pydantic>=2,<3
 pydantic-settings
 optionlab                # analytics avanzados de estrategias de opciones (P(profit), EV, ranges)
 passlib                  # hashing de contraseñas de usuarios

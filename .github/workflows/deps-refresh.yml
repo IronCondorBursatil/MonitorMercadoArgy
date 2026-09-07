@@ -1,0 +1,59 @@
+# Resolución FRESCA semanal de requirements.txt en x86 y ARM + suite completa + freeze
+# publicado como artifact. Es gate.yml en cadencia: cotas sin cadencia son drift diferido
+# (agents.md §0.3, regla 6). Si sale verde, `/deps-refresh` (skill del proyecto) baja el
+# artifact `freeze-ubuntu-latest` y regenera requirements.lock con scripts/relock.py — el
+# closure de x86 y aarch64 es idéntico (verificado 2026-09-07), así que alcanza con uno.
+#
+# Límites de GitHub a tener en cuenta: los `schedule` corren con demora variable y se
+# desactivan solos tras 60 días sin actividad en el repo (un commit cualquiera los
+# reactiva). `workflow_dispatch` permite lanzarlo a mano desde Actions o con
+# `gh workflow run deps-refresh.yml`.
+name: deps-refresh
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'   # lunes 09:00 ART (12:00 UTC)
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin `cache: pip` a propósito: la gracia es resolver contra PyPI de hoy.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias de runtime (las que instala deploy.sh)
+        run: pip install -r requirements.txt
+
+      # Freeze ANTES de las dev deps, para que no arrastre pytest/hypothesis/ruff.
+      - name: Freeze de runtime
+        run: pip freeze > freeze-${{ matrix.runner }}.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freeze-${{ matrix.runner }}
+          path: freeze-${{ matrix.runner }}.txt
+          retention-days: 90
+
+      - name: Instalar dependencias de dev
+        run: pip install -r requirements-dev.txt
+
+      - name: Gate (ruff + pytest) contra la resolución fresca
+        env:
+          TMPDIR: /tmp
+        run: bash scripts/check.sh
+
+      # Informativo: cuánto se alejó el lock de lo que se acaba de validar.
+      - name: Drift del lock respecto del freeze
+        if: always()
+        run: python scripts/relock.py freeze-${{ matrix.runner }}.txt --check || true

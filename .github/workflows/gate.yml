@@ -36,8 +36,24 @@ jobs:
           python-version: '3.12'
           cache: pip
 
-      - name: Instalar dependencias
-        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Instalar dependencias de runtime (las que instala deploy.sh)
+        run: pip install -r requirements.txt
+
+      # El CI publica lo que validó: el freeze de runtime ANTES de las dev deps (si no,
+      # arrastra pytest/hypothesis/ruff). Es la fuente para regenerar requirements.lock
+      # con scripts/relock.py (agents.md §0.3, regla 2). `cancel-in-progress` implica que
+      # un run cancelado no deja artifact.
+      - name: Freeze de runtime
+        run: pip freeze > freeze-${{ matrix.runner }}.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freeze-${{ matrix.runner }}
+          path: freeze-${{ matrix.runner }}.txt
+          retention-days: 30
+
+      - name: Instalar dependencias de dev
+        run: pip install -r requirements-dev.txt
 
       # `tests/conftest.py` redirige TODAS las bases a un sandbox bajo
       # `tempfile.gettempdir()` y sólo acepta `MONITOR_TEST_DB_DIR` si cae ahí adentro.

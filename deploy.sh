@@ -7,6 +7,18 @@ set -euo pipefail   # aborta si un paso falla (antes imprimía "completado" igua
 # correrlo desde otro cwd tomaba —o creaba— el venv equivocado.
 cd "$(dirname "$0")"
 
+# --upgrade: resuelve DENTRO de las cotas de requirements.txt (política A de
+# docs/decisiones.md D2: prod converge a lo que validó el CI). Sin el flag, pip da por
+# satisfecho lo instalado y prod sigue siendo la foto del último rebuild del venv (default
+# histórico). En los dos casos queda un freeze antes y después (ver más abajo).
+UPGRADE=0
+for arg in "$@"; do
+    case "$arg" in
+        --upgrade) UPGRADE=1 ;;
+        *) echo "!!! argumento desconocido: $arg (uso: bash deploy.sh [--upgrade])"; exit 2 ;;
+    esac
+done
+
 echo "======================================"
 echo "Iniciando despliegue de Monitor Renta Fija"
 echo "======================================"
@@ -70,7 +82,27 @@ echo ">>> Instalando dependencias de Python..."
 # requirements.txt (versiones abiertas) y NO requirements.lock: apuntar el deploy al
 # lock quedó refutado en docs/plan-optimizacion-2026-08-31.md (:92 y :316). El lock es
 # para el bootstrap local reproducible. pytest/ruff no van acá (requirements-dev.txt).
-pip install -r requirements.txt
+#
+# Freeze ANTES y DESPUÉS del pip install → ${MONITOR_DB_DIR:-/var/lib/monitor}/freeze/.
+# `set -u`: NUNCA $MONITOR_DB_DIR pelado — el drop-in de systemd no lo hereda una shell
+# manual (`ssh host 'bash deploy.sh'`) y el deploy abortaría acá. Con los freezes, el
+# rollback de versiones es `pip install -r <freeze-antes>`. Un freeze nunca aborta un
+# deploy: si el directorio no se puede crear, se avisa y se usa uno temporal.
+FREEZE_DIR="${MONITOR_DB_DIR:-/var/lib/monitor}/freeze"
+if ! mkdir -p "$FREEZE_DIR" 2>/dev/null; then
+    FREEZE_DIR="$(mktemp -d)"
+    echo "    (aviso: no pude crear el directorio de freezes; los dejo en $FREEZE_DIR)"
+fi
+STAMP="$(date +%Y%m%d-%H%M%S)"
+pip freeze > "$FREEZE_DIR/freeze-$STAMP-antes.txt"
+if [ "$UPGRADE" = 1 ]; then
+    echo "    (--upgrade: resolviendo dentro de las cotas de requirements.txt)"
+    pip install --upgrade -r requirements.txt
+else
+    pip install -r requirements.txt
+fi
+pip freeze > "$FREEZE_DIR/freeze-$STAMP-despues.txt"
+echo "    freezes: $FREEZE_DIR/freeze-$STAMP-{antes,despues}.txt"
 
 # 3. Reiniciar el servicio
 echo ">>> Reiniciando el servicio systemd (monitores.service)..."

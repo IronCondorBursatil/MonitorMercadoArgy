@@ -1,4 +1,4 @@
-# Lockfile — versiones EXACTAS verificadas funcionando (2026-06, Python 3.12).
+# Lockfile — versiones EXACTAS validadas por el CI (freeze de prod Oracle aarch64 2026-09-07, HEAD 7da0557, Python 3.12).
 #
 # Reproducibilidad: requirements.txt deja las versiones abiertas (cómodo para
 # actualizar), pero un reinstalo en otra máquina podía traer una versión nueva con
@@ -10,19 +10,19 @@
 # afectan runtime (anyio/starlette/certifi). Regenerar tras validar nuevas versiones.
 
 # --- núcleo financiero ---
-numpy==2.4.6
-scipy==1.17.1
+numpy==2.5.2
+scipy==1.18.1
 pandas==2.3.3
 python-dateutil==2.9.0.post0
 holidays==0.44
-pandas-market-calendars==5.3.2
+pandas-market-calendars==5.4.0
 openpyxl==3.1.5
-websockets==16.0          # futures_provider (Matba/Rofex) Y el extra [standard] de uvicorn
+websockets==17.1          # futures_provider (Matba/Rofex) Y el extra [standard] de uvicorn
                           # (ws_protocol 'auto' → websockets_impl). Un solo pin sirve a los dos.
 
 # --- web / async ---
-fastapi==0.136.3
-uvicorn[standard]==0.48.0   # el extra es el que trae httptools (parser HTTP de prod)
+fastapi==0.141.1
+uvicorn[standard]==0.52.4   # el extra es el que trae httptools (parser HTTP de prod)
 # Transitivas del extra [standard]. Pinearlas NO es cosmético: `uvicorn[standard]==0.48.0`
 # a secas deja que pip resuelva httptools/watchfiles/PyYAML/python-dotenv a lo que haya el
 # día del bootstrap — o sea, justamente el parser HTTP del hot-path queda sin fijar,
@@ -31,7 +31,7 @@ uvicorn[standard]==0.48.0   # el extra es el que trae httptools (parser HTTP de 
 # http_protocol_class=HttpToolsProtocol y ws_protocol_class=WebSocketProtocol.
 httptools==0.8.0          # parser HTTP en C — la RAZÓN de ser del extra (http='auto')
 watchfiles==1.2.0         # --reload (no se usa en prod, pero entra con el extra)
-python-dotenv==1.2.2      # --env-file de uvicorn (la app usa su propio loader en settings)
+python-dotenv==1.2.3      # --env-file de uvicorn (la app usa su propio loader en settings)
 PyYAML==6.0.3             # --log-config .yaml de uvicorn
 # uvloop: NO se pinea a propósito. Su marker es `sys_platform != 'win32'`, así que en esta
 # máquina (Windows, sin venv) no se instala y no hay versión verificada que fijar; en el
@@ -39,24 +39,25 @@ PyYAML==6.0.3             # --log-config .yaml de uvicorn
 # (el lock es para el bootstrap local reproducible, ver docs/plan-optimizacion-2026-08-31).
 # colorama (marker sys_platform == 'win32', 0.4.6 acá): solo colorea el log de consola,
 # no afecta el runtime servido — se deja libre a propósito.
+uvloop==0.22.1 ; sys_platform != 'win32'  # event loop de prod; el marker lo saltea en Windows (sin wheel)
 httpx==0.28.1
 # requests: ficha técnica BYMA — `requests.Session` en byma/catalog_enrich.py (la corre el
 # _startup_reconcile del lifespan) y en scripts/byma_enrich_seed_isin.py. Las dos sesiones
 # verifican TLS con la política ÚNICA del repo (core/infrastructure/_tls.py::should_verify),
 # no con un trust store propio. Dependencia de runtime → el pin queda.
-requests==2.33.1
+requests==2.34.2
 jinja2==3.1.6
-python-multipart==0.0.29
-sse-starlette==3.4.4
-starlette==1.1.0          # transitiva (fastapi/sse-starlette) — pinned: afecta routing/SSE
-anyio==4.13.0             # transitiva (httpx/starlette) — pinned: afecta el event loop
-certifi==2026.2.25        # transitiva (httpx) — pinned: bundle de CAs p/ verificación TLS
+python-multipart==0.0.32
+sse-starlette==3.4.10
+starlette==1.6.0          # transitiva (fastapi/sse-starlette) — pinned: afecta routing/SSE
+anyio==4.15.0             # transitiva (httpx/starlette) — pinned: afecta el event loop
+certifi==2026.7.22        # transitiva (httpx) — pinned: bundle de CAs p/ verificación TLS
 
 # --- datos / orm ---
-SQLAlchemy==2.0.50
-pydantic==2.13.4
-pydantic-settings==2.14.1
-optionlab==1.6.0
+SQLAlchemy==2.0.52
+pydantic==2.13.5
+pydantic-settings==2.15.0
+optionlab==1.8.5
 
 # --- auth (login JWT + hashing). Sin esto, el bootstrap documentado con el lock
 # (CLAUDE.md/README) revienta con ModuleNotFoundError: core.security las importa. ---
@@ -65,7 +66,7 @@ bcrypt==3.2.2
 PyJWT==2.13.0
 
 # --- export PDF del panel ON ---
-fpdf2==2.8.7
-matplotlib==3.10.9
+fpdf2==2.8.8
+matplotlib==3.11.1
 
 # --- dev: ver requirements-dev.txt (fuera de prod) ---
