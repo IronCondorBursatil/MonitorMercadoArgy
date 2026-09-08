@@ -441,3 +441,16 @@ def test_alta_rechaza_duplicados_y_email_invalido(usuarios):
                                           "email": "mal"}).status_code == 400
     with SessionLocal() as s:
         assert s.query(UserORM).filter(UserORM.username == "otro").first() is None
+
+
+# ── login con el look de la app ─────────────────────────────────────────────
+@pytest.mark.noauth
+def test_login_usa_los_tokens_y_el_header_de_la_app(usuarios):
+    with TestClient(app) as c:
+        r = c.get("/login")
+    assert r.status_code == 200
+    assert "/static/css/app.css" in r.text
+    assert "MONITOR · Renta Fija AR" in r.text
+    for var in ("var(--bg)", "var(--surface)", "var(--border)"):
+        assert var not in r.text, f"login.html sigue usando la variable inexistente {var}"
+    assert "/health/badge" not in r.text and "hx-get" not in r.text   # sin nav ni polling privado
