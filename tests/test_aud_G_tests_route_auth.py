@@ -28,7 +28,8 @@ _AUTH_MARKERS = ("get_current_user", "get_admin_user", "RequireTabPermission")
 #   /login  — el formulario y el POST de login (obvio).
 #   /logout — solo borra la cookie.
 #   /api/health — probe externo; recortado a propósito (sin last_error).
-_PUBLIC_PATHS = {"/login", "/logout", "/api/health"}
+#   /reset/{token}: página pública de nueva contraseña (spec 2026-09-08 §5.2); el token es la credencial.
+_PUBLIC_PATHS = {"/login", "/logout", "/api/health", "/reset/{token}"}
 # Mounts públicos: assets estáticos.
 _PUBLIC_MOUNTS = {"/static"}
 # Docs de OpenAPI: apagadas por default en apps/web/app.py; si alguien las prende

@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from apps.web.deps_auth import get_db
 from apps.web.users_service import normalizar_email
 from core.infrastructure.db.models import UserORM
-from core.security import verify_password, create_access_token, get_password_hash
+from core.security import verify_password, create_access_token, get_password_hash, password_invalida
 from apps.web.templates import TEMPLATES as _TEMPLATES
+from apps.web import reset_service
 from config.settings import settings
 
 router = APIRouter()
@@ -28,6 +29,27 @@ _MAX_TRACKED_KEYS = 4096
 # Hash bcrypt dummy: verificar SIEMPRE (aunque el usuario no exista) iguala el tiempo
 # de respuesta y evita enumerar usuarios por timing. Lazy para no pagar bcrypt al import.
 _DUMMY_HASH = None
+
+# Rate-limit de POST /reset/{token}: por IP, 10 / 15 min. El token tiene 256 bits (no se
+# adivina), esto sólo frena martillar la ruta.
+_MAX_RESET_ATTEMPTS = 10
+_RESET_WINDOW_SEC = 900
+_reset_attempts: dict = defaultdict(list)
+
+
+def _rate_limited(bucket: dict, key, max_attempts: int, window: float) -> bool:
+    """True si `key` ya agotó `max_attempts` en `window` segundos; registra el intento."""
+    now = time.time()
+    recent = [t for t in bucket[key] if now - t < window]
+    if len(recent) >= max_attempts:
+        bucket[key] = recent
+        return True
+    recent.append(now)
+    bucket[key] = recent
+    if len(bucket) > _MAX_TRACKED_KEYS:
+        for k in sorted(bucket, key=lambda k: bucket[k][-1])[:len(bucket) - _MAX_TRACKED_KEYS]:
+            bucket.pop(k, None)
+    return False
 
 
 def _trusted_proxies() -> frozenset:
@@ -136,8 +158,10 @@ def _dummy_hash() -> str:
 
 
 @router.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return _TEMPLATES.TemplateResponse(request, "pages/login.html", {"error": None})
+def login_page(request: Request, reset: str = ""):
+    # `?reset=ok` lo pone POST /reset/{token} al terminar: banner "ingresá con la nueva".
+    return _TEMPLATES.TemplateResponse(request, "pages/login.html",
+                                       {"error": None, "reset_ok": reset == "ok"})
 
 @router.post("/login")
 def login(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
@@ -211,3 +235,48 @@ def logout():
     response = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
     response.delete_cookie("access_token")
     return response
+
+
+# ── Nueva contraseña por link (reseteo o invitación) ──────────────────────────
+# Pública a sabiendas (tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS): la
+# credencial es el token. Toda invalidez (inexistente, vencido, usado, usuario
+# deshabilitado) responde la MISMA página con 200: sin oráculo.
+_INVALIDO = "pages/reset_invalido.html"
+
+
+def _form_reset(request, user, token, error=None, status_code=200):
+    return _TEMPLATES.TemplateResponse(
+        request, "pages/reset.html",
+        {"nombre": (user.full_name or user.username).split()[0], "username": user.username,
+         "token": token, "error": error}, status_code=status_code)
+
+
+@router.get("/reset/{token}", response_class=HTMLResponse)
+def reset_page(request: Request, token: str, db: Session = Depends(get_db)):
+    found = reset_service.lookup_reset_token(db, token)
+    if found is None:
+        return _TEMPLATES.TemplateResponse(request, _INVALIDO, {})
+    user, _row = found
+    return _form_reset(request, user, token)
+
+
+@router.post("/reset/{token}", response_class=HTMLResponse)
+def reset_submit(request: Request, token: str, password: str = Form(""),
+                 password2: str = Form(""), db: Session = Depends(get_db)):
+    ip = _client_ip(request)
+    if _rate_limited(_reset_attempts, ip, _MAX_RESET_ATTEMPTS, _RESET_WINDOW_SEC):
+        _audit.info("auth reset=ratelimited ip=%s", _limpio(ip), extra={"console": True})
+        return _TEMPLATES.TemplateResponse(request, _INVALIDO, {"ratelimited": True}, status_code=429)
+    found = reset_service.lookup_reset_token(db, token)
+    if found is None:
+        return _TEMPLATES.TemplateResponse(request, _INVALIDO, {})
+    user, row = found
+    if password != password2:
+        return _form_reset(request, user, token, error="Las dos contraseñas no coinciden.", status_code=400)
+    invalida = password_invalida(password)
+    if invalida:
+        return _form_reset(request, user, token, error=invalida, status_code=400)
+    reset_service.consume_reset_token(db, token, password)
+    _audit.info("auth reset_consumed purpose=%s target=%s ip=%s", _limpio(row.purpose),
+                _limpio(user.username), _limpio(ip), extra={"console": True})
+    return RedirectResponse(url="/login?reset=ok", status_code=status.HTTP_303_SEE_OTHER)

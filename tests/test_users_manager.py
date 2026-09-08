@@ -617,3 +617,85 @@ def test_invitaciones_vivas_tokens_de_y_link(usuarios):
         assert rs.reset_link(_Req(), "abc") == "http://129.80.148.166/reset/abc"
     finally:
         settings.public_url = viejo
+
+
+# ── /reset/{token} ──────────────────────────────────────────────────────────
+def _token_de_bob(purpose="reset"):
+    from apps.web import reset_service as rs
+    with SessionLocal() as s:
+        bob = s.query(UserORM).filter(UserORM.username == "bob").first()
+        return rs.issue_reset_token(s, bob, purpose=purpose, channel="link", by="admin")
+
+
+@pytest.mark.noauth
+def test_reset_get_muestra_el_formulario_solo_con_token_valido(usuarios):
+    t = _token_de_bob()
+    with TestClient(app) as c:
+        ok = c.get(f"/reset/{t}")
+        malo = c.get("/reset/token-inventado")
+    assert ok.status_code == 200 and 'name="password2"' in ok.text and "Bob" in ok.text and "bob" in ok.text
+    assert "MONITOR · Renta Fija AR" in ok.text and "hx-get" not in ok.text
+    assert malo.status_code == 200 and "ya no sirve" in malo.text and 'name="password"' not in malo.text
+
+
+@pytest.mark.noauth
+def test_reset_post_cambia_la_clave_cierra_sesiones_y_vuelve_al_login(usuarios):
+    t = _token_de_bob()
+    with TestClient(app) as bob_c, TestClient(app) as anon:
+        assert _login(bob_c, "bob", "bobpass1234").status_code in (302, 303)
+        r = anon.post(f"/reset/{t}", data={"password": "mi-clave-nueva-1", "password2": "mi-clave-nueva-1"},
+                      follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login?reset=ok"
+        assert bob_c.get("/", follow_redirects=False).status_code == 302, "las otras sesiones tienen que morir"
+        assert _login(anon, "bob", "mi-clave-nueva-1").status_code in (302, 303)
+        # el mismo link, otra vez: ya no sirve (un solo uso). Mutación: sacar el chequeo de
+        # used_at en lookup_reset_token pone esto en rojo.
+        r2 = anon.post(f"/reset/{t}", data={"password": "otra-clave-9999", "password2": "otra-clave-9999"},
+                       follow_redirects=False)
+        assert r2.status_code == 200 and "ya no sirve" in r2.text
+        banner = anon.get("/login?reset=ok")
+        assert "Tu contraseña se actualizó" in banner.text
+        assert "Tu contraseña se actualizó" not in anon.get("/login").text
+
+
+@pytest.mark.noauth
+def test_reset_post_rechaza_clave_corta_o_distinta_y_el_token_sigue_vivo(usuarios):
+    t = _token_de_bob()
+    with TestClient(app) as c:
+        r1 = c.post(f"/reset/{t}", data={"password": "corta", "password2": "corta"})
+        r2 = c.post(f"/reset/{t}", data={"password": "clave-larga-ok-1", "password2": "clave-larga-ok-2"})
+        assert r1.status_code == 400 and 'name="password2"' in r1.text and "al menos 10" in r1.text
+        assert r2.status_code == 400 and "no coinciden" in r2.text
+        assert c.get(f"/reset/{t}").status_code == 200 and 'name="password2"' in c.get(f"/reset/{t}").text
+    with SessionLocal() as s:
+        assert s.query(UserORM).filter(UserORM.username == "bob").first().password_changed_at is None
+
+
+@pytest.mark.noauth
+def test_reset_de_usuario_deshabilitado_o_vencido_es_la_misma_pagina(usuarios):
+    from datetime import timedelta
+    from core.infrastructure.db.models import PasswordResetTokenORM
+    t = _token_de_bob()
+    _set_bob(is_active=False)
+    with TestClient(app) as c:
+        r_off = c.get(f"/reset/{t}")
+    _set_bob(is_active=True)
+    with SessionLocal() as s:
+        s.query(PasswordResetTokenORM).update({"expires_at": datetime.now() - timedelta(seconds=1)})
+        s.commit()
+    with TestClient(app) as c:
+        r_venc = c.get(f"/reset/{t}")
+        r_nada = c.get("/reset/xyz")
+    assert r_off.status_code == r_venc.status_code == r_nada.status_code == 200
+    assert r_off.text == r_venc.text == r_nada.text
+
+
+@pytest.mark.noauth
+def test_reset_post_tiene_rate_limit_por_ip(usuarios):
+    from apps.web.routers import auth as auth_router
+    auth_router._reset_attempts.clear()
+    with TestClient(app) as c:
+        codigos = [c.post("/reset/token-falso", data={"password": "x" * 12, "password2": "x" * 12}).status_code
+                   for _ in range(11)]
+    assert codigos[:10] == [200] * 10 and codigos[10] == 429
+    auth_router._reset_attempts.clear()

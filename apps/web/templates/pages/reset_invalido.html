@@ -1,0 +1,14 @@
+{% extends "base_public.html" %}
+{% block title %}Link vencido - Monitor Renta Fija AR{% endblock %}
+{% block header_meta %}Nueva contraseña{% endblock %}
+{% block content %}
+<div class="pub-card">
+  <h2>Este link ya no sirve</h2>
+  {% if ratelimited %}
+  <p class="sub">Demasiados intentos desde tu conexión. Esperá unos minutos y volvé a abrir el link.</p>
+  {% else %}
+  <p class="sub">Los links vencen a los 60 minutos y se usan una sola vez. Si ya cambiaste la contraseña, ingresá con la nueva; si no, pedile a tu administrador un link nuevo.</p>
+  {% endif %}
+  <div class="links"><a href="/login">Volver al ingreso</a></div>
+</div>
+{% endblock %}

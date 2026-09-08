@@ -4,6 +4,7 @@
   <h2>Ingresar</h2>
   <p class="sub">Monitor de renta fija argentina.</p>
   {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+  {% if reset_ok %}<div class="msg success">Tu contraseña se actualizó. Ingresá con la nueva.</div>{% endif %}
   <form method="POST" action="/login">
     <label class="fld"><span>Usuario</span>
       <input type="text" name="username" required autofocus autocomplete="username"></label>

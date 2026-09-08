@@ -1,0 +1,18 @@
+{% extends "base_public.html" %}
+{% block title %}Nueva contraseña - Monitor Renta Fija AR{% endblock %}
+{% block header_meta %}Nueva contraseña{% endblock %}
+{% block content %}
+<div class="pub-card">
+  <h2>Hola, {{ nombre }}</h2>
+  <p class="sub">Elegí la nueva contraseña de tu usuario <b>{{ username }}</b>.</p>
+  {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+  <form method="POST" action="/reset/{{ token }}" autocomplete="off">
+    <label class="fld"><span>Nueva contraseña</span>
+      <input type="password" name="password" required minlength="10" maxlength="72" autofocus autocomplete="new-password"></label>
+    <label class="fld"><span>Repetir contraseña</span>
+      <input type="password" name="password2" required minlength="10" maxlength="72" autocomplete="new-password"></label>
+    <p class="sub" style="margin-top: -6px;">Al menos 10 caracteres. Al guardar se cierran las otras sesiones abiertas de tu usuario.</p>
+    <button type="submit">Guardar contraseña</button>
+  </form>
+</div>
+{% endblock %}
