@@ -927,12 +927,16 @@ def test_canal_mail_sin_email_o_sin_smtp_da_400(usuarios, mail_on, monkeypatch):
         assert r.status_code == 400 and "no está configurado" in r.text
         ficha = c.get(f"/users/{bob}/ficha").text
         assert "Enviar link por mail" in ficha and "disabled" in ficha
+        # El motivo dice QUÉ falta (el 400 no se alcanza desde la UI porque el botón está disabled).
+        assert 'title="El correo no está configurado en el servidor (MONITOR_SMTP_HOST / MONITOR_PUBLIC_URL)"' in ficha
         monkeypatch.setattr(settings, "smtp_host", "smtp.test")
         monkeypatch.setattr(settings, "public_url", "")
         r = c.post(f"/users/{bob}/reset", data={"channel": "mail"})
         assert r.status_code == 400 and "no está configurado" in r.text
         ficha = c.get(f"/users/{bob}/ficha").text
         assert "Enviar link por mail" in ficha and "disabled" in ficha
+        # El motivo dice QUÉ falta (el 400 no se alcanza desde la UI porque el botón está disabled).
+        assert 'title="El correo no está configurado en el servidor (MONITOR_SMTP_HOST / MONITOR_PUBLIC_URL)"' in ficha
         monkeypatch.setattr(settings, "public_url", "http://testserver")
         _set_bob(email=None)
         r = c.post(f"/users/{bob}/reset", data={"channel": "mail"})
