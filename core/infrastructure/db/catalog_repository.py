@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 # DATOS (no basta agregar columnas — eso lo reconcilia _migrate_table_add_columns
 # de forma aditiva en cada arranque). Sirve de punto de control para backups y para
 # correr transformaciones de datos exactamente una vez.
-CURRENT_SCHEMA_VERSION = 1
+#   v2 (2026-09-07): `_migrate_v2_bopreal_huerfanos` — BOPREAL con tipo huérfano
+#        retipados desde la ficha BYMA guardada en `raw_fields` (caso BPOA8).
+CURRENT_SCHEMA_VERSION = 2
 
 
 def _ensure_schema_meta(eng) -> None:
@@ -108,6 +110,70 @@ def _migrate_table_add_columns(eng, table) -> None:
                     table.name, col.name)
 
 
+_MIGRACION_V2_EMISOR = "banco central"
+
+
+def _fecha_ficha(v):
+    from datetime import date as _d
+    try:
+        return _d.fromisoformat(str(v).strip()[:10]) if v else None
+    except ValueError:
+        return None
+
+
+def _migrate_v2_bopreal_huerfanos(eng) -> int:
+    """v1 → v2: retipa como BOPREAL las filas de la hoja Soberanos con `instrument_type`
+    HUÉRFANO cuya ficha BYMA guardada en `raw_fields["byma"]` dice emisor BCRA, y les
+    repone vencimiento y emisión desde esa misma ficha (sólo lo que está vacío).
+
+    Origen: BPOA8 (BOPREAL Serie 4A) quedó `SOBERANOS` y sin `maturity_date` tras un
+    round-trip del ABM (`scripts/migrate_orphan_types.py` cuenta la historia); un tipo
+    huérfano deja el bono INVISIBLE en todos los paneles y es el «1 orphan» de
+    `/api/health`. El script lo arregla a mano desde la semilla IAMC, pero prod se toca
+    sólo por `deploy.sh`: esta es la vía versionada de CLAUDE.md, corre sola al arrancar
+    y exactamente una vez por DB. NO adivina: otro emisor, otra hoja o una fila sin
+    ficha quedan como están (las resuelve el operador por ABM) y un tipo ya válido no se
+    toca. FORWARD-ONLY: sólo UPDATE de columnas existentes. Devuelve cuántas filas tocó."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from core.domain.instrument_groups import is_known_type
+
+    n = 0
+    with Session(eng) as s, s.begin():
+        for o in s.execute(select(InstrumentORM)).scalars():
+            if is_known_type(o.instrument_type or ""):
+                continue
+            if (o.sheet or "").strip().lower() != "soberanos":
+                continue
+            raw = dict(o.raw_fields or {})
+            byma = raw.get("byma") or {}
+            if _MIGRACION_V2_EMISOR not in str(byma.get("emisor") or "").lower():
+                continue
+            ficha = byma.get("ficha") or {}
+            vto = _fecha_ficha(ficha.get("fecha_vencimiento"))
+            emi = _fecha_ficha(ficha.get("fecha_emision"))
+            viejo = o.instrument_type
+            o.instrument_type = "BOPREAL"
+            o.day_count = "30/360"                 # convención BOPREAL (prospecto BCRA)
+            if o.maturity_date is None and vto:
+                o.maturity_date = vto
+            if o.emission_date is None and emi:
+                o.emission_date = emi
+            # También al blob del form (MERGE, nunca reemplazo): sin `tipo` el próximo
+            # round-trip del ABM volvería a perderlo.
+            raw["tipo"] = "BOPREAL"
+            if vto and not raw.get("fecha_vencimiento"):
+                raw["fecha_vencimiento"] = vto.isoformat()
+            o.raw_fields = raw
+            flag_modified(o, "raw_fields")
+            logger.warning("catalog v2: %s retipado %s -> BOPREAL desde la ficha BYMA "
+                           "(vto %s, emisión %s).", o.ticker, viejo, vto, emi)
+            n += 1
+    return n
+
+
 # Engine ya inicializado/migrado en este proceso. init_db() se llama ~39 veces
 # (cada operación ABM lo invoca defensivamente); tras la primera corrida exitosa
 # sobre un engine dado, el resto son no-op — sin re-inspección de schema ni el
@@ -149,6 +215,14 @@ def init_db() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_instr_isin ON instruments (isin)",
             ):
                 conn.exec_driver_sql(ddl)
+        # Migraciones de DATOS versionadas: exactamente una vez por DB, en orden, ANTES
+        # de sellar la versión vigente (si una falla, la DB queda en la versión anterior
+        # y vuelve a intentarse en el próximo arranque).
+        if get_schema_version() < 2:
+            n = _migrate_v2_bopreal_huerfanos(eng)
+            if n:
+                logger.warning("catalog: migración v2 — %d BOPREAL huérfano(s) retipados "
+                               "desde la ficha BYMA.", n)
         _stamp_schema_version(eng, CURRENT_SCHEMA_VERSION)
         _INITIALIZED_ENGINE = eng
 

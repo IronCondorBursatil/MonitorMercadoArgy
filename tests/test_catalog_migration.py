@@ -164,6 +164,106 @@ def test_init_db_reruns_after_engine_reconfigure(tmp_path, restore_engine, monke
     assert calls["n"] > first, "un engine nuevo debe volver a migrar"
 
 
+# ── v2: BOPREAL huérfanos retipados desde la ficha BYMA guardada ─────────────
+def _db_v1_con(tmp_path, *filas):
+    """DB con el schema completo, sellada en v1, con las filas dadas."""
+    from datetime import date as _d
+
+    from core.infrastructure.db.catalog_repository import Base, _stamp_schema_version
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import InstrumentORM
+
+    eng = configure(str(tmp_path / "v1.db"))
+    Base.metadata.create_all(eng)
+    with SessionLocal.begin() as s:
+        for f in filas:
+            fila = dict(day_count="ACT/365.25", cer_lag=10, payment_frequency=2)
+            fila.update(f)
+            s.add(InstrumentORM(**fila))
+    _stamp_schema_version(eng, 1)
+    assert get_schema_version() == 1
+    return _d
+
+
+_FICHA_BCRA = {"tipoEspecie": "Títulos Públicos", "securityType": "GO",
+               "emisor": "Banco Central de la República Argentina",
+               "ficha": {"moneda": "Dólares", "fecha_emision": "2025-06-24",
+                         "fecha_vencimiento": "2028-10-31"}}
+
+
+def _orm(ticker):
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import InstrumentORM
+    with SessionLocal() as s:
+        o = s.get(InstrumentORM, ticker)
+        assert o is not None, ticker
+        return o
+
+
+def test_v2_retipa_el_bopreal_huerfano_desde_la_ficha_byma(tmp_path, restore_engine):
+    """BPOA8 (BOPREAL Serie 4A) quedó con `instrument_type='SOBERANOS'` —huérfano,
+    invisible en todos los paneles— y sin vencimiento tras un round-trip del ABM, con
+    la ficha BYMA intacta en `raw_fields["byma"]`. La migración v2 lo retipa desde esa
+    ficha (emisor BCRA + hoja Soberanos = BOPREAL) y le repone vencimiento y emisión.
+    Es la vía versionada de CLAUDE.md: corre sola al arrancar cada entorno, una vez."""
+    d = _db_v1_con(tmp_path, dict(ticker="BPOA8", short_name="BPOA8", sheet="Soberanos",
+                                  instrument_type="SOBERANOS", isin="AR0029227748",
+                                  raw_fields={"origen": "IAMC", "byma": _FICHA_BCRA}))
+    init_db()
+
+    o = _orm("BPOA8")
+    assert o.instrument_type == "BOPREAL"
+    assert o.maturity_date == d(2028, 10, 31)
+    assert o.emission_date == d(2025, 6, 24)
+    assert o.day_count == "30/360"                     # convención BOPREAL (prospecto BCRA)
+    # El blob del form también: sin `tipo` el próximo round-trip del ABM lo volvería a
+    # perder. MERGE: `origen` y la ficha siguen ahí.
+    assert o.raw_fields["tipo"] == "BOPREAL"
+    assert o.raw_fields["fecha_vencimiento"] == "2028-10-31"
+    assert o.raw_fields["origen"] == "IAMC" and o.raw_fields["byma"] == _FICHA_BCRA
+    assert get_schema_version() == CURRENT_SCHEMA_VERSION >= 2
+
+
+def test_v2_no_adivina_fuera_del_caso_bcra_ni_pisa_lo_que_ya_esta(tmp_path, restore_engine):
+    """Sólo se retipa lo que la ficha permite afirmar: otro emisor queda huérfano (lo
+    resuelve el operador por ABM), un BOPREAL ya bien tipado no se toca aunque tenga
+    otro vencimiento cargado, y una fila sin ficha queda como está."""
+    d = _db_v1_con(
+        tmp_path,
+        dict(ticker="XX1", short_name="x", sheet="Soberanos", instrument_type="SOBERANOS",
+             raw_fields={"byma": {**_FICHA_BCRA, "emisor": "Gobierno Nacional"}}),
+        dict(ticker="BPOB8", short_name="BPB8D", sheet="Soberanos", instrument_type="BOPREAL",
+             maturity_date=__import__("datetime").date(2028, 10, 31), day_count="30/360",
+             raw_fields={"tipo": "BOPREAL", "byma": _FICHA_BCRA}),
+        dict(ticker="XX2", short_name="x", sheet="Soberanos", instrument_type="SOBERANOS",
+             raw_fields={"origen": "IAMC"}),
+        dict(ticker="XX3", short_name="x", sheet="Obligaciones_Negociables",
+             instrument_type="OBLIGACIONES_NEGOCIABLES", raw_fields={"byma": _FICHA_BCRA}),
+    )
+    init_db()
+
+    assert _orm("XX1").instrument_type == "SOBERANOS" and _orm("XX1").maturity_date is None
+    assert _orm("BPOB8").instrument_type == "BOPREAL" and _orm("BPOB8").maturity_date == d(2028, 10, 31)
+    assert _orm("XX2").instrument_type == "SOBERANOS"
+    assert _orm("XX3").instrument_type == "OBLIGACIONES_NEGOCIABLES"   # otra hoja: no es BCRA-bono
+
+
+def test_v2_no_vuelve_a_correr_sobre_una_db_ya_sellada(tmp_path, restore_engine, monkeypatch):
+    """Exactamente una vez: con la DB en la versión vigente el paso v2 no se invoca."""
+    import core.infrastructure.db.catalog_repository as cr
+
+    _db_v1_con(tmp_path)
+    init_db()
+    assert get_schema_version() == CURRENT_SCHEMA_VERSION
+
+    calls = {"n": 0}
+    monkeypatch.setattr(cr, "_migrate_v2_bopreal_huerfanos",
+                        lambda eng: (calls.__setitem__("n", calls["n"] + 1), 0)[1])
+    configure(str(tmp_path / "v1.db"))          # engine nuevo sobre la MISMA DB ya sellada
+    init_db()
+    assert calls["n"] == 0
+
+
 def test_concurrent_duplicate_column_is_tolerated(tmp_path, restore_engine, monkeypatch):
     """F6: si otro proceso agregó la columna entre el inspect y el ALTER (carrera de
     dos procesos sobre una DB con schema viejo), el 'duplicate column' no debe
