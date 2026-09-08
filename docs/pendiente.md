@@ -31,6 +31,14 @@ de decisiones (`docs/decisiones.md`).
   día); sustitutos vivos con corte del mismo informe: TTS26 (169,10 / TIR 22,56 %) y TTD26
   (169,00 / 24,78 %). IAMC no publica el informe diario desde 2026-05-26 y su feed en BYMA
   open está paywalleado.
+- **TMVE8: verificar la primera cotización cargada** contra `V.Téc = max(tc_inicial × riel
+  TAMAR, 100 × A3500)` — la escala se confirmó el 2026-09-08 con Data912 (`c=139680`, o sea
+  pesos por 100 VN denominados en USD, como TZVD8/D31M7 y no como los duales TAMAR), pero
+  todavía no hubo una rueda con el papel en el catálogo: el primer día que aparezca, contrastar
+  precio, V.Téc y paridad antes de dar por buena la columna.
+- **`/escenarios`: `DUAL_DL_TAMAR` hereda beta FX 0 del grupo TAMAR** — cuando manda el riel
+  dólar la posición se mueve ~1:1 con el dólar, así que el escenario la muestra insensible al
+  FX y subestima el impacto. Revisar cuando haya posición cargada.
 - **`scripts/init_admin.py` usa `Base.metadata.create_all`** y no `init_db()` de
   `catalog_repository` (hallazgo lateral de la prueba de docs 2026-09-07, ya señalado en
   `docs/auditoria-2026-08-31.md` ítem 2.3, **no verificado en vivo**): sobre una DB restaurada

@@ -341,19 +341,30 @@ Tres caminos, en este orden (`_xirr_from_years`, `:151-209`):
 - Caso: TMVE8 (emisión 2026-07-31, vto 2028-01-31). Ficha BYMA: a vencimiento paga el máximo
   entre el VN al **tipo de cambio aplicable** y el VN al **tipo de cambio inicial** más TAMAR
   TEM capitalizable mensual. Spec: `docs/superpowers/specs/2026-09-08-dual-dl-tamar-design.md`.
-- **Payoff** (`pricing/strategies.py::dual_dl_tamar_payoff_at`): `max(riel TAMAR, 100 × FX /
-  fx_base)`. Riel TAMAR = `tamar_dual_payoff_at` sin modificar (capitalización mensual 30/360
-  desde la emisión, `spread_rate` sumado a la TNA). Riel DL: FX = mayorista venta vivo
-  (`fx.get_mayorista_venta`, el mismo de Dólar Linked), fallback A3500 BCRA al settle; **sin
-  proyectar el dólar** (decisión 2026-09-08). `fx_base` = `raw_fields["tc_inicial"]`.
-- **TIR**: TEA nominal en pesos `(payoff/precio)^(1/años) − 1`, `años = year_fraction_to`
-  (30/360). **V.Téc** = max de rieles devengado al settle; 100 antes de la emisión. **MD**
-  bullet m=12. `price_from_tir` inversa exacta. Sin `fx_base`/FX/TAMAR → None (no se precia
-  con el riel TAMAR solo).
+- **ESCALA DEL PRECIO** (corrección de la revisión final, 2026-09-08): cotiza en **pesos por
+  100 VN denominados en USD**, como los dólar-linked, NO por 100 VN en pesos como los duales
+  TAMAR. Data912 2026-09-08 → TMVE8 `139.680`, TZVD8 `118.650`, D31M7 `147.800`, contra
+  TTS26 `169,5`, TMF27 `121,75`, TXMJ8 `99,5`; la ficha BYMA dice «moneda: Dólares» y «el
+  Valor Nominal emitido convertido a Pesos». Las dos patas del payoff van en esa escala.
+- **Payoff** (`pricing/strategies.py::dual_dl_tamar_payoff_at`): `max(fx_base × riel TAMAR,
+  100 × FX)`. Riel TAMAR = `tamar_dual_payoff_at` sin modificar (capitalización mensual
+  30/360 desde la emisión per 100 USD, `spread_rate` sumado a la TNA) llevado a pesos por el
+  **TC inicial**. Riel DL = los 100 USD del VN al dólar del settle: FX = mayorista venta vivo
+  (`fx.get_mayorista_venta`, el mismo de Dólar Linked), fallback A3500 BCRA al settle (también
+  si el vivo viene `0`: un 0 es dato ausente); **sin proyectar el dólar** (decisión
+  2026-09-08). `fx_base` = `raw_fields["tc_inicial"]`.
+- **TIR**: TEA nominal en pesos `(payoff/precio)^(1/años) − 1`, con el precio en pesos por 100
+  VN USD y `años = year_fraction_to` (30/360). **V.Téc** = max de rieles devengado al settle;
+  `100 × fx_base` (100 USD al TC inicial) antes de la emisión. **MD** bullet m=12.
+  `price_from_tir` inversa exacta. Sin `fx_base`/FX/TAMAR → None (no se precia con el riel
+  TAMAR solo).
 - Grupo propio `instrument_groups.DUAL_DL` (fuera de BEI y de la curva `tamar`; adentro del
   panel TAMAR/Dual, `_ALL_TYPES` y la cartera). Tipo analítico: fila ancla, sin schedule.
-- Popup: `<T>_TAM` (TEA del riel TAMAR, clon PURO) y `<T>_DL` (TIR en USD del riel DL: clon
-  `DOLAR_LINKED` zero-coupon de 100 USD a vto, precio ÷ mayorista).
+- Popup: **sólo** la pata `<T>_DL` (TIR en USD del riel DL: clon `DOLAR_LINKED` zero-coupon
+  de 100 USD a vto, precio ÷ mayorista; su V.Téc `100 × FX` es el mismo riel DL de la vista
+  base). La pata `<T>_TAM` **no existe para este tipo**: el clon PURO precia per-100 pesos y
+  el precio viene per-100 USD — quedaría en otra escala. La TEA del max de rieles la publica
+  la vista base.
 - Guardianes: `tests/test_dual_dl_tamar.py` (rieles, V.Téc, round-trip, m=12, None),
   `tests/test_bond_detail_leg_dl.py`, `tests/test_abm_dual_dl_tamar.py`. Sin golden externo
   todavía (inventario).
@@ -559,7 +570,7 @@ golden, es una foto del motor.
 | LECAP (payoff sintetizado) | **2** | S29Y6 (132,0438), S15S6 (107,21) | referencia oficial (TNA 21,09 % de S29Y6) | pendiente | `tests/test_cashflow_synth.py:46-78` |
 | Calendario y `cer_base` contra BCRA | **6 fechas + 2 cer_base** | 4 feriados + 1 fecha espuria + 1 liquidación T+1; TZXS7/TZXS8/TZXM8 (723.06 → 2026-03-13), X29Y6/TZXA7 (651.89806 → 2025-11-12) | argentinadatos / Boletín Oficial; BCRA variable 30 | declarada en el docstring | `tests/test_holiday_calendar.py` |
 | **CER (TIR real / paridad / V.Téc / MD)** | **1 corte + 2 intradía** | TX28 @ 1.719 (cierre 24hs BYMA 2026-09-03): TIR 8,82 % · paridad 93,14 % · MD 1,08 → motor 8,822 % / 93,140 % / 1,081. Secundarios 2026-09-07: Bonistas @1738 (8,11 % / 93,89 % / VT 1851,03) y Docta @1737,50 | Banco Hipotecario, Informe Diario (PDF público); Bonistas.com; Docta | **declarada** en el docstring y en `tests/fixtures/tx28_2026-09-03.json` (valores textuales, URLs, serie CER BCRA var 30, fecha de captura, qué NO declara cada fuente) | `tests/test_golden_tx28.py` (17 tests; discrimina T+0, lag 0, day-count y CER ±1 %) |
-| **TAMAR / DUAL / DUAL_CER_TAMAR** | **0** ejecutables | TTJ26: precio 158,20 → V.Téc 146,39 / payback 164,32 / TIR EA 39,06 % | IAMC | solo docstring `core/domain/pricing/tamar.py:3-5` | — |
+| **TAMAR / DUAL / DUAL_CER_TAMAR / DUAL_DL_TAMAR** | **0** ejecutables | TTJ26: precio 158,20 → V.Téc 146,39 / payback 164,32 / TIR EA 39,06 %. `DUAL_DL_TAMAR` (TMVE8): **sin golden** — sólo la escala del precio confirmada con Data912 el 2026-09-08 (139.680) | IAMC | solo docstring `core/domain/pricing/tamar.py:3-5` | — |
 
 - **BONCER cerrado (2026-09-07)**: el golden de TX28 confirma que la TIR publicada por el
   mercado para un CER es **real sobre CER y efectiva anual**, y que el V.Téc usa el CER de

@@ -114,11 +114,12 @@ Cada uno es la regla + su porqué. La historia y el detalle están en `docs/` (�
   rieles, en ese orden (ya se rompió dos veces). Contrato paso a paso en el docstring de
   `core/domain/pricing/tamar.py`: leerlo ANTES de tocar `tamar_dual_payoff_at` o
   `calculate_technical_value`.
-- **Payoff DUAL_DL_TAMAR** (`DualDlTamarStrategy`, `pricing/strategies.py`): max entre el
-  riel TAMAR (`tamar_dual_payoff_at` sin tocar) y `100 × FX mayorista/A3500 del settle SIN
-  proyectar / fx_base`; TIR TEA nominal, V.Téc = max de rieles devengado, MD m=12 — mismo
-  patrón que DUAL_CER_TAMAR. Sin `fx_base` o sin FX vivo: `None`, nunca se precia con el riel
-  TAMAR solo. Detalle: `docs/convenciones-financieras.md` › «Bonos DUAL DÓLAR-LINKED / TAMAR».
+- **DUAL_DL_TAMAR (TMVE8)**: cotiza en pesos por 100 VN en USD, como los dólar-linked;
+  payoff = `max(fx_base × riel TAMAR, 100 × FX)` con FX = mayorista venta vivo y, si no hay,
+  el fixing A3500 del settle — **sin proyectar**, sin lag ni spread en el riel DL; reusa
+  `tamar_dual_payoff_at` sin tocarlo. Sin `fx_base`, sin ningún FX o sin serie TAMAR →
+  `None`: nunca se precia con el riel TAMAR solo. Grupo propio `DUAL_DL` (fuera de BEI y de
+  la curva `tamar`). Popup: sólo la pata `_DL` (TIR en USD).
 - **Un `0`/`≤0` de una fuente externa es dato AUSENTE**, no un valor (precio 0 de la activa,
   `ccp<=0` en FCI, `tem: 0` en letras): se descarta, no se usa.
 - **Alias de precio**: una variante sin símbolo propio (TY30PUT = TY30P con el put ejercido)
