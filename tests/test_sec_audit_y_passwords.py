@@ -212,7 +212,7 @@ def test_cambiar_permisos_NO_cierra_la_sesion(usuarios):
         _login_admin(admin_c)
         with SessionLocal() as s:
             bob_id = s.query(UserORM).filter(UserORM.username == "bob").first().id
-        admin_c.post(f"/users/update/{bob_id}", data={"tabs": ["bonos", "fci"]})
+        admin_c.post(f"/users/{bob_id}/permisos", data={"tabs": ["bonos", "fci"]})
         assert bob_c.get("/", follow_redirects=False).status_code == 200
 
 
@@ -251,7 +251,7 @@ def test_la_columna_entra_por_migracion_forward_only(tmp_path):
 # ── Hallazgos de la auditoría 2026-09-04 ─────────────────────────────────────
 
 def test_la_promocion_a_admin_QUEDA_registrada(usuarios, caplog):
-    """`update_user` es el unico handler que OTORGA privilegios y era el unico de los
+    """`update_permisos` es el unico handler que OTORGA privilegios y era el unico de los
     cuatro sin linea de auditoria: promover a alguien a administrador --la accion mas
     sensible de toda la ABM-- no dejaba rastro en ningun lado.
 
@@ -262,7 +262,7 @@ def test_la_promocion_a_admin_QUEDA_registrada(usuarios, caplog):
         with SessionLocal() as s:
             bob = s.query(UserORM).filter(UserORM.username == "bob").first().id
         with caplog.at_level(logging.INFO, logger="monitor.audit"):
-            c.post(f"/users/update/{bob}", data={"is_admin": "true"})
+            c.post(f"/users/{bob}/permisos", data={"is_admin": "true"})
 
     lineas = _lineas(caplog)
     assert any("action=update" in m and "target=bob" in m for m in lineas), lineas

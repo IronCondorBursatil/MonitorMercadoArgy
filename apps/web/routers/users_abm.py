@@ -7,11 +7,8 @@ from sqlalchemy.orm import Session
 
 from apps.web.deps_auth import get_db, get_admin_user_html
 from apps.web.templates import TEMPLATES as _TEMPLATES
-# email_invalido/normalizar_email: sin uso todavía en este módulo (los consumen los
-# handlers POST /users/{id}/datos de las Tasks 6-8); se importan ya para no repetir
-# el import en cada task siguiente.
 from apps.web.users_service import (TABS, TAB_KEYS, actividad_reciente, resumen,
-                                    vista_usuario, email_invalido, normalizar_email)  # noqa: F401
+                                    vista_usuario, email_invalido, normalizar_email)
 from core.infrastructure.db.models import UserORM
 from core.security import get_password_hash, password_invalida
 
@@ -170,7 +167,7 @@ def reset_password(request: Request, user_id: int, password: str = Form(...),
         return _users_page(request, db, status_code=400, error=invalida)
 
     user.hashed_password = get_password_hash(password)
-    # Cierra las sesiones abiertas de ese usuario. NO se hace en `update_user`: los
+    # Cierra las sesiones abiertas de ese usuario. NO se hace en `update_permisos`: los
     # permisos se releen de la base en cada request, asi que una degradacion ya es
     # inmediata y bumpear ahi solo desloguearia gente sin comprar nada.
     user.token_version = (user.token_version or 0) + 1
@@ -181,8 +178,33 @@ def reset_password(request: Request, user_id: int, password: str = Form(...),
     return _users_page(request, db,
                        success=f"Contraseña actualizada para {user.username}.")
 
-@router.post("/users/update/{user_id}", response_class=HTMLResponse)
-def update_user(
+@router.post("/users/{user_id}/datos", response_class=HTMLResponse)
+def update_datos(request: Request, user_id: int, full_name: str = Form(""), email: str = Form(""),
+                 notes: str = Form(""), db: Session = Depends(get_db),
+                 admin: UserORM = Depends(get_admin_user_html)):
+    user = db.get(UserORM, user_id)
+    if not user:
+        return _no_existe(request, db, user_id)
+    mail = normalizar_email(email)
+    invalido = email_invalido(mail)
+    if invalido:
+        return _users_page(request, db, status_code=400, selected_id=user_id, error=invalido)
+    if mail and db.query(UserORM).filter(UserORM.email == mail, UserORM.id != user_id).first():
+        return _users_page(request, db, status_code=400, selected_id=user_id,
+                           error=f"Ya hay otro usuario con el email {mail}.")
+    user.full_name = _texto(full_name, _NOMBRE_MAX)
+    user.email = mail
+    user.notes = _texto(notes, _NOTAS_MAX)
+    db.commit()
+    _audit.info("users action=datos by=%s target=%s email=%s",
+                _limpio(getattr(admin, "username", "?")), _limpio(user.username),
+                _limpio(mail or "-"), extra={"console": True})
+    return _users_page(request, db, selected_id=user_id,
+                       success=f"Datos actualizados para {user.username}.")
+
+
+@router.post("/users/{user_id}/permisos", response_class=HTMLResponse)
+def update_permisos(
     request: Request,
     user_id: int,
     is_admin: bool = Form(False),
@@ -190,29 +212,27 @@ def update_user(
     db: Session = Depends(get_db),
     admin: UserORM = Depends(get_admin_user_html),
 ):
-    user = db.query(UserORM).filter(UserORM.id == user_id).first()
+    user = db.get(UserORM, user_id)
     if not user:
         return _no_existe(request, db, user_id)
 
-    # Avoid removing admin from the last admin
+    # No quitarle el rol al último admin
     if user.is_admin and not is_admin:
         admins = db.query(UserORM).filter(UserORM.is_admin.is_(True)).count()
         if admins <= 1:
-            return _users_page(
-                request, db,
-                error="No puedes quitarle el rol de admin al último administrador.")
+            return _users_page(request, db, selected_id=user_id,
+                               error="No puedes quitarle el rol de admin al último administrador.")
 
     antes_admin, antes_tabs = user.is_admin, list(user.allowed_tabs or [])
     user.is_admin = is_admin
-    user.allowed_tabs = ["*"] if is_admin else tabs
+    user.allowed_tabs = ["*"] if is_admin else _tabs_validas(tabs)
     db.commit()
-    # La PROMOCION A ADMIN es la accion mas sensible de toda la ABM y era la unica de
-    # los cuatro handlers que no quedaba registrada en ningun lado (auditoria
-    # 2026-09-04). Se loguea el estado ANTES y DESPUES: "quien tenia que rol" es
-    # justo lo que se quiere reconstruir despues de un incidente.
+    # La PROMOCIÓN A ADMIN es la acción más sensible de la ABM: se loguea el estado
+    # ANTES y DESPUÉS ("quién tenía qué rol" es lo que se reconstruye tras un incidente).
     _audit.info("users action=update by=%s target=%s is_admin=%s->%s tabs=%s->%s",
                 _limpio(getattr(admin, "username", "?")), _limpio(user.username),
                 bool(antes_admin), bool(is_admin),
                 _limpio(",".join(antes_tabs)),
                 _limpio(",".join(user.allowed_tabs or [])), extra={"console": True})
-    return _users_page(request, db, success=f"Permisos actualizados para {user.username}.")
+    return _users_page(request, db, selected_id=user_id,
+                       success=f"Permisos actualizados para {user.username}.")

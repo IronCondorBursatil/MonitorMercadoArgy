@@ -263,3 +263,51 @@ def test_la_ficha_es_un_fragmento(usuarios):
     assert f'action="/users/{bob}/sesiones/cerrar"' in r.text
     assert f'action="/users/{bob}/estado"' in r.text
     assert r404.status_code == 404
+
+
+# ── POST datos / permisos ───────────────────────────────────────────────────
+@pytest.mark.noauth
+def test_datos_guarda_normaliza_y_mantiene_la_ficha_abierta(usuarios):
+    bob = _bob_id()
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.post(f"/users/{bob}/datos",
+                   data={"full_name": "  Roberto Pérez ", "email": " Bob.Perez@Ejemplo.COM ",
+                         "notes": "cliente"})
+    assert r.status_code == 200 and f'action="/users/{bob}/datos"' in r.text
+    with SessionLocal() as s:
+        b = s.get(UserORM, bob)
+        assert (b.full_name, b.email, b.notes) == ("Roberto Pérez", "bob.perez@ejemplo.com", "cliente")
+
+
+@pytest.mark.noauth
+def test_datos_rechaza_email_invalido_o_duplicado(usuarios):
+    bob = _bob_id()
+    with SessionLocal() as s:
+        s.query(UserORM).filter(UserORM.username == "admin").first().email = "admin@ejemplo.com"
+        s.commit()
+    with TestClient(app) as c:
+        _login_admin(c)
+        assert c.post(f"/users/{bob}/datos", data={"email": "sin-arroba"}).status_code == 400
+        assert c.post(f"/users/{bob}/datos", data={"email": "ADMIN@ejemplo.com"}).status_code == 400
+        assert c.post("/users/999999/datos", data={"email": ""}).status_code == 404
+        # vaciar el email es válido
+        assert c.post(f"/users/{bob}/datos", data={"email": ""}).status_code == 200
+    with SessionLocal() as s:
+        assert s.get(UserORM, bob).email is None
+
+
+@pytest.mark.noauth
+def test_permisos_reemplaza_a_update_y_conserva_los_guards(usuarios):
+    bob = _bob_id()
+    with SessionLocal() as s:
+        admin_id = s.query(UserORM).filter(UserORM.username == "admin").first().id
+    with TestClient(app) as c:
+        _login_admin(c)
+        assert c.post(f"/users/{bob}/permisos", data={"tabs": ["bonos", "fci", "inventada"]}).status_code == 200
+        r = c.post(f"/users/{admin_id}/permisos", data={"is_admin": "false", "tabs": ["bonos"]})
+        assert "último administrador" in r.text
+        assert c.post("/users/999999/permisos", data={"tabs": ["bonos"]}).status_code == 404
+    with SessionLocal() as s:
+        assert s.get(UserORM, bob).allowed_tabs == ["bonos", "fci"]     # la inventada no entra
+        assert s.get(UserORM, admin_id).is_admin is True
