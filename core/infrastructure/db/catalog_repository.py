@@ -248,6 +248,20 @@ def _coupon_pct(raw_fields) -> Optional[float]:
         return None
 
 
+_PRECIO_DE = "precio_de:"
+
+
+def _price_alias(raw) -> Optional[str]:
+    """`raw_fields["precio_fallback"] = "precio_de:TY30P"` → `"TY30P"`; cualquier otra
+    forma (o la clave ausente) → None. Es la única forma soportada del alias de precio
+    (`Instrument.price_alias`): el instrumento cotiza con la cotización de OTRO símbolo.
+    La clave la llevaba TY30PUT desde su alta y ningún código la leía (cero precios)."""
+    v = str((raw or {}).get("precio_fallback") or "").strip()
+    if not v.lower().startswith(_PRECIO_DE):
+        return None
+    return v[len(_PRECIO_DE):].strip().upper() or None
+
+
 def _orm_to_domain(orm: InstrumentORM) -> Instrument:
     return Instrument(
         ticker=orm.ticker, short_name=orm.short_name, instrument_type=orm.instrument_type,
@@ -273,6 +287,7 @@ def _orm_to_domain(orm: InstrumentORM) -> Instrument:
         serie_clase=(orm.raw_fields or {}).get("serie_clase") or None,
         coupon_rate=_coupon_pct(orm.raw_fields),   # cupón anual % (display-only)
         sector_override=(orm.raw_fields or {}).get("sector_override") or None,  # categoría manual ABM
+        price_alias=_price_alias(orm.raw_fields),   # "precio_de:X" → cotiza con X
     )
 
 

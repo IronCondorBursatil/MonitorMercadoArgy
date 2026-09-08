@@ -483,6 +483,22 @@ def _live_metrics(
     }
 
 
+def _snapshot_live(provider, base_ticker: str, instrument: Instrument, ref_date) -> MarketSnapshot:
+    """Cotización live del ticker o, si el bono cotiza con el precio de OTRO símbolo
+    (`Instrument.price_alias`: TY30PUT ← TY30P), la de ese símbolo. Sin cotización,
+    un snapshot vacío (price None) para que el popup igual se arme."""
+    alias = instrument.price_alias
+    pedidos = [base_ticker] + ([alias] if alias and alias != base_ticker else [])
+    snapshots = provider.fetch_snapshots(pedidos)
+    snapshot = snapshots.get(base_ticker)
+    if snapshot is None and alias:
+        snapshot = snapshots.get(alias)
+    if snapshot is None:
+        return MarketSnapshot(instrument=instrument, price=None, last_update=ref_date)
+    snapshot.instrument = instrument
+    return snapshot
+
+
 def get_bond_detail(
     ticker: str, repo, provider, indices, fx,
     *, historical_supported: Optional[set] = None,
@@ -504,14 +520,7 @@ def get_bond_detail(
     base_ticker, instrument, indices_eff, leg, ticker_u = resolved
 
     ref_date = _resolve_ref(settlement_lag)
-    snapshots = provider.fetch_snapshots([base_ticker])
-    snapshot = snapshots.get(base_ticker)
-    if snapshot is None:
-        snapshot = MarketSnapshot(
-            instrument=instrument, price=None, last_update=ref_date,
-        )
-    else:
-        snapshot.instrument = instrument
+    snapshot = _snapshot_live(provider, base_ticker, instrument, ref_date)
 
     fx_rate = None
     if fx is not None:
@@ -576,14 +585,7 @@ def calculate(
     ref_date = _resolve_ref(settlement_lag)
 
     # Snapshot mínimo (no precisamos quotes live — el usuario ya provee el precio).
-    snapshots = provider.fetch_snapshots([base_ticker])
-    snapshot = snapshots.get(base_ticker)
-    if snapshot is None:
-        snapshot = MarketSnapshot(
-            instrument=instrument, price=None, last_update=ref_date,
-        )
-    else:
-        snapshot.instrument = instrument
+    snapshot = _snapshot_live(provider, base_ticker, instrument, ref_date)
 
     accrued = FinancialEngine.accrued_interest(instrument, ref_date)
     residual = FinancialEngine.residual_nominal(instrument, ref_date)

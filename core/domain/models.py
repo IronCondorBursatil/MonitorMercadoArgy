@@ -85,6 +85,11 @@ class Instrument(BaseModel):
     serie_clase: Optional[str] = None  # ON: "Clase XXXI" / "Serie 13 Clase A"; display-only (vive en raw_fields)
     coupon_rate: Optional[float] = None  # cupón anual nominal % (raw_fields "cupon anual %"); display-only
     sector_override: Optional[str] = None  # ON: sector elegido a mano en ABM (raw_fields["sector_override"])
+    # Cotiza con el precio de OTRO símbolo (raw_fields["precio_fallback"] = "precio_de:X").
+    # Caso real: TY30PUT es el BONTE 2030 (TY30P) con el put ejercido el 2027-05-30 —
+    # mismo papel, otro schedule— y no tiene símbolo propio en BYMA ni Data912. El
+    # use-case y el popup piden la cotización de X cuando el ticker propio no cotiza.
+    price_alias: Optional[str] = None
 
     # ------------------------------------------------------------------ #
     # Memos de pricing. Viven en `__pydantic_private__` (mutable aunque el modelo

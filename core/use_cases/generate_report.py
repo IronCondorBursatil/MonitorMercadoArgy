@@ -113,7 +113,12 @@ class GenerateMonitorReport:
             return []
 
         tickers = [i.ticker for i in all_instruments]
-        snapshots_dict = self.provider.fetch_snapshots(tickers)
+        # Alias de precio (`Instrument.price_alias`: TY30PUT cotiza con TY30P): se pide
+        # también el símbolo origen, que puede no estar entre los tipos de esta corrida.
+        alias_de = {i.ticker: i.price_alias for i in all_instruments if i.price_alias}
+        propios = set(tickers)
+        extra = [a for a in dict.fromkeys(alias_de.values()) if a not in propios]
+        snapshots_dict = self.provider.fetch_snapshots(tickers + extra)
 
         # SERIAL a propósito. El pricing es CPU puro en Python: con el GIL, N threads
         # no dan speedup — solo pagan el despacho (14,7 ms por 1.106 tareas) y meten
@@ -126,6 +131,10 @@ class GenerateMonitorReport:
         results = []
         for inst in all_instruments:
             snapshot = snapshots_dict.get(inst.ticker)
+            if snapshot is None and inst.price_alias:
+                origen = snapshots_dict.get(inst.price_alias)
+                # COPIA: `instrument` se asigna abajo y el original es del otro bono.
+                snapshot = origen.model_copy() if origen is not None else None
             if snapshot is None:
                 continue
             snapshot.instrument = inst
@@ -164,7 +173,8 @@ class GenerateMonitorReport:
         # filters Nones out of the result list.
         try:
             today = date.today()
-            bases = _hist_bases(inst.ticker, today, self.provider)
+            # Las variaciones también salen del histórico del alias (mismo papel).
+            bases = _hist_bases(inst.price_alias or inst.ticker, today, self.provider)
 
             # Pricing snapshot: para la pata ARS de un soberano usamos el precio
             # USD implícito (pesos ÷ MEP/CABLE) → TIR/V.Téc/MD/paridad correctas.

@@ -109,6 +109,11 @@ Cada uno es la regla + su porqué. La historia y el detalle están en `docs/` (�
   `calculate_technical_value`.
 - **Un `0`/`≤0` de una fuente externa es dato AUSENTE**, no un valor (precio 0 de la activa,
   `ccp<=0` en FCI, `tem: 0` en letras): se descarta, no se usa.
+- **Alias de precio**: una variante sin símbolo propio (TY30PUT = TY30P con el put ejercido)
+  lleva `raw_fields.precio_fallback = "precio_de:<TICKER>"` → `Instrument.price_alias`; el
+  use-case y el popup piden ese símbolo cuando el propio no cotiza y precian con una COPIA
+  del snapshot. Es la única forma soportada; sin cotización del alias el bono queda sin
+  precio, no rompe.
 
 **Web**
 - **`apps/web/static/js/on.js` es AUTO-GENERADO** por `scripts/build_on_static.py` desde
