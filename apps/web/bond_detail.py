@@ -110,7 +110,8 @@ def _parse_leg_ticker(ticker_u: str):
 def _apply_leg(instrument: Instrument, leg: Optional[str]):
     """Transforma el instrumento según el leg solicitado.
 
-    - TAM: clona como PURO (sin floor) — TAMAR puro.
+    - TAM: clona como PURO (sin floor) — TAMAR puro. NO aplica a DUAL_DL_TAMAR (escala:
+           ver el guard de `_resolve_instrument_and_leg`).
     - TF:  mantiene el instrumento DUAL pero devuelve _ZeroTamar como indices
            override, de modo que max(TAMAR=0, floor) = floor siempre.
     - CER: sin transformación (devuelve el instrumento original).
@@ -130,9 +131,10 @@ def _apply_leg(instrument: Instrument, leg: Optional[str]):
     if leg == "DL":
         # Riel dólar-linked SOLO: el mismo papel como DOLAR_LINKED zero-coupon de 100 USD a
         # vencimiento → DolarLinkedStrategy publica la TIR en USD (precio ÷ mayorista) y el
-        # V.Téc en pesos (100 × FX). Sin código nuevo de pricing.
+        # V.Téc en pesos (100 × FX). Sin código nuevo de pricing. (Sin `cer_base`:
+        # `DolarLinkedStrategy` no lo lee — era configuración muerta.)
         return instrument.model_copy(update={
-            "instrument_type": "DOLAR_LINKED", "cer_base": 1.0, "floor_rate_monthly": None,
+            "instrument_type": "DOLAR_LINKED", "floor_rate_monthly": None,
             "spread_rate": None,
             "cashflows": (Cashflow(date=instrument.maturity_date, amortization=100.0,
                                    interest=0.0),),
@@ -164,6 +166,11 @@ def _resolve_instrument_and_leg(ticker: str, repo, indices):
         return None
     # DL sólo existe donde hay riel dólar-linked (y un vencimiento para el flujo único).
     if leg == "DL" and not (instrument.is_dual_dl_tamar and instrument.maturity_date):
+        return None
+    # TAM se retira en DUAL_DL_TAMAR: el clon PURO precia per-100 PESOS y el precio del papel
+    # viene per-100 USD (cotiza en pesos por 100 VN en dólares) → la pata quedaría en otra
+    # escala que el precio. La TEA del max de rieles ya la publica la vista base.
+    if leg == "TAM" and instrument.is_dual_dl_tamar:
         return None
     instrument, indices_override = _apply_leg(instrument, leg)
     # `Any`: `indices` llega sin tipo (duck `IndicesProvider`) y la unión parcial con
@@ -285,13 +292,13 @@ def _bond_metadata(instrument: Instrument, *, leg: Optional[str] = None) -> Dict
     # Floor mensual: DUAL con piso fijo, y también el leg TF.
     if is_dual or leg == "TF":
         meta["floor_rate_monthly"] = _safe(instrument.floor_rate_monthly)
-    # DUAL_DL_TAMAR: el denominador del riel DL, y las dos patas del popup (sólo en la vista
-    # base: dentro de una pata no se anidan).
+    # DUAL_DL_TAMAR: el TC inicial del riel TAMAR, y la ÚNICA pata del popup (sólo en la
+    # vista base: dentro de una pata no se anidan). `_TAM` no va: precia per-100 pesos y el
+    # papel cotiza per-100 USD — ver el guard de `_resolve_instrument_and_leg`.
     if is_dual_dl:
         meta["tc_inicial"] = _safe(instrument.fx_base)
         if leg is None:
-            meta["legs"] = [("Riel TAMAR", f"{instrument.ticker}_TAM"),
-                            ("Riel dólar-linked", f"{instrument.ticker}_DL")]
+            meta["legs"] = [("Riel dólar-linked", f"{instrument.ticker}_DL")]
     return meta
 
 

@@ -496,7 +496,7 @@ def _orm_to_domain(orm: InstrumentORM) -> Instrument:
         coupon_rate=_coupon_pct(orm.raw_fields),   # cupón anual % (display-only)
         sector_override=(orm.raw_fields or {}).get("sector_override") or None,  # categoría manual ABM
         price_alias=_price_alias(orm.raw_fields),   # "precio_de:X" → cotiza con X
-        fx_base=_fx_base(orm.raw_fields),           # riel DL de DUAL_DL_TAMAR
+        fx_base=_fx_base(orm.raw_fields),           # TC inicial de DUAL_DL_TAMAR
     )
 
 

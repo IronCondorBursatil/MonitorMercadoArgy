@@ -87,7 +87,8 @@ class Instrument(BaseModel):
     sector_override: Optional[str] = None  # ON: sector elegido a mano en ABM (raw_fields["sector_override"])
     # DUAL dólar-linked/TAMAR (TMVE8): tipo de cambio INICIAL del prospecto (pesos/USD).
     # Vive en raw_fields["tc_inicial"] —el mismo campo de la hoja Dólar Linked, donde es
-    # inerte— y es el denominador del riel DL: 100 × FX / fx_base. Sin él no hay riel.
+    # inerte— y es lo que lleva el riel TAMAR a pesos: max(fx_base × TAMAR, 100 × FX), con
+    # el precio en pesos por 100 VN USD. Sin él no hay escala y el bono no se precia.
     fx_base: Optional[float] = None
     # Cotiza con el precio de OTRO símbolo (raw_fields["precio_fallback"] = "precio_de:X").
     # Caso real: TY30PUT es el BONTE 2030 (TY30P) con el put ejercido el 2027-05-30 —

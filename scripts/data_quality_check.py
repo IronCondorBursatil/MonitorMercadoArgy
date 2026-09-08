@@ -499,7 +499,7 @@ def test_e2e_cycle() -> None:
     from core.infrastructure.fx_provider import DolarAPIProvider
     from core.infrastructure.indices_provider import BCRAIndicesProvider
     from core.domain.instrument_groups import (
-        BOPREALES, CER, DOLAR_LINKED, DUAL_TAMAR, SOBERANOS, TAMAR, TASA_FIJA,
+        BOPREALES, CER, DOLAR_LINKED, DUAL_DL, DUAL_TAMAR, SOBERANOS, TAMAR, TASA_FIJA,
     )
     from core.use_cases.generate_report import GenerateMonitorReport
     from config.settings import settings
@@ -519,7 +519,7 @@ def test_e2e_cycle() -> None:
 
         ALL = list(dict.fromkeys(
             list(SOBERANOS) + list(CER) + list(BOPREALES) + list(TASA_FIJA)
-            + list(DOLAR_LINKED) + list(TAMAR) + list(DUAL_TAMAR)
+            + list(DOLAR_LINKED) + list(TAMAR) + list(DUAL_TAMAR) + list(DUAL_DL)
         ))
 
         # Warm-up

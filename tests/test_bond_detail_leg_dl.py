@@ -1,7 +1,13 @@
-"""Popup de un DUAL_DL_TAMAR: TEA en pesos en la vista base, pata `_TAM` (riel TAMAR como
-PURO) y pata `_DL` (TIR en USD del riel dólar-linked como DOLAR_LINKED zero-coupon).
-Spec 2026-09-08 §4. Providers stub, sin red; TMVE8 no está en el catálogo de pruebas: el
-repo es un doble; el test de router siembra y limpia en el catálogo compartido."""
+"""Popup de un DUAL_DL_TAMAR: TEA en pesos en la vista base y **una sola** pata, `_DL`
+(TIR en USD del riel dólar-linked como DOLAR_LINKED zero-coupon de 100 USD).
+
+Spec 2026-09-08 §4 + corrección de la revisión final: el papel cotiza en pesos por 100 VN
+**en USD** (Data912 2026-09-08: TMVE8 139.680), así que la vista base ya publica el max de
+rieles en esa escala y la pata `_TAM` se RETIRA — un clon PURO precia per-100 pesos y
+quedaría en otra escala que el precio.
+
+Providers stub, sin red; TMVE8 no está en el catálogo de pruebas: el repo es un doble; el
+test de router siembra y limpia en el catálogo compartido."""
 from __future__ import annotations
 
 from datetime import date
@@ -18,7 +24,8 @@ _EMISION = date(2026, 7, 31)
 _VTO = date(2028, 1, 31)
 _FX_BASE = 1300.0
 _FX = 1500.0
-_PRICE = 120.0
+# Precio en la escala real del papel: pesos por 100 VN USD (≈ 120 USD × 1300).
+_PRICE = 156_000.0
 _HOY = "2026-09-07"
 
 
@@ -73,7 +80,7 @@ def _detail(ticker, repo=None):
                                        settlement_lag=1)
 
 
-def test_la_vista_base_publica_tea_en_pesos_tc_inicial_y_las_dos_patas():
+def test_la_vista_base_publica_tea_en_pesos_tc_inicial_y_la_unica_pata():
     d = _detail("TMVE8")
     assert d is not None and d["ticker"] == "TMVE8"
     settle = bond_detail._resolve_ref(1)
@@ -83,11 +90,13 @@ def test_la_vista_base_publica_tea_en_pesos_tc_inicial_y_las_dos_patas():
     assert d["meta"]["tc_inicial"] == _FX_BASE
     assert d["meta"]["is_tamar_family"] is True
     assert d["meta"]["cupon"] == "max(TAMAR + 0.000%, dólar-linked)"
-    assert d["meta"]["legs"] == [("Riel TAMAR", "TMVE8_TAM"), ("Riel dólar-linked", "TMVE8_DL")]
-    # El payback proyectado de la tabla de flujos es el max de rieles (necesita el FX).
+    assert d["meta"]["legs"] == [("Riel dólar-linked", "TMVE8_DL")]
+    # El payback proyectado de la tabla de flujos es el max de rieles en pesos por 100 VN USD
+    # (necesita el FX). Con FX 1500 manda el riel TAMAR: 1300 × ≈156 ≈ 202.900.
     amorts = [r["amortization"] for r in d["cashflows"] if r["amortization"]]
     payoff = FinancialEngine.projected_payoff(_inst(), _Idx(), ref_date=settle, fx_provider=_Fx())
-    assert payoff is not None and amorts == [pytest.approx(payoff)]
+    assert payoff is not None and payoff > 100.0 * _FX      # gana TAMAR, en escala de pesos
+    assert amorts == [pytest.approx(payoff)]
     assert FinancialEngine.projected_payoff(_inst(), _Idx(), ref_date=settle) is None  # sin FX: None
 
 
@@ -105,15 +114,30 @@ def test_la_pata_dl_es_la_tir_en_usd_de_un_dolar_linked_zero_coupon():
     assert d["metrics"]["tir"] == pytest.approx(esperado)
     assert d["metrics"]["technical_value"] == pytest.approx(100.0 * _FX)   # V.Téc en pesos
 
+    # ── Ancla económica: la pata y la vista base tienen que hablar la MISMA escala ──
+    # El V.Téc de la pata ES el riel DL (100 USD × FX). Al settle ese riel le gana al TAMAR
+    # devengado (1300 × ≈103 = 134.200 < 150.000), así que el V.Téc de la vista base —que es
+    # el max de rieles— tiene que ser EXACTAMENTE el mismo número. Con la escala vieja
+    # (riel DL = 100 × FX / fx_base) la base daba 115,38 contra 150.000 de la pata: esta es
+    # la aserción que hubiera atrapado el bug de escala.
+    base = _detail("TMVE8")
+    assert base["metrics"]["technical_value"] == pytest.approx(d["metrics"]["technical_value"])
+    # Y la TIR en USD de un papel de 156.000 pesos (104 USD) contra 100 USD a ~1,4 años tiene
+    # que caer en una banda sana; con el precio interpretado per-100 pesos daba miles por uno.
+    assert -0.50 < d["metrics"]["tir"] < 0.50
 
-def test_la_pata_tam_es_la_tea_del_riel_tamar_solo():
-    d = _detail("TMVE8_TAM")
-    assert d is not None and d["ticker"] == "TMVE8_TAM"
-    puro = _inst(instrument_type="PURO")
-    settle = bond_detail._resolve_ref(1)
-    esperado = FinancialEngine.calculate_tir(MarketSnapshot(instrument=puro, price=_PRICE),
-                                             _Idx(), _Fx(), settle_date=settle)
-    assert d["metrics"]["tir"] == pytest.approx(esperado)
+
+def test_la_pata_tam_no_existe_para_este_tipo():
+    """Ruling de la revisión final: un clon PURO precia per-100 **pesos** y el precio de un
+    DUAL_DL_TAMAR viene per-100 **USD** → la pata quedaría en otra escala. `<T>_TAM` es un
+    ticker inexistente acá (mismo mecanismo que `_TF` fuera de PURO/DUAL) y el popup publica
+    sólo la pata `_DL`; la TEA del max de rieles ya la da la vista base."""
+    assert _detail("TMVE8_TAM") is None
+    assert _detail("TMVE8")["meta"]["legs"] == [("Riel dólar-linked", "TMVE8_DL")]
+    # El clon PURO sigue existiendo donde corresponde (un DUAL de verdad).
+    dual = _inst(instrument_type="DUAL", floor_rate_monthly=0.02)
+    assert bond_detail.get_bond_detail("TMVE8_TAM", _Repo(dual), _Prov(), _Idx(),
+                                       _Fx()) is not None
 
 
 def test_dl_fuera_del_tipo_y_tf_sobre_el_tipo_son_tickers_inexistentes():
@@ -164,7 +188,8 @@ def test_router_renderiza_la_pata_dl_y_los_botones():
         with TestClient(app) as c:
             r = c.get("/bond/TMVE8/detail")
             assert r.status_code == 200
-            assert "/bond/TMVE8_DL/detail" in r.text and "/bond/TMVE8_TAM/detail" in r.text
+            assert "/bond/TMVE8_DL/detail" in r.text        # única pata del tipo
+            assert "/bond/TMVE8_TAM/detail" not in r.text   # retirada (escala per-100 pesos)
             assert "TC inicial" in r.text
             r = c.get("/bond/TMVE8_DL/detail")
             assert r.status_code == 200 and "TMVE8_DL" in r.text

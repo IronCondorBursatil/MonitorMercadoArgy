@@ -310,7 +310,7 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
              "step": "0.0001", "help": "Solo DUAL_CER_TAMAR"},
             {"key": "tc_inicial",      "label": "TC inicial (pesos/USD)", "type": "number",
              "step": "0.0001",
-             "help": "Solo DUAL_DL_TAMAR — tipo de cambio inicial del prospecto; denominador del riel dólar-linked"},
+             "help": "Solo DUAL_DL_TAMAR — tipo de cambio inicial del prospecto; lleva el riel TAMAR a pesos"},
         ],
     },
     "Obligaciones_Negociables": {
@@ -813,8 +813,8 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
         if itype == "DUAL_DL_TAMAR" and not (inst.fx_base and inst.fx_base > 0):
             raise ValueError(
                 f"{primary}: un DUAL_DL_TAMAR necesita el TC INICIAL (pesos/USD) del prospecto: "
-                f"es el denominador del riel dólar-linked y sin él el bono no se preciaría. "
-                f"Completá «TC inicial» y guardá de nuevo.")
+                f"es lo que lleva el riel TAMAR a pesos —max(TC inicial × TAMAR, 100 × FX)— y "
+                f"sin él el bono no se preciaría. Completá «TC inicial» y guardá de nuevo.")
         if not analitico and not cfs:
             raise ValueError(
                 f"{primary}: no se puede guardar un {itype} sin FLUJO DE FONDOS (quedaría "

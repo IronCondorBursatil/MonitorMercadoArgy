@@ -11,7 +11,7 @@ el fall-through del código original.
 | DolarLinkedStrategy  | DOLAR_LINKED         | V.Téc/precio en pesos; TIR en USD      |
 | TamarStrategy        | PURO / DUAL          | payoff BONTE TAMAR; TIR cerrada; m=12  |
 | DualCerTamarStrategy | DUAL_CER_TAMAR       | payoff max-rieles; TIR cerrada; m=12   |
-| DualDlTamarStrategy  | DUAL_DL_TAMAR        | payoff max(TAMAR, 100×FX/fx_base); TIR cerrada; m=12 |
+| DualDlTamarStrategy  | DUAL_DL_TAMAR        | payoff max(fx_base×TAMAR, 100×FX); TIR cerrada; m=12 |
 
 El day-count 30/360 (BOPREAL y bonos CER marcados 30/360) NO es un tipo aparte:
 en el `services.py` original es un chequeo inline (`is_30_360`) dentro del camino
@@ -227,7 +227,9 @@ def _fx_mayorista(ctx: PricingContext) -> Optional[float]:
     `DolarLinkedStrategy`); si no responde, el fixing A3500 del BCRA al settle (forward-fill
     del provider); si tampoco, None. Nunca 0: un 0 de una fuente externa es dato ausente."""
     rate = _fx_offer(ctx.fx, "get_mayorista_venta")
-    if rate is None and ctx.indices is not None:
+    # `rate <= 0` cuenta como AUSENTE, no como respuesta: un 0 de dolarapi tiene que caer al
+    # fixing igual que un None, si no el papel se queda sin riel DL por un dato basura.
+    if (rate is None or rate <= 0) and ctx.indices is not None:
         fn = getattr(ctx.indices, "get_a3500", None)
         rate = fn(ctx.settle) if callable(fn) else None
     return rate if (rate is not None and rate > 0) else None
@@ -236,8 +238,16 @@ def _fx_mayorista(ctx: PricingContext) -> Optional[float]:
 def dual_dl_tamar_payoff_at(inst, ref: date, ctx: PricingContext, *,
                             to_date: Optional[date] = None,
                             fx_rate: Optional[float] = None) -> Optional[float]:
-    """Payoff per-100 de un DUAL_DL_TAMAR a `to_date` (default: vencimiento):
-    ``max(riel TAMAR, 100 × FX / fx_base)``.
+    """Payoff de un DUAL_DL_TAMAR a `to_date` (default: vencimiento) en **pesos por 100 VN
+    denominados en USD**: ``max(fx_base × riel TAMAR, 100 × FX)``.
+
+    ESCALA (corrección de la revisión final, 2026-09-08): el papel cotiza en pesos por 100 VN
+    **en USD**, como los dólar-linked, no por 100 VN en pesos como los duales TAMAR —
+    Data912 2026-09-08: TMVE8 c=139.680, TZVD8 118.650, D31M7 147.800, contra TTS26 169,5 y
+    TXMJ8 99,5; la ficha BYMA dice «moneda: Dólares» y «el Valor Nominal emitido convertido a
+    Pesos». Por eso las DOS patas van en pesos por 100 VN USD: el riel DL son 100 USD al
+    dólar del settle (`100 × FX`) y el riel TAMAR es la capitalización per-100 llevada a
+    pesos por el TC inicial (`fx_base × T`).
 
     El riel TAMAR es `tamar_dual_payoff_at` TAL CUAL: para este tipo devuelve la
     capitalización mensual desde la emisión (sin floor —no es DUAL— y sin riel CER —no es
@@ -256,7 +266,7 @@ def dual_dl_tamar_payoff_at(inst, ref: date, ctx: PricingContext, *,
                                       tamar_forecast=ctx.tamar_forecast, to_date=end)
     if riel_tamar is None:
         return None
-    return max(riel_tamar, 100.0 * rate / inst.fx_base)
+    return max(riel_tamar * inst.fx_base, 100.0 * rate)
 
 
 class DualCerTamarStrategy(VanillaStrategy):
@@ -384,20 +394,25 @@ class DualCerTamarStrategy(VanillaStrategy):
 
 class DualDlTamarStrategy(VanillaStrategy):
     """DUAL dólar-linked/TAMAR (TMVE8). Bullet que paga a vencimiento
-    ``max(riel TAMAR capitalizado mensual desde la emisión, 100 × FX / fx_base)``
-    (`dual_dl_tamar_payoff_at`).
+    ``max(fx_base × riel TAMAR capitalizado mensual desde la emisión, 100 × FX)``
+    (`dual_dl_tamar_payoff_at`), en **pesos por 100 VN denominados en USD** — la escala en
+    la que cotiza el papel (ver el docstring de la función: Data912 2026-09-08, 139.680).
 
     Misma convención que `DualCerTamarStrategy`: **TIR nominal (TEA)** contra el payoff
-    proyectado, `(payoff / precio)^(1/años) − 1`; **V.Téc = max de rieles devengado al
-    settle** (100 antes de la emisión); **MD bullet con m=12**; `price_from_tir` es la
-    inversa exacta (round-trip por construcción). El riel DL toma el dólar del settle y no lo
-    proyecta (spec 2026-09-08 §1). Sin `fx_base` o sin dólar NO precia (None). Vencido →
-    camino general (`VanillaStrategy`)."""
+    proyectado, `(payoff / precio)^(1/años) − 1` (con el precio en esa misma escala);
+    **V.Téc = max de rieles devengado al settle** (antes de la emisión, 100 USD al TC
+    inicial = `100 × fx_base`); **MD bullet con m=12**; `price_from_tir` es la inversa exacta
+    (round-trip por construcción). El riel DL toma el dólar del settle y no lo proyecta
+    (spec 2026-09-08 §1). Sin `fx_base` o sin dólar NO precia (None). Vencido → camino
+    general (`VanillaStrategy`)."""
 
     def technical_value(self, inst, ctx: PricingContext):
         ref = ctx.settle
         if not inst.emission_date or inst.emission_date >= ref:
-            return 100.0
+            # Antes de la emisión no hay devengamiento: valen los 100 USD del VN al TC
+            # inicial. Sin `fx_base` no hay escala en pesos que inventar → None (mismo
+            # criterio que el payoff).
+            return 100.0 * inst.fx_base if (inst.fx_base and inst.fx_base > 0) else None
         return dual_dl_tamar_payoff_at(inst, ref, ctx, to_date=ref)
 
     @staticmethod

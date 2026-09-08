@@ -3,9 +3,9 @@
 GET /cashflows → calendario de flujos futuros de TODOS los instrumentos del
 catálogo (próximos `days` días), ordenado por fecha. Reusa CatalogRepository.
 
-Los tipos de PAYOFF ANALÍTICO (TAMAR PURO / DUAL / DUAL_CER_TAMAR) no tienen schedule
-—su pago sale de una fórmula cerrada— y por eso eran INVISIBLES acá. Su evento de
-vencimiento se sintetiza desde `inst.maturity_date`: la fila ancla de la DB no sirve
+Los tipos de PAYOFF ANALÍTICO (TAMAR PURO / DUAL / DUAL_CER_TAMAR / DUAL_DL_TAMAR) no
+tienen schedule —su pago sale de una fórmula cerrada— y por eso eran INVISIBLES acá. Su
+evento de vencimiento se sintetiza desde `inst.maturity_date`: la fila ancla de la DB no sirve
 para esto (`_orm_to_domain` la filtra a propósito, y de todos modos abajo se descartan
 los montos en cero), así que la visibilidad se resuelve en esta capa, con los montos
 en em-dash — porque el importe NO se conoce hasta el vencimiento.
