@@ -5,7 +5,8 @@
 Contrato: token aleatorio de 256 bits, persistido SÓLO como SHA-256; un solo uso; vence
 (reset 60 min, invitación 72 h); emitir uno nuevo invalida los vivos del mismo usuario;
 un usuario deshabilitado no puede consumirlo; consumirlo sube `token_version` (cierra las
-demás sesiones). Nunca se loguea el token."""
+demás sesiones); ligado a `token_version`: cualquier gesto que la suba lo invalida. Nunca
+se loguea el token."""
 
 from __future__ import annotations
 
@@ -48,6 +49,7 @@ def issue_reset_token(db: Session, user: UserORM, *, purpose: str, channel: str,
         user_id=user.id, token_hash=hash_token(token), purpose=purpose, channel=channel,
         created_at=now, created_by=by,
         expires_at=now + (INVITE_TTL if purpose == "invite" else RESET_TTL),
+        token_version=(user.token_version or 0),
     ))
     db.commit()
     return token
@@ -64,6 +66,10 @@ def lookup_reset_token(db: Session, token: str) -> Optional[tuple[UserORM, Passw
         return None
     user = db.get(UserORM, row.user_id)
     if user is None or not user.is_active:
+        return None
+    # Ligado a la versión de sesión: si el admin definió otra clave, cerró sesiones o
+    # deshabilitó la cuenta después de emitir este link, la versión subió y el link muere.
+    if (row.token_version or 0) != (user.token_version or 0):
         return None
     return user, row
 

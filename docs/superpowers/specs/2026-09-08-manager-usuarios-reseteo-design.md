@@ -82,7 +82,9 @@ La sección "Actividad" de la ficha se arma con lo que ya hay: `last_login_at` (
    guarda su SHA-256; se **invalidan todos los tokens vivos del mismo usuario** (`used_at = now`) para que
    sólo el último link sirva. Devuelve el token en claro UNA vez.
 2. **Validar** `lookup_reset_token(db, token) -> UserORM | None`: hash → fila; válido sólo si `used_at IS NULL`,
-   `expires_at > now` y `user.is_active`. Cualquier otro caso devuelve `None` sin distinguir motivo.
+   `expires_at > now`, `user.is_active` y `row.token_version == user.token_version` (el token queda ligado
+   a la versión de sesión con la que se emitió; hallazgo del security review 2026-09-08). Cualquier otro
+   caso devuelve `None` sin distinguir motivo.
 3. **Consumir** `consume_reset_token(db, token, new_password)`: valida la contraseña con la política única
    (§3.1); setea `hashed_password`, `password_changed_at = now`, `token_version += 1` (cierra las demás
    sesiones), `used_at = now`; auditoría `reset_consumed purpose=… target=…`.

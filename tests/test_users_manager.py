@@ -785,3 +785,69 @@ def test_alta_con_password_sigue_igual_y_la_invitacion_no_exige_password(usuario
         assert c.post("/users/add", data={"username": "sinclave", "access": "password"}).status_code == 400
         assert c.post("/users/add", data={"username": "invitado2", "access": "invite"}).status_code == 200
         assert c.post("/users/add", data={"username": "raro", "access": "otro"}).status_code == 400
+
+
+# ── security review: los gestos de revocación invalidan los links vivos ───────
+@pytest.mark.noauth
+def test_clave_manual_cerrar_sesiones_y_deshabilitar_invalidan_los_links_vivos(usuarios):
+    """Un link filtrado no puede sobrevivir a la remediación del admin. El token queda ligado a
+    la token_version del usuario al emitirlo; todo gesto que la suba lo mata. Mutación: sacar el
+    chequeo de token_version en lookup_reset_token pone esto en rojo en los tres casos."""
+    from apps.web import reset_service as rs
+    bob = _bob_id()
+    with TestClient(app) as admin_c, TestClient(app) as anon:
+        _login_admin(admin_c)
+        # 1) clave a mano
+        t1 = _token_de_bob()
+        assert 'name="password2"' in anon.get(f"/reset/{t1}").text
+        assert admin_c.post(f"/users/{bob}/reset", data={"channel": "manual", "password": "otra-clave-9999"}).status_code == 200
+        assert "ya no sirve" in anon.get(f"/reset/{t1}").text
+        # 2) cerrar sesiones
+        t2 = _token_de_bob()
+        assert admin_c.post(f"/users/{bob}/sesiones/cerrar").status_code == 200
+        assert "ya no sirve" in anon.get(f"/reset/{t2}").text
+        # 3) deshabilitar y rehabilitar dentro del TTL
+        t3 = _token_de_bob()
+        assert admin_c.post(f"/users/{bob}/estado", data={"activo": "0"}).status_code == 200
+        assert admin_c.post(f"/users/{bob}/estado", data={"activo": "1"}).status_code == 200
+        assert "ya no sirve" in anon.get(f"/reset/{t3}").text
+        r = anon.post(f"/reset/{t3}", data={"password": "hackeo-intento-1", "password2": "hackeo-intento-1"})
+        assert r.status_code == 200 and "ya no sirve" in r.text
+    with SessionLocal() as s:
+        b = s.query(UserORM).filter(UserORM.username == "bob").first()
+        assert rs.lookup_reset_token(s, t3) is None
+        # un token nuevo sí sirve (la versión coincide)
+        t4 = rs.issue_reset_token(s, b, purpose="reset", channel="link", by="admin")
+        assert rs.lookup_reset_token(s, t4) is not None
+
+
+@pytest.mark.noauth
+def test_borrar_un_usuario_con_tokens_no_rompe_y_se_lleva_sus_tokens(usuarios):
+    """Guardián del ondelete=CASCADE: sin él, con PRAGMA foreign_keys=ON el DELETE tira 500."""
+    from core.infrastructure.db.models import PasswordResetTokenORM
+    with TestClient(app) as c:
+        _login_admin(c)
+        assert c.post("/users/add", data={"username": "efimero", "access": "invite"}).status_code == 200
+        with SessionLocal() as s:
+            uid = s.query(UserORM).filter(UserORM.username == "efimero").first().id
+            assert s.query(PasswordResetTokenORM).filter(PasswordResetTokenORM.user_id == uid).count() == 1
+        assert c.post(f"/users/delete/{uid}").status_code == 200
+    with SessionLocal() as s:
+        assert s.get(UserORM, uid) is None
+        assert s.query(PasswordResetTokenORM).filter(PasswordResetTokenORM.user_id == uid).count() == 0
+
+
+@pytest.mark.noauth
+def test_el_token_no_aparece_en_la_auditoria(usuarios, caplog):
+    import logging
+    import re
+    bob = _bob_id()
+    with caplog.at_level(logging.INFO, logger="monitor.audit"), TestClient(app) as admin_c, TestClient(app) as anon:
+        _login_admin(admin_c)
+        r = admin_c.post(f"/users/{bob}/reset", data={"channel": "link"})
+        token = re.search(r'/reset/([A-Za-z0-9_\-]+)"', r.text).group(1)
+        anon.post(f"/reset/{token}", data={"password": "clave-nueva-12345", "password2": "clave-nueva-12345"})
+    lineas = [rec.getMessage() for rec in caplog.records if rec.name == "monitor.audit"]
+    assert any("action=reset_link" in m for m in lineas) and any("reset_consumed" in m for m in lineas)
+    assert all(token not in m for m in lineas), "el token en claro se logueó"
+    assert all(token[:12] not in m for m in lineas)

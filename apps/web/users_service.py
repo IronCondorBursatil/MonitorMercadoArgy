@@ -84,7 +84,7 @@ def fmt_restante(hasta: datetime, ahora: Optional[datetime] = None) -> str:
     return f"vence en {max(1, int(seg // 60))} min"
 
 
-def estado_usuario(u: UserORM, invitacion=None) -> str:
+def estado_usuario(u: UserORM) -> str:
     if not u.is_active:
         return "deshabilitado"
     if u.hashed_password == SIN_PASSWORD_HASH:
@@ -96,7 +96,7 @@ def vista_usuario(u: UserORM, hoy: Optional[date] = None, invitacion=None,
                   ahora: Optional[datetime] = None) -> dict:
     """Lo que la tabla y la cabecera de la ficha muestran de un usuario. `invitacion` es
     el token de invitación VIVO del usuario (o None), que el router saca de la DB."""
-    estado = estado_usuario(u, invitacion)
+    estado = estado_usuario(u)
     if estado == "invitado":
         inv_txt = f"Invitación · {fmt_restante(invitacion.expires_at, ahora)}" if invitacion else "Invitación vencida"
     else:

@@ -226,7 +226,7 @@ def reset_password(request: Request, user_id: int, channel: str = Form("manual")
                 _limpio(getattr(admin, "username", "?")), _limpio(user.username),
                 extra={"console": True})
     return _users_page(request, db, selected_id=user_id,
-                       success=f"Contraseña actualizada para {user.username}. Sus sesiones se cerraron.")
+                       success=f"Contraseña actualizada para {user.username}. Sus sesiones se cerraron y los links de reseteo pendientes quedaron invalidados.")
 
 
 @router.post("/users/{user_id}/sesiones/cerrar", response_class=HTMLResponse)
@@ -241,7 +241,7 @@ def cerrar_sesiones(request: Request, user_id: int, db: Session = Depends(get_db
                 _limpio(getattr(admin, "username", "?")), _limpio(user.username),
                 extra={"console": True})
     return _users_page(request, db, selected_id=user_id,
-                       success=f"Sesiones de {user.username} cerradas.")
+                       success=f"Sesiones de {user.username} cerradas; los links de reseteo pendientes quedaron invalidados.")
 
 
 @router.post("/users/{user_id}/estado", response_class=HTMLResponse)

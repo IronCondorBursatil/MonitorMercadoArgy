@@ -73,7 +73,9 @@ maneja `apps/web/reset_service.py`: `secrets.token_urlsafe(32)` de 256 bits, se 
 el SHA-256 (`core.security.hash_token`), nunca el token en claro ni en un log; un solo uso;
 vencen a los 60 minutos (`reset`) o 72 horas (`invite`); emitir uno nuevo invalida los vivos
 del mismo usuario; un usuario deshabilitado no puede consumirlo; consumirlo sube
-`token_version` (cierra las demás sesiones) y actualiza `password_changed_at`. El admin lo
+`token_version` (cierra las demás sesiones) y actualiza `password_changed_at`; ligado a la
+`token_version` del usuario al emitirlo: cualquier gesto que la suba (clave a mano, cerrar
+sesiones, deshabilitar) lo invalida. El admin lo
 dispara desde el Manager por el canal `link` (`POST /users/{id}/reset channel=link`): el link
 se arma con `settings.public_url` (`MONITOR_PUBLIC_URL`, si no está seteado cae al
 `request.base_url`) y se muestra UNA sola vez en la ficha, para copiar. El alta por invitación

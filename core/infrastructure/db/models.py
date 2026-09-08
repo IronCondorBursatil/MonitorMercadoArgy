@@ -72,6 +72,9 @@ class PasswordResetTokenORM(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String, default=None)   # username del admin; None = autoservicio
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    # token_version del usuario al emitirlo: cualquier gesto que la suba (clave a mano,
+    # cerrar sesiones, deshabilitar, consumir otro token) invalida este token sin tocar la fila.
+    token_version: Mapped[int] = mapped_column(default=0)
 
 
 class BymaCatalogORM(Base):

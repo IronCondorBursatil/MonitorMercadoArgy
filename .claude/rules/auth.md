@@ -59,8 +59,9 @@ uvicorn ≥ 0.48 ya honra `X-Forwarded-Proto` por default; no tocar el `ExecStar
   `/users/reset-password/{id}` ya no existen.
 - Tokens de reseteo/invitación: `apps/web/reset_service.py` (contrato: `secrets.token_urlsafe(32)`,
   se persiste SÓLO el SHA-256, un solo uso, vence a los 60 min (invitación 72 h), emitir uno
-  nuevo invalida los vivos del usuario, usuario deshabilitado → inválido, consumirlo sube
-  `token_version`). Nunca loguear el token.
+  nuevo invalida los vivos del usuario, usuario deshabilitado → inválido, ligado a la
+  `token_version` del usuario al emitirlo: cualquier gesto que la suba (clave a mano, cerrar
+  sesiones, deshabilitar) lo invalida, consumirlo sube `token_version`). Nunca loguear el token.
 - `POST /users/add` acepta `access=invite|password` (default `password`); el invitado queda
   con `hashed_password="!"` (`core.security.SIN_PASSWORD_HASH`) hasta aceptar el link;
   `verify_password` devuelve False sin excepción para cualquier hash que no sea bcrypt,
