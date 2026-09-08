@@ -619,6 +619,20 @@ def test_invitaciones_vivas_tokens_de_y_link(usuarios):
         settings.public_url = viejo
 
 
+@pytest.mark.noauth
+def test_issue_invalida_tambien_los_objetos_ya_cargados_en_la_misma_sesion(usuarios):
+    """Fix del review de la Task 3: con synchronize_session=False el objeto ya cargado en la
+    sesión seguía con used_at=None después de emitir un token nuevo (identity map stale)."""
+    from apps.web import reset_service as rs
+    from core.infrastructure.db.models import PasswordResetTokenORM
+    with SessionLocal() as s:
+        bob = s.query(UserORM).filter(UserORM.username == "bob").first()
+        rs.issue_reset_token(s, bob, purpose="invite", channel="link", by="admin")
+        viva = s.query(PasswordResetTokenORM).filter(PasswordResetTokenORM.used_at.is_(None)).one()
+        rs.issue_reset_token(s, bob, purpose="reset", channel="link", by="admin")   # invalida `viva`
+        assert viva.used_at is not None, "el objeto ya cargado tiene que ver la invalidación"
+
+
 # ── /reset/{token} ──────────────────────────────────────────────────────────
 def _token_de_bob(purpose="reset"):
     from apps.web import reset_service as rs

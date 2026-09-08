@@ -30,13 +30,19 @@ def issue_reset_token(db: Session, user: UserORM, *, purpose: str, channel: str,
     if purpose not in ("reset", "invite"):
         raise ValueError(f"purpose inválido: {purpose!r}")
     now = datetime.now()
+    # synchronize_session por default ("evaluate"): filas de PasswordResetTokenORM ya
+    # cargadas en ESTA sesión (p. ej. `tokens_de()`/`invitaciones_vivas()` del mismo
+    # request) tienen que ver la invalidación acá mismo — `synchronize_session=False`
+    # deja el identity map stale y, con `expire_on_commit=False`, ni un re-fetch por PK
+    # lo repara (bug real, cubierto por
+    # test_issue_invalida_tambien_los_objetos_ya_cargados_en_la_misma_sesion).
     db.query(PasswordResetTokenORM).filter(
         PasswordResetTokenORM.user_id == user.id,
         PasswordResetTokenORM.used_at.is_(None),
-    ).update({"used_at": now}, synchronize_session=False)
+    ).update({"used_at": now})
     db.query(PasswordResetTokenORM).filter(
         PasswordResetTokenORM.expires_at < now - _PURGA
-    ).delete(synchronize_session=False)
+    ).delete()
     token = new_reset_token()
     db.add(PasswordResetTokenORM(
         user_id=user.id, token_hash=hash_token(token), purpose=purpose, channel=channel,
@@ -47,7 +53,7 @@ def issue_reset_token(db: Session, user: UserORM, *, purpose: str, channel: str,
     return token
 
 
-def lookup_reset_token(db: Session, token: str):
+def lookup_reset_token(db: Session, token: str) -> Optional[tuple[UserORM, PasswordResetTokenORM]]:
     """(usuario, fila) si el token está vivo, no vencido y el usuario activo; si no, None,
     sin distinguir el motivo (la página pública tampoco lo distingue)."""
     if not token or len(token) > 128:
@@ -83,7 +89,7 @@ def reset_link(request, token: str) -> str:
     return f"{base}/reset/{token}"
 
 
-def invitaciones_vivas(db: Session) -> dict:
+def invitaciones_vivas(db: Session) -> dict[int, PasswordResetTokenORM]:
     """{user_id: token} de las invitaciones vivas (para el estado de la tabla del Manager)."""
     now = datetime.now()
     rows = db.query(PasswordResetTokenORM).filter(
@@ -94,7 +100,7 @@ def invitaciones_vivas(db: Session) -> dict:
     return {r.user_id: r for r in rows}
 
 
-def tokens_de(db: Session, user: UserORM) -> list:
+def tokens_de(db: Session, user: UserORM) -> list[PasswordResetTokenORM]:
     return db.query(PasswordResetTokenORM).filter(
         PasswordResetTokenORM.user_id == user.id
     ).order_by(PasswordResetTokenORM.created_at.desc(), PasswordResetTokenORM.id.desc()).all()
