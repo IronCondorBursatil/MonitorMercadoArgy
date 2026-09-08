@@ -51,7 +51,8 @@ próxima regeneración borra el fix. Tocar `on_src/` y regenerar.
 
 - `/fci` → `static/js/fci.js` → `/fci/data` (`fci_service.get_fci_dataset`, memoizado por
   corte/día, GZip). `/on` → `static/js/on.js` → `/on/data` (`on_service`, memoizado por
-  revisión del snapshot + día) + `/on/pdf`.
+  ciclo del refresh loop `AppState.cycle` + día; NO por `revision`, que está gateada, ni por
+  `last_refresh`, que en Windows puede repetirse entre dos ciclos) + `/on/pdf`.
 - Composición de cartera FCI NO se sintetiza; flujos sólo reales (`fci_history`). El VCP de
   ArgentinaDatos viene por cada 1.000 cuotapartes y `ccp<=0` es dato ausente.
 

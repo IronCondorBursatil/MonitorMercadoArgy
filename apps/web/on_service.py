@@ -233,8 +233,9 @@ def _build_on_dataset(state, fx=None) -> dict:
 
 def get_on_dataset(state, fx=None, *, force: bool = False) -> dict:
     """Dataset `{generated, today, bonds, sectors, meta}` memoizado por (ciclo, hoy),
-    donde `ciclo` es `state.last_refresh`: el sello del refresh loop, que avanza SIEMPRE.
-    `fx` (FxProvider) se usa para pasar a USD la pata pesos en el Current Yield.
+    donde `ciclo` es `state.cycle`: el contador de `update()` del refresh loop, que
+    avanza SIEMPRE. `fx` (FxProvider) se usa para pasar a USD la pata pesos en el
+    Current Yield.
 
     Deliberadamente NO por `revision`. La revisión está gateada por la huella de los
     campos de mercado (`AppState._huella`), y este dataset depende ADEMAS del catálogo:
@@ -242,8 +243,16 @@ def get_on_dataset(state, fx=None, *, force: bool = False) -> dict:
     `emision` salen del `Instrument`, y una edición del ABM no mueve un solo campo de
     la huella. Con la revisión como clave, una edición no se veía hasta la próxima vez
     que se moviera un precio — fuera de rueda, horas — y `on.js` promete lo contrario.
-    `last_refresh` restituye el "una vez por ciclo" que había antes del gating."""
-    key = (state.last_refresh, str(date.today()))
+    Tampoco por `last_refresh`: es un timestamp, y en Windows el reloj avanza de a
+    ~1 ms, así que dos ciclos seguidos podían compartir clave y servir el dataset
+    viejo (flake reproducido el 2026-09-08). El contador restituye el "una vez por
+    ciclo" sin depender del reloj."""
+    # `AppState` siempre expone `cycle`; los stubs de estado de los tests (que fijan
+    # `last_refresh` a mano) no, y para ellos el sello del ciclo sigue siendo válido.
+    ciclo = getattr(state, "cycle", None)
+    if ciclo is None:
+        ciclo = state.last_refresh
+    key = (ciclo, str(date.today()))
     if not force:
         with _LOCK:
             if _CACHE["key"] == key and _CACHE["data"] is not None:

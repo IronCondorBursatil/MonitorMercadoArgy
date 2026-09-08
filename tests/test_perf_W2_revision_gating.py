@@ -186,3 +186,48 @@ def test_el_memo_de_las_metricas_CI_tampoco_va_por_revision():
     fuente = inspect.getsource(panels.panel_rows)
     assert "ciclo=state.last_refresh" in fuente, (
         "el call site no le pasa el sello del ciclo")
+
+
+def test_el_memo_de_ON_no_depende_de_la_resolucion_del_reloj(monkeypatch):
+    """Dos ciclos dentro del MISMO tick de `datetime.now()` compartían `last_refresh` y
+    el memo de /on servía el dataset viejo. No es teórico: en Windows el reloj avanza
+    de a ~1 ms y dos `update()` seguidos tardan 0,04 ms — era el flake de
+    `test_el_dataset_de_ON_ve_una_edicion_del_ABM_al_ciclo_SIGUIENTE` dentro de la
+    suite (2026-09-08). La clave va por `state.cycle`, un contador que sube en TODOS
+    los updates y no mira el reloj. Acá el reloj se congela a propósito: con la clave
+    vieja el segundo dataset sale del memo (rojo); con el contador, no."""
+    from datetime import datetime as _dt
+
+    from apps.web import on_service
+    from apps.web import state as state_mod
+
+    congelado = _dt(2026, 9, 8, 10, 0, 0)
+
+    class _RelojCongelado(_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return congelado
+
+    monkeypatch.setattr(state_mod, "datetime", _RelojCongelado)
+
+    def _on(nombre):
+        inst = Instrument(ticker="YMCXO", short_name=nombre, instrument_type="HARD DOLLAR")
+        return InstrumentMetrics(snapshot=MarketSnapshot(instrument=inst, price=100.0))
+
+    async def run():
+        st = AppState()
+        await st.update([_on("YPF 2026")])
+        c1 = st.cycle
+        antes = on_service.get_on_dataset(st)
+        await st.update([_on("YPF 2026 (editado)")])
+        return antes, on_service.get_on_dataset(st), st.last_refresh, c1, st.cycle
+
+    antes, despues, last_refresh, c1, c2 = asyncio.run(run())
+    assert last_refresh == congelado, "el reloj no quedó congelado: el test no prueba nada"
+    # Monótono a nivel PROCESO, no por instancia: el memo es global al módulo y en la
+    # suite conviven muchos AppState; un contador por instancia (1, 2, 1, 2…) volvería a
+    # chocar claves entre instancias, igual que chocaban los timestamps.
+    assert c1 > 0 and c2 > c1
+    assert [b["emisor"] for b in antes["bonds"]] == ["YPF 2026"]
+    assert [b["emisor"] for b in despues["bonds"]] == ["YPF 2026 (editado)"], (
+        "dos ciclos en el mismo tick del reloj: el memo sirvió el dataset viejo")

@@ -5,6 +5,7 @@ lo leen vía Depends(get_state)."""
 from __future__ import annotations
 
 import asyncio
+import itertools
 import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional
@@ -58,6 +59,10 @@ def _loop_crash_of(msg: Optional[str]) -> Optional[tuple]:
     return (m.group(1), m.group(2)) if m else None
 
 
+# Secuencia de ciclos compartida por todos los AppState del proceso (ver `_cycle`).
+_CYCLE = itertools.count(1)
+
+
 class AppState:
     def __init__(self, crash_sticky_s: float = _CRASH_STICKY_S) -> None:
         self._metrics: List[InstrumentMetrics] = []
@@ -67,6 +72,14 @@ class AppState:
         # los clientes esperando para siempre.
         self._huella_previa: Optional[dict] = None
         self._last_refresh: Optional[datetime] = None
+        # Número de ciclo: sube en TODOS los `update()`, gateados o no. Es la clave
+        # correcta para un memo "una vez por ciclo": `revision` no sirve (gateada por
+        # la huella) y `last_refresh` tampoco (en Windows el reloj avanza de a ~1 ms y
+        # dos updates seguidos pueden compartir timestamp → el memo servía datos viejos).
+        # Sale de `_CYCLE`, único a nivel PROCESO: los memos (`on_service._CACHE`) son
+        # globales al módulo y con un contador por instancia dos AppState (los tests
+        # crean muchos) volverían a chocar claves. 0 = nunca actualizado.
+        self._cycle: int = 0
         # Observabilidad (O1): último error del refresh loop, como UN par (msg, ts).
         # Un solo atributo = asignación atómica bajo el GIL → los lectores sync
         # (health/badge corren en el threadpool de Starlette) nunca ven el mensaje
@@ -133,6 +146,7 @@ class AppState:
             self._by_ticker = by_ticker
             self._huella_previa = huella
             self._last_refresh = datetime.now()
+            self._cycle = next(_CYCLE)
             # Un refresh exitoso limpia el error del PROPIO ciclo, pero no la marca
             # de una caída CRÍTICA reciente: el badge poll-ea cada 15s y el refresh
             # corre cada 5s, así que sin retención la caída no se veía nunca. Las
@@ -323,6 +337,11 @@ class AppState:
     @property
     def last_refresh(self) -> Optional[datetime]:
         return self._last_refresh
+
+    @property
+    def cycle(self) -> int:
+        """Número de `update()` completados (monótono, sin gateo, sin reloj)."""
+        return self._cycle
 
     def set_bei(self, tables: Optional[dict]) -> None:
         self._bei = tables  # un solo escritor (el BEI loop); asignación atómica
