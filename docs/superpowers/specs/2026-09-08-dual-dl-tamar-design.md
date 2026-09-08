@@ -29,10 +29,15 @@ Decisiones tomadas con David (2026-09-08):
 
 ## 2. Dominio y tipo
 
-- `core/domain/instrument_groups.py`: `DUAL_TAMAR = ["DUAL", "DUAL_CER_TAMAR", "DUAL_DL_TAMAR"]`.
-  Con eso el tipo entra solo al panel `tamar` (TAMAR/Dual), a `apps/web/app.py::_ALL_TYPES`,
-  a `ANALYTIC_PAYOFF_TYPES` (`has_closed_form_payoff` → fila ancla, sin schedule) y a
-  `KNOWN_TYPES`.
+- `core/domain/instrument_groups.py`: grupo PROPIO `DUAL_DL = ["DUAL_DL_TAMAR"]`, sumado a
+  `BOND_TYPES`, `KNOWN_TYPES` y `ANALYTIC_PAYOFF_TYPES` (`has_closed_form_payoff` → fila
+  ancla, sin schedule). **No** va dentro de `DUAL_TAMAR` (ajuste al escribir el plan): el
+  relevamiento mostró que `apps/cli/bei.py` toma `DUAL_TAMAR` como universo de TEA en pesos
+  «pura» y un riel dólar la distorsionaría, y que el panel `tamar`
+  (`routers/panels_schema.py`), la curva `tamar` (`routers/curva.py`) y el test del ancla
+  tienen el trío `{PURO, DUAL, DUAL_CER_TAMAR}` cableado. Entra explícitamente al panel
+  TAMAR/Dual, a `apps/web/app.py::_ALL_TYPES` y al grupo «TAMAR» de la cartera; queda fuera
+  de BEI y de la curva `tamar` a propósito.
 - `core/domain/models.py`:
   - `Instrument.fx_base: Optional[float] = None` — tipo de cambio inicial (pesos/USD). Sale
     de `raw_fields["tc_inicial"]`, el mismo campo que ya usa la hoja Dólar Linked. Lo mapea
@@ -89,8 +94,10 @@ la ABM lo exige). Sin FX y sin A3500 → None. Vencido (`maturity_date <= settle
 - `_TAMAR_TYPES` suma `DUAL_DL_TAMAR` (Tir Nominal con m=12). `_cupon_label` devuelve
   `max(TAMAR + {spread}%, dólar-linked)`.
 
-El template del popup ya ofrece las patas por sufijo; sólo hay que agregar `_DL` donde
-lista `_TAM`/`_TF` (mismo mecanismo de toggle).
+Hoy ningún template emite links de patas (se llega por URL: ver `tests/test_bond_detail_leg_tf.py`).
+Para este tipo el popup muestra dos botones en la cabecera («Riel TAMAR» → `<T>_TAM`,
+«Riel dólar-linked» → `<T>_DL`) sólo en la vista base (`meta["legs"]`; dentro de una pata
+no se anidan) y la fila «TC inicial» en la descripción (ajuste al escribir el plan).
 
 ## 5. ABM y Novedades
 
