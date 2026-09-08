@@ -928,3 +928,67 @@ def test_invitacion_sin_email_no_intenta_mandar(usuarios, mail_on):
         _login_admin(c)
         assert c.post("/users/add", data={"username": "sinmail", "access": "invite"}).status_code == 200
     assert mail_on == []
+
+
+# ── /forgot ─────────────────────────────────────────────────────────────────
+@pytest.mark.noauth
+def test_forgot_responde_igual_exista_o_no_y_solo_manda_al_valido(usuarios, mail_on, monkeypatch):
+    from apps.web.routers import auth as auth_router
+    monkeypatch.setattr("apps.web.routers.auth.send_mail", lambda to, s, t, h=None: mail_on.append({"to": to, "text": t}))
+    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+    _set_bob(is_active=True)
+    with TestClient(app) as c:
+        assert "¿Olvidaste tu contraseña?" in c.get("/login").text
+        assert 'name="dato"' in c.get("/forgot").text
+
+        def post(dato):
+            auth_router._forgot_attempts_ip.clear()   # el límite por IP se prueba aparte
+            return c.post("/forgot", data={"dato": dato})
+
+        r_user = post("bob")
+        r_mail = post("BOB@ejemplo.com")
+        r_nadie = post("nadie@ejemplo.com")
+        _set_bob(is_active=False)
+        r_off = post("bob")
+        _set_bob(is_active=True, email=None)
+        r_sinmail = post("bob")
+    assert r_user.status_code == r_mail.status_code == r_nadie.status_code == r_off.status_code == r_sinmail.status_code == 200
+    assert r_user.text == r_mail.text == r_nadie.text == r_off.text == r_sinmail.text
+    assert "Revisá tu correo" in r_user.text
+    assert len(mail_on) == 2 and all(m["to"] == "bob@ejemplo.com" for m in mail_on)
+    import re
+    link = re.search(r"http://testserver/reset/[A-Za-z0-9_\-]+", mail_on[-1]["text"]).group(0)
+    with TestClient(app) as anon:
+        assert 'name="password2"' in anon.get(link.replace("http://testserver", "")).text
+    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+
+
+@pytest.mark.noauth
+def test_forgot_con_mail_apagado_no_hace_nada_y_lo_dice(usuarios, monkeypatch):
+    from apps.web.routers import auth as auth_router
+    from config.settings import settings
+    from core.infrastructure.db.models import PasswordResetTokenORM
+    monkeypatch.setattr(settings, "smtp_host", "")
+    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+    with TestClient(app) as c:
+        g = c.get("/forgot")
+        assert g.status_code == 200 and "Pedile el link a tu administrador" in g.text and 'name="dato"' not in g.text
+        r = c.post("/forgot", data={"dato": "bob"})
+        assert r.status_code == 200 and "Revisá tu correo" in r.text
+    with SessionLocal() as s:
+        assert s.query(PasswordResetTokenORM).count() == 0
+    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+
+
+@pytest.mark.noauth
+def test_forgot_rate_limit_por_ip_y_por_dato(usuarios, mail_on):
+    from apps.web.routers import auth as auth_router
+    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+    with TestClient(app) as c:
+        codigos = [c.post("/forgot", data={"dato": f"x{i}@ejemplo.com"}).status_code for i in range(4)]
+    assert codigos == [200, 200, 200, 429]
+    auth_router._forgot_attempts_ip.clear()
+    with TestClient(app) as c:
+        codigos = [c.post("/forgot", data={"dato": "bob"}).status_code for i in range(4)]
+    assert codigos[3] == 429, "el mismo dato tiene su propio límite (3 por hora)"
+    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()

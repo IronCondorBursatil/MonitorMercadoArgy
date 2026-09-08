@@ -1,0 +1,20 @@
+{% extends "base_public.html" %}
+{% block title %}Recuperar acceso - Monitor Renta Fija AR{% endblock %}
+{% block header_meta %}Recuperar acceso{% endblock %}
+{% block content %}
+<div class="pub-card">
+  <h2>Recuperar acceso</h2>
+  {% if sin_mail %}
+  <p class="sub">El envío de mails no está habilitado en este servidor. Pedile el link a tu administrador: te lo puede generar desde el Manager.</p>
+  <div class="links"><a href="/login">Volver al ingreso</a></div>
+  {% else %}
+  <p class="sub">Ingresá tu usuario o tu email. Si hay una cuenta, te mandamos un link para elegir una contraseña nueva.</p>
+  <form method="POST" action="/forgot" autocomplete="off">
+    <label class="fld"><span>Usuario o email</span>
+      <input type="text" name="dato" required maxlength="254" autofocus autocomplete="username" placeholder="mcaceres o m.caceres@…"></label>
+    <button type="submit">Enviarme el link</button>
+  </form>
+  <div class="links"><a href="/login">Volver al ingreso</a></div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -3,14 +3,19 @@ import time
 from collections import defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from apps.web.deps_auth import get_db
+from apps.web.mail_templates import mail_reset
 from apps.web.users_service import normalizar_email
 from core.infrastructure.db.models import UserORM
-from core.security import verify_password, create_access_token, get_password_hash, password_invalida
+from core.infrastructure.mailer import send_mail
+from core.security import (
+    verify_password, create_access_token, get_password_hash, password_invalida,
+    SIN_PASSWORD_HASH,
+)
 from apps.web.templates import TEMPLATES as _TEMPLATES
 from apps.web import reset_service
 from config.settings import settings
@@ -35,6 +40,14 @@ _DUMMY_HASH = None
 _MAX_RESET_ATTEMPTS = 10
 _RESET_WINDOW_SEC = 900
 _reset_attempts: dict = defaultdict(list)
+
+# Rate-limit de POST /forgot: doble balde. Por IP (3 / 15 min) frena martillar la ruta;
+# por `dato` normalizado (3 / hora) frena martillar UN mismo usuario/email desde IPs
+# distintas. El de IP corre siempre; el de `dato` sólo si vino algo no vacío.
+_FORGOT_IP = (3, 900)
+_FORGOT_DATO = (3, 3600)
+_forgot_attempts_ip: dict = defaultdict(list)
+_forgot_attempts_dato: dict = defaultdict(list)
 
 
 def _rate_limited(bucket: dict, key, max_attempts: int, window: float) -> bool:
@@ -280,3 +293,49 @@ def reset_submit(request: Request, token: str, password: str = Form(""),
     _audit.info("auth reset_consumed purpose=%s target=%s ip=%s", _limpio(row.purpose),
                 _limpio(user.username), _limpio(ip), extra={"console": True})
     return RedirectResponse(url="/login?reset=ok", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# ── Autoservicio "olvidé mi contraseña" ───────────────────────────────────────
+# Pública a sabiendas. Responde SIEMPRE la misma página, exista o no el usuario, tenga o
+# no email, esté o no activo; el mail se manda en background para que el tiempo de
+# respuesta tampoco lo delate. Con el correo apagado no hace nada (y el GET lo dice).
+_forgot_log = logging.getLogger("monitor.mail")
+
+
+def _mandar_reset_en_background(email: str, nombre: str, username: str, link: str) -> None:
+    try:
+        send_mail(email, *mail_reset(nombre, username, link, 60, None))
+    except Exception as e:   # noqa: BLE001 — nunca llega al cliente
+        _forgot_log.warning("forgot: no se pudo mandar el mail a %s: %s", _limpio(username), type(e).__name__)
+
+
+@router.get("/forgot", response_class=HTMLResponse)
+def forgot_page(request: Request):
+    return _TEMPLATES.TemplateResponse(request, "pages/forgot.html",
+                                       {"sin_mail": not settings.mail_enabled})
+
+
+@router.post("/forgot", response_class=HTMLResponse)
+def forgot_submit(request: Request, background_tasks: BackgroundTasks, dato: str = Form(""),
+                  db: Session = Depends(get_db)):
+    ip = _client_ip(request)
+    clave = (normalizar_email(dato) or "").strip().lower()
+    if _rate_limited(_forgot_attempts_ip, ip, *_FORGOT_IP) or (
+            clave and _rate_limited(_forgot_attempts_dato, clave, *_FORGOT_DATO)):
+        _audit.info("auth forgot=ratelimited ip=%s", _limpio(ip), extra={"console": True})
+        return _TEMPLATES.TemplateResponse(request, "pages/forgot_enviado.html",
+                                           {"ratelimited": True}, status_code=429)
+    if settings.mail_enabled and clave:
+        user = db.query(UserORM).filter(UserORM.username == dato.strip()).first()
+        if user is None and "@" in clave:
+            user = db.query(UserORM).filter(UserORM.email == clave).first()
+        if user is not None and user.is_active and user.email and user.hashed_password != SIN_PASSWORD_HASH:
+            token = reset_service.issue_reset_token(db, user, purpose="reset", channel="self", by=None)
+            link = reset_service.reset_link(request, token)
+            nombre = (user.full_name or user.username).split()[0]
+            background_tasks.add_task(_mandar_reset_en_background, user.email, nombre, user.username, link)
+            _audit.info("auth forgot=requested target=%s ip=%s", _limpio(user.username), _limpio(ip),
+                        extra={"console": True})
+            return _TEMPLATES.TemplateResponse(request, "pages/forgot_enviado.html", {})
+    _audit.info("auth forgot=noop ip=%s", _limpio(ip), extra={"console": True})
+    return _TEMPLATES.TemplateResponse(request, "pages/forgot_enviado.html", {})

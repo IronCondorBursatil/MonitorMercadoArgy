@@ -1,0 +1,15 @@
+{% extends "base_public.html" %}
+{% block title %}Recuperar acceso - Monitor Renta Fija AR{% endblock %}
+{% block header_meta %}Recuperar acceso{% endblock %}
+{% block content %}
+<div class="pub-card">
+  <h2>Revisá tu correo</h2>
+  {% if ratelimited %}
+  <p class="sub">Demasiados pedidos desde tu conexión o para ese dato. Esperá unos minutos y volvé a intentar; si ya te llegó un mail, usá ese link.</p>
+  {% else %}
+  <p class="sub">Si existe una cuenta con ese dato, en unos minutos vas a recibir un mail con el link. Vence en 60 minutos y sirve una sola vez.</p>
+  <p class="sub">¿No llegó? Mirá en spam o pedile el link a tu administrador.</p>
+  {% endif %}
+  <div class="links"><a href="/login">Volver al ingreso</a></div>
+</div>
+{% endblock %}
