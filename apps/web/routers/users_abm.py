@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from apps.web.deps_auth import get_db, get_admin_user_html
 from core.infrastructure.db.models import UserORM
-from core.security import get_password_hash
+from core.security import get_password_hash, password_invalida
 from apps.web.templates import TEMPLATES as _TEMPLATES
 
 router = APIRouter(dependencies=[Depends(get_admin_user_html)])
@@ -55,23 +55,6 @@ def _limpio(v) -> str:
     return "".join(ch for ch in str(v) if ch.isprintable())[:64]
 
 
-# Minimo de contrasena. El generador de la UI hace 12 chars; esto acota lo que se
-# tipea a mano. El maximo es el limite REAL de bcrypt: pasados 72 bytes trunca EN
-# SILENCIO (passlib con truncate_error=False), o sea que "misuperclave...<80 chars>"
-# y sus primeros 72 bytes serian la misma contrasena.
-_PASSWORD_MIN = 10
-_PASSWORD_MAX_BYTES = 72
-
-
-def _password_invalida(pw: str):
-    """Motivo por el que `pw` no sirve, o None si esta bien."""
-    if len(pw or "") < _PASSWORD_MIN:
-        return f"La contrasena tiene que tener al menos {_PASSWORD_MIN} caracteres."
-    if len((pw or "").encode("utf-8")) > _PASSWORD_MAX_BYTES:
-        return ("La contrasena supera los 72 bytes: bcrypt trunca en silencio a partir "
-                "de ahi, asi que el resto no protegeria nada.")
-    return None
-
 
 @router.post("/users/add", response_class=HTMLResponse)
 def add_user(
@@ -83,7 +66,7 @@ def add_user(
     db: Session = Depends(get_db),
     admin: UserORM = Depends(get_admin_user_html),
 ):
-    invalido = _username_invalido(username) or _password_invalida(password)
+    invalido = _username_invalido(username) or password_invalida(password)
     if invalido:
         return _users_page(request, db, status_code=400, error=invalido)
 
@@ -147,7 +130,7 @@ def reset_password(request: Request, user_id: int, password: str = Form(...),
         return _no_existe(request, db, user_id)
     # La validacion va DESPUES del lookup a proposito: un id inexistente tiene que dar
     # 404 aunque la contrasena tambien sea invalida (lo fija test_aud_D1).
-    invalida = _password_invalida(password)
+    invalida = password_invalida(password)
     if invalida:
         return _users_page(request, db, status_code=400, error=invalida)
 

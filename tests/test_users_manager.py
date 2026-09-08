@@ -64,3 +64,13 @@ def test_email_es_unico_solo_cuando_no_es_nulo(tmp_path):
                 s.rollback()
     finally:
         db_engine.configure(_s.catalog_db)
+
+
+def test_password_invalida_es_la_politica_unica():
+    from core.security import password_invalida
+
+    assert password_invalida("corta") is not None
+    assert password_invalida("a" * 9) is not None
+    assert password_invalida("a" * 10) is None
+    assert password_invalida("á" * 40) is not None      # 80 bytes > 72: bcrypt truncaría
+    assert password_invalida("a" * 72) is None
