@@ -9,10 +9,10 @@ esos inputs (quedan horneados en los cashflows materializados)."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -36,7 +36,20 @@ class UserORM(Base):
     # valiendo hasta que expirara. Forward-only: `init_db` la agrega con ALTER y las
     # filas viejas quedan en 0.
     token_version: Mapped[int] = mapped_column(default=0)
-
+    # --- Manager v2 (spec 2026-09-08-manager-usuarios-reseteo) ---------------
+    # Todas nullable salvo is_active: entran por ALTER ADD COLUMN en init_db
+    # (forward-only) y las filas viejas quedan en NULL / activas.
+    email: Mapped[Optional[str]] = mapped_column(String, default=None)   # minúsculas; único si no es NULL (índice parcial en init_db)
+    full_name: Mapped[Optional[str]] = mapped_column(String, default=None)
+    notes: Mapped[Optional[str]] = mapped_column(String, default=None)
+    # 0 = deshabilitado: no puede loguearse y sus sesiones vivas mueren en el
+    # próximo request (deps_auth). Distinto de borrar: los datos quedan.
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    created_by: Mapped[Optional[str]] = mapped_column(String, default=None)   # username del admin
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+    last_login_ip: Mapped[Optional[str]] = mapped_column(String, default=None)
+    password_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
 
 
 class BymaCatalogORM(Base):

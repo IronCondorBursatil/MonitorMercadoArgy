@@ -319,6 +319,10 @@ def init_db() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_instr_mep ON instruments (ticker_mep)",
                 "CREATE INDEX IF NOT EXISTS ix_instr_ccl ON instruments (ticker_ccl)",
                 "CREATE INDEX IF NOT EXISTS ix_instr_isin ON instruments (isin)",
+                # Email único SOLO cuando hay email: los usuarios sin email (los de
+                # antes del Manager v2, o los que se cargan a mano) conviven.
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users (email) "
+                "WHERE email IS NOT NULL",
             ):
                 conn.exec_driver_sql(ddl)
         # Migraciones de DATOS versionadas: exactamente una vez por DB, en orden, ANTES
