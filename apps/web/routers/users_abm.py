@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -153,30 +154,51 @@ def delete_user(request: Request, user_id: int, db: Session = Depends(get_db),
                 extra={"console": True})
     return _users_page(request, db, success="Usuario borrado.")
 
-@router.post("/users/reset-password/{user_id}", response_class=HTMLResponse)
-def reset_password(request: Request, user_id: int, password: str = Form(...),
-                   db: Session = Depends(get_db),
+@router.post("/users/{user_id}/reset", response_class=HTMLResponse)
+def reset_password(request: Request, user_id: int, channel: str = Form("manual"),
+                   password: str = Form(""), db: Session = Depends(get_db),
                    admin: UserORM = Depends(get_admin_user_html)):
-    user = db.query(UserORM).filter(UserORM.id == user_id).first()
+    """Canal `manual` (el admin define la contraseña). Los canales `link` y `mail`
+    llegan en las Fases 2 y 3 (spec §5.1)."""
+    user = db.get(UserORM, user_id)
     if not user:
         return _no_existe(request, db, user_id)
-    # La validacion va DESPUES del lookup a proposito: un id inexistente tiene que dar
-    # 404 aunque la contrasena tambien sea invalida (lo fija test_aud_D1).
+    if channel != "manual":
+        return _users_page(request, db, status_code=400, selected_id=user_id,
+                           error="Ese canal de reseteo no está disponible todavía.")
+    # La validación va DESPUÉS del lookup a propósito: un id inexistente da 404 aunque
+    # la contraseña también sea inválida (lo fija test_aud_D1).
     invalida = password_invalida(password)
     if invalida:
-        return _users_page(request, db, status_code=400, error=invalida)
+        return _users_page(request, db, status_code=400, selected_id=user_id, error=invalida)
 
     user.hashed_password = get_password_hash(password)
+    user.password_changed_at = datetime.now()
     # Cierra las sesiones abiertas de ese usuario. NO se hace en `update_permisos`: los
-    # permisos se releen de la base en cada request, asi que una degradacion ya es
-    # inmediata y bumpear ahi solo desloguearia gente sin comprar nada.
+    # permisos se releen de la base en cada request, así que una degradación ya es
+    # inmediata y bumpear ahí sólo desloguearía gente sin comprar nada.
     user.token_version = (user.token_version or 0) + 1
     db.commit()
-    _audit.info("users action=reset_password by=%s target=%s",
+    _audit.info("users action=reset_password by=%s target=%s channel=manual",
                 _limpio(getattr(admin, "username", "?")), _limpio(user.username),
                 extra={"console": True})
-    return _users_page(request, db,
-                       success=f"Contraseña actualizada para {user.username}.")
+    return _users_page(request, db, selected_id=user_id,
+                       success=f"Contraseña actualizada para {user.username}. Sus sesiones se cerraron.")
+
+
+@router.post("/users/{user_id}/sesiones/cerrar", response_class=HTMLResponse)
+def cerrar_sesiones(request: Request, user_id: int, db: Session = Depends(get_db),
+                    admin: UserORM = Depends(get_admin_user_html)):
+    user = db.get(UserORM, user_id)
+    if not user:
+        return _no_existe(request, db, user_id)
+    user.token_version = (user.token_version or 0) + 1
+    db.commit()
+    _audit.info("users action=sessions_closed by=%s target=%s",
+                _limpio(getattr(admin, "username", "?")), _limpio(user.username),
+                extra={"console": True})
+    return _users_page(request, db, selected_id=user_id,
+                       success=f"Sesiones de {user.username} cerradas.")
 
 @router.post("/users/{user_id}/datos", response_class=HTMLResponse)
 def update_datos(request: Request, user_id: int, full_name: str = Form(""), email: str = Form(""),

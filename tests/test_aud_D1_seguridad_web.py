@@ -114,10 +114,10 @@ def _crear_tablas_users():
 def test_users_abm_id_inexistente_no_tira_500():
     _crear_tablas_users()
     with TestClient(app, raise_server_exceptions=False) as c:
-        r1 = c.post("/users/reset-password/999999", data={"password": "x"})
+        r1 = c.post("/users/999999/reset", data={"channel": "manual", "password": "x"})
         r2 = c.post("/users/999999/permisos", data={"is_admin": "false"})
         r3 = c.post("/users/delete/999999")
-    assert r1.status_code == 404, f"reset-password devolvió {r1.status_code}"
+    assert r1.status_code == 404, f"reset devolvió {r1.status_code}"
     assert r2.status_code == 404, f"permisos devolvió {r2.status_code}"
     assert r3.status_code == 404, f"delete devolvió {r3.status_code}"
     assert "borrado" not in r3.text.lower(), "delete miente: dice que borró un id inexistente"

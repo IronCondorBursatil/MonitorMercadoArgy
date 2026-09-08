@@ -311,3 +311,40 @@ def test_permisos_reemplaza_a_update_y_conserva_los_guards(usuarios):
     with SessionLocal() as s:
         assert s.get(UserORM, bob).allowed_tabs == ["bonos", "fci"]     # la inventada no entra
         assert s.get(UserORM, admin_id).is_admin is True
+
+
+# ── reset manual / cerrar sesiones ──────────────────────────────────────────
+@pytest.mark.noauth
+def test_reset_manual_cambia_la_clave_fecha_y_cierra_sesiones(usuarios):
+    bob = _bob_id()
+    with TestClient(app) as bob_c, TestClient(app) as admin_c:
+        assert _login(bob_c, "bob", "bobpass1234").status_code in (302, 303)
+        _login_admin(admin_c)
+        r = admin_c.post(f"/users/{bob}/reset", data={"channel": "manual", "password": "nuevaclave1"})
+        assert r.status_code == 200
+        assert bob_c.get("/", follow_redirects=False).status_code == 302   # sesión muerta
+        assert _login(bob_c, "bob", "nuevaclave1").status_code in (302, 303)
+    with SessionLocal() as s:
+        assert s.get(UserORM, bob).password_changed_at is not None
+
+
+@pytest.mark.noauth
+def test_reset_valida_despues_del_lookup_y_rechaza_canales_futuros(usuarios):
+    bob = _bob_id()
+    with TestClient(app) as c:
+        _login_admin(c)
+        assert c.post("/users/999999/reset", data={"channel": "manual", "password": "x"}).status_code == 404
+        assert c.post(f"/users/{bob}/reset", data={"channel": "manual", "password": "x"}).status_code == 400
+        assert c.post(f"/users/{bob}/reset", data={"channel": "mail"}).status_code == 400
+
+
+@pytest.mark.noauth
+def test_cerrar_sesiones_saca_al_usuario_sin_cambiarle_la_clave(usuarios):
+    bob = _bob_id()
+    with TestClient(app) as bob_c, TestClient(app) as admin_c:
+        assert _login(bob_c, "bob", "bobpass1234").status_code in (302, 303)
+        _login_admin(admin_c)
+        assert admin_c.post(f"/users/{bob}/sesiones/cerrar").status_code == 200
+        assert bob_c.get("/", follow_redirects=False).status_code == 302
+        assert _login(bob_c, "bob", "bobpass1234").status_code in (302, 303)   # misma clave
+        assert admin_c.post("/users/999999/sesiones/cerrar").status_code == 404
