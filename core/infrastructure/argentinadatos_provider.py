@@ -1,7 +1,14 @@
 """ArgentinaDatos provider — letras + riesgo país.
 
 Letras endpoint: GET https://api.argentinadatos.com/v1/finanzas/letras
-Response: [{ticker, fechaEmision, fechaVencimiento, tem, vpv}, ...]
+Response (hasta 2026-08): [{ticker, fechaEmision, fechaVencimiento, tem, vpv}, ...]
+Response (desde 2026-09, verificado el 2026-09-07):
+    {"fechaActualizacion": ..., "letras": [{ticker, fechaVencimiento, precioArs,
+     tnaPorcentaje, teaPorcentaje, temPorcentaje, diasAlVencimiento, ...}, ...]}
+  — un sobre, y adentro cotización y tasas de MERCADO: ya no viene `vpv` ni
+  `fechaEmision` ni `tem`. `fetch_letras` desenvuelve el sobre y devuelve la lista tal
+  cual; qué se puede hacer con ella lo decide `letras_sync.planificar` (sin `vpv` no
+  hay alta posible: rechaza el payload con el motivo).
 TTL 1h — la Sec. Finanzas solo actualiza en días de licitación.
 
 Riesgo país endpoint: GET https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais/ultimo
@@ -66,8 +73,12 @@ class ArgentinaDatosProvider:
                 )
                 resp.raise_for_status()
                 data = resp.json()
+                if isinstance(data, dict):
+                    # Contrato 2026-09: {"fechaActualizacion", "letras": [...]}.
+                    data = data.get("letras")
                 if not isinstance(data, list):
-                    raise ValueError(f"expected list, got {type(data).__name__}")
+                    raise ValueError(
+                        "expected list or {'letras': [...]}, got %s" % type(data).__name__)
                 self._cache = data
                 self._cache_ts = time.monotonic()
                 logger.info("ArgentinaDatos: %d letras cargadas.", len(data))

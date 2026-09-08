@@ -33,6 +33,18 @@ LAS TRES REGLAS DURAS, que salen de lo de arriba:
 3. **Sólo con dato completo.** Sin `fechaEmision` no hay alta: la ABM la exige, no
    se puede deducir, y fabricarla sería meterle un dato inventado a la fuente de
    verdad. Esas letras se reportan para carga manual.
+
+ACTUALIZACIÓN 2026-09-07. La API cambió de contrato: la respuesta pasó a ser un sobre
+`{"fechaActualizacion", "letras": [...]}` (lo desenvuelve el provider) y las filas
+traen cotización y tasas de MERCADO (`precioArs`, `tnaPorcentaje`, `temPorcentaje`,
+`fechaVencimiento`...) — **sin `vpv`, sin `fechaEmision`, sin `tem`**. Sin el pago final
+no se puede construir el único flujo de una letra, y derivarlo de precio × TEM sería
+fabricar el dato contractual desde la cotización. Así que, con este contrato, el
+planificador **rechaza el payload entero y dice por qué** (antes: 15 filas «vpv no
+numérico» y un guard hablando de «corte roto» — diagnóstico falso durante semanas). Las
+letras nuevas hoy las aflora el job de novedades del universo (pestaña «Novedades» del
+ABM) y las carga el operador. Las tres reglas de arriba siguen vigentes para el día en
+que la fuente vuelva a traer el dato.
 """
 
 from __future__ import annotations
@@ -172,6 +184,18 @@ def planificar(api_rows, catalogo: Dict[str, dict], *, hoy: date) -> Plan:
     """
     plan = Plan()
     filas = list(api_rows or [])
+
+    # Contrato cambiado (2026-09): si NINGUNA fila trae la clave `vpv`, no es un payload
+    # con filas rotas sino otra API (cotización y TEM de mercado, sin el pago final).
+    # Se rechaza entero con el motivo real. Una fila con `vpv` presente pero inválido
+    # (0, texto) sigue el camino de siempre: inválida, y el resto se procesa.
+    if filas and all("vpv" not in (fila or {}) for fila in filas):
+        plan.rechazado = (
+            "la API no trae `vpv` en ninguna de las %d filas: cambió el contrato (desde "
+            "2026-09 manda cotización y TEM de mercado, sin vpv ni fechaEmision). Sin el "
+            "pago final no hay alta posible; las letras nuevas las aflora «Novedades» del ABM"
+            % len(filas))
+        return plan
 
     # Primera pasada: separar lo que ni siquiera es una fila usable.
     vivas = []

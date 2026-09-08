@@ -182,3 +182,35 @@ def test_el_plan_se_resume_en_una_linea():
     resumen = plan.resumen()
     assert "1" in resumen and "\n" not in resumen
     assert isinstance(plan, Plan)
+
+
+# ── contrato cambiado (verificado contra la API viva el 2026-09-07) ──────────
+def _api_2026_09(ticker="S29E7", vto="2027-01-29"):
+    """Fila tal como la manda la API desde septiembre de 2026: cotización y tasas
+    de MERCADO. Sin `vpv`, sin `fechaEmision`, sin `tem`."""
+    return {"ticker": ticker, "precioArs": 100.5, "tnaPorcentaje": 23.1,
+            "teaPorcentaje": 25.9, "temPorcentaje": 1.94, "fechaVencimiento": vto,
+            "diasAlVencimiento": 144, "variacionPorcentaje": 0.1,
+            "paridadPorcentaje": 100.0, "volumen": 1}
+
+
+def test_si_la_API_dejo_de_mandar_vpv_el_payload_se_RECHAZA_con_el_motivo():
+    """Sin el pago final no hay alta posible ni con qué comparar: se rechaza el
+    payload ENTERO y el motivo lo dice. Antes esto terminaba en 15 filas 'vpv no
+    numérico' y un guard que hablaba de 'corte roto' — un diagnóstico falso."""
+    plan = planificar([_api_2026_09("S29E7"), _api_2026_09("S30S6", vto="2026-09-30")],
+                      {"S30S6": _cat(vto="2026-09-30")}, hoy=HOY)
+    assert plan.rechazado is not None
+    assert "vpv" in plan.rechazado
+    assert plan.altas == [] and plan.invalidas == [] and plan.diferencias == []
+    assert "RECHAZADO" in plan.resumen()
+
+
+def test_un_vpv_presente_pero_invalido_sigue_siendo_una_fila_rota_no_un_contrato_roto():
+    """El rechazo por contrato es por AUSENCIA de la clave en TODAS las filas. Una
+    fila con `vpv: 0` (dato ausente) sigue el camino de siempre —inválida— y el resto
+    del payload se procesa."""
+    plan = planificar([_api("S30X6", vpv=0), _api("S31X6")], {}, hoy=HOY)
+    assert plan.rechazado is None
+    assert [i["ticker"] for i in plan.invalidas] == ["S30X6"]
+    assert [a["ticker"] for a in plan.altas] == ["S31X6"]
