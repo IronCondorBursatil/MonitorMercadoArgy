@@ -253,14 +253,19 @@ def _migrate_v4_quitar_patas_de_ambito(eng) -> dict:
     fija (`security_type` GO/CORP) que el job insertó como `primary`/`cotiza=1` —la regla
     «raíz compartida» fallaba el día en que sólo cotizaba la pata X (B2N6X, BAF7X, SE7X…,
     varias con el ISIN de un bono cargado: `backfill_legs_from_universe` las habría tomado
-    como pata pesos)— y sus novedades `nueva`. Sólo filas con `last_seen` (las del seed CSV
-    ya vienen como `especial`/`cotiza=0` y no se tocan). Equities no entran: NFLX/SPCX/SKHY
-    son tickers reales."""
+    como pata pesos)— y sus novedades `nueva`. Sólo filas `primary` con `last_seen`: las
+    del seed CSV vienen como `especial`/`cotiza=0` y no se tocan. Equities no entran:
+    NFLX/SPCX/SKHY son tickers reales.
+
+    En prod corrió (2026-09-08 07:29 AR) una versión SIN el filtro `primary` y se llevó
+    además 522 patas `especial` del seed que el job había marcado como vistas: filas
+    inertes (`cotiza=0`: fuera de `_universe_groups` y de la búsqueda del Universo), que
+    el CSV conserva. Se deja constancia; no se restauran."""
     out = {"catalogo": 0, "novedades": 0}
     with eng.begin() as conn:
         syms = [r[0] for r in conn.exec_driver_sql(
             "SELECT symbol FROM byma_catalog WHERE last_seen IS NOT NULL "
-            "AND security_type IN ('GO', 'CORP')").fetchall()]
+            "AND security_type IN ('GO', 'CORP') AND clase_liquidacion = 'primary'").fetchall()]
         borrar = [s for s in syms if len(s or "") >= 4 and (s or "")[-1].upper() in "XYZ"]
         for i in range(0, len(borrar), 500):
             chunk = borrar[i:i + 500]

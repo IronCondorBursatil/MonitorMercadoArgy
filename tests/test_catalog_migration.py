@@ -359,6 +359,9 @@ def test_v4_quita_las_patas_de_ambito_de_renta_fija_que_dejo_la_segunda_corrida(
             BymaCatalogORM(symbol="SPCX", security_type="CD", cotiza=1, clase_liquidacion="primary",
                            last_seen="2026-09-07"),
             BymaCatalogORM(symbol="AL30X", security_type="GO", cotiza=0, clase_liquidacion="especial"),
+            # pata `especial` del seed que el job marcó como vista: inerte, se conserva
+            BymaCatalogORM(symbol="AL30Y", security_type="GO", cotiza=0, clase_liquidacion="especial",
+                           last_seen="2026-09-07"),
         ])
         s.add_all([
             UniverseNovedadORM(symbol="B2N6X", first_seen="2026-09-07", source="byma",
@@ -371,6 +374,7 @@ def test_v4_quita_las_patas_de_ambito_de_renta_fija_que_dejo_la_segunda_corrida(
 
     assert _byma("B2N6X") is None and _byma("SE7X") is None and _byma("VBC4X") is None
     assert _byma("TZVD8") is not None and _byma("SPCX") is not None and _byma("AL30X") is not None
+    assert _byma("AL30Y") is not None
     from core.infrastructure.byma import novedades as nov
     assert [f["symbol"] for f in nov.listar("nueva")] == ["TZVD8"]
     assert get_schema_version() == CURRENT_SCHEMA_VERSION >= 4
