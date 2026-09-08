@@ -144,6 +144,13 @@ def test_router_renderiza_la_pata_dl_y_los_botones():
     from core.infrastructure.db.models import CashflowORM, InstrumentORM
 
     init_db()
+    # Forzar el auto-seed del singleton `get_repo()` ANTES de insertar TMVE8: si su
+    # PRIMERA instanciación (lru_cache) ocurriera con la tabla en 1 fila (sólo TMVE8),
+    # `_is_empty()` da False → salta la siembra del Excel → el singleton queda cacheado
+    # con UN solo instrumento, y como `reload()` nunca re-siembra, el cleanup de abajo
+    # (que borra TMVE8) lo deja en CERO instrumentos para el resto de la sesión de
+    # pytest (rompe cualquier test posterior que dependa de `get_repo()` vía TestClient).
+    get_repo()
     with SessionLocal.begin() as s:
         orm = InstrumentORM(ticker="TMVE8", short_name="TMVE8", instrument_type="DUAL_DL_TAMAR",
                             sheet="TAMAR", emission_date=_EMISION, maturity_date=_VTO,
