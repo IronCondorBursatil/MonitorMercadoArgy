@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from apps.web.deps_auth import get_db
+from apps.web.users_service import normalizar_email
 from core.infrastructure.db.models import UserORM
 from core.security import verify_password, create_access_token, get_password_hash
 from apps.web.templates import TEMPLATES as _TEMPLATES
@@ -152,7 +153,15 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
             request, "pages/login.html",
             {"error": "Demasiados intentos. Esperá unos minutos."}, status_code=429)
 
+    # El campo "Usuario" acepta usuario O email (spec §5.3). Primero el match exacto de
+    # username (comportamiento histórico); si no hay, el email normalizado. El rate-limit
+    # sigue clavado al valor tipeado y `verify_password` corre igual en los tres casos
+    # (usuario, email, nada): sin oráculo de existencia.
     user = db.query(UserORM).filter(UserORM.username == username).first()
+    if user is None:
+        mail = normalizar_email(username)
+        if mail and "@" in mail:
+            user = db.query(UserORM).filter(UserORM.email == mail).first()
     # Verificar SIEMPRE un hash (contra el real o el dummy) → mismo tiempo con/sin usuario.
     ok = verify_password(password, user.hashed_password) if user else verify_password(password, _dummy_hash())
     # Un usuario DESHABILITADO recibe exactamente la misma respuesta que una clave

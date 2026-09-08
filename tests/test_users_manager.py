@@ -497,3 +497,25 @@ def test_un_admin_no_puede_quitarse_el_rol_a_si_mismo(usuarios):
         assert r.status_code == 400 and "vos mismo" in r.text
     with SessionLocal() as s:
         assert s.get(UserORM, admin_id).is_admin is True
+
+
+# ── login por usuario o email ───────────────────────────────────────────────
+@pytest.mark.noauth
+def test_login_acepta_el_email_ademas_del_usuario(usuarios):
+    with TestClient(app) as c:
+        r = _login(c, "Bob@Ejemplo.com", "bobpass1234")      # mayúsculas: se normaliza
+        assert r.status_code in (302, 303) and "access_token" in c.cookies
+        assert c.get("/", follow_redirects=False).status_code == 200
+    with SessionLocal() as s:
+        assert s.query(UserORM).filter(UserORM.username == "bob").first().last_login_at is not None
+
+
+@pytest.mark.noauth
+def test_login_con_email_desconocido_o_clave_mal_es_indistinguible(usuarios):
+    with TestClient(app) as c:
+        r1 = _login(c, "nadie@ejemplo.com", "bobpass1234")
+        r2 = _login(c, "bob@ejemplo.com", "clave-incorrecta")
+        r3 = _login(c, "bob", "clave-incorrecta")
+    assert r1.status_code == r2.status_code == r3.status_code == 200
+    assert r1.text == r2.text == r3.text
+    assert "access_token" not in c.cookies
