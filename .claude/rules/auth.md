@@ -32,8 +32,8 @@ acá o en routers (agents.md §0.1.13). No debilitar validaciones para que un te
 - `get_current_user_html` = sólo login (routers `header`, `source`, `stream`). Admin
   obligatorio en `/source/*` POST y `/users/*`.
 - Rutas públicas = `tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS` (`/login`,
-  `/logout`, `/api/health`, `/reset/{token}`) + `/static`. Agregar una es cambiar ese test
-  a sabiendas.
+  `/logout`, `/api/health`, `/reset/{token}`, `/forgot`) + `/static`. Agregar una es cambiar ese
+  test a sabiendas.
 
 ## Rate-limit del login
 
@@ -54,7 +54,7 @@ uvicorn ≥ 0.48 ya honra `X-Forwarded-Proto` por default; no tocar el `ExecStar
 
 - Rutas del admin (`routers/users_abm.py`, todas bajo `get_admin_user_html`): `GET /users[?u=id]`,
   `GET /users/{id}/ficha` (fragmento HTMX), `POST /users/add`, `POST /users/{id}/datos`,
-  `/permisos`, `/reset` (form channel: manual | link (mail en Fase 3)), `/sesiones/cerrar`,
+  `/permisos`, `/reset` (form channel: manual | link | mail), `/sesiones/cerrar`,
   `/estado` (form `activo` 0/1), `POST /users/delete/{id}`. Las viejas `/users/update/{id}` y
   `/users/reset-password/{id}` ya no existen.
 - Tokens de reseteo/invitación: `apps/web/reset_service.py` (contrato: `secrets.token_urlsafe(32)`,
@@ -68,6 +68,19 @@ uvicorn ≥ 0.48 ya honra `X-Forwarded-Proto` por default; no tocar el `ExecStar
   verificando igual contra el dummy.
 - `/reset/{token}` (público a sabiendas): la MISMA página 200 para inexistente/vencido/usado/
   deshabilitado; éxito → 303 `/login?reset=ok`; rate-limit 10 por IP / 15 min.
+- Canal `mail` de `/reset`: manda el correo DENTRO del request (`core/infrastructure/mailer.py`);
+  si falla, el admin ve el error de envío Y el link copiable como respaldo — nunca se pierde la
+  vía manual. `POST /users/add` con SMTP activo y el usuario con email ofrece "Enviar link por
+  mail" (mismo respaldo si falla); sin SMTP o sin email el botón queda deshabilitado con el motivo.
+- `GET/POST /forgot` (público, en `_PUBLIC_PATHS`): respuesta neutra siempre (nunca confirma si
+  el usuario o el email existen), el envío corre por `BackgroundTasks` (no bloquea la respuesta);
+  rate-limit propio, aparte del de `/login` y `/reset/{token}` — 3 intentos por IP / 15 min y 3
+  por dato tipeado / 60 min (`_forgot_attempts_ip` / `_forgot_attempts_dato`, mismo `_rate_limited`
+  del login). Un invitado (`hashed_password="!"`) queda excluido: no se le puede pedir reset ahí.
+- `mailer.py` (`send_mail`): `smtplib` + STARTTLS, sin dependencia nueva; timeout 15 s
+  (`SMTP_TIMEOUT_S`); sin `MONITOR_SMTP_HOST` levanta `MailNotConfigured`
+  (`settings.mail_enabled = bool(smtp_host)`, gatea canal mail/invitación/`/forgot`). Variables
+  `MONITOR_SMTP_*` y la contraseña de aplicación de Gmail: `docs/despliegue.md`.
 - El login acepta usuario o email (`normalizar_email`); la clave del rate-limit sigue siendo
   el valor tipeado.
 - **Toda respuesta HTML de la ABM pasa por `_users_page`** (arma filas, resumen y ficha

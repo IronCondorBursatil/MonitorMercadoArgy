@@ -23,7 +23,7 @@ cada router en `app.py`. `is_admin` bypasea; `"*"` = todas. Los routers de lectu
 POST (conmutar la fuente, guardar credenciales BYMA) y `/users/*` exigen **admin**.
 `/api/health` es público pero recortado (sin `last_error`, sin tickers). El conjunto de
 rutas públicas lo fija `tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS` (incluye
-`/reset/{token}`, público a sabiendas y con su propio rate-limit, ver más abajo).
+`/reset/{token}` y `/forgot`, públicas a sabiendas y con su propio rate-limit, ver más abajo).
 
 Falta de **permiso** ≠ falta de **login**: `RequireTabPermission` levanta
 `TabForbiddenException` → **403** con la lista de pestañas habilitadas (`deps_auth.py` +
@@ -62,11 +62,12 @@ fecha del último cambio de contraseña; todo entró por la migración forward-o
 Las reglas puras viven en `apps/web/users_service.py`; el router `routers/users_abm.py` tiene una
 ruta POST por acción y responde siempre con `_users_page`. Deshabilitar una cuenta bloquea el
 login (misma respuesta que una clave incorrecta) y mata la sesión viva en el siguiente request.
-Las páginas sin sesión (`/login`, `/reset/{token}`; en la fase siguiente también `/forgot`)
-extienden `templates/base_public.html`: header de la app sin nav. El login (`POST /login`)
+Las páginas sin sesión (`/login`, `/reset/{token}`, `/forgot`) extienden
+`templates/base_public.html`: header de la app sin nav. El login (`POST /login`)
 acepta usuario o email indistintamente (busca `username == valor` o
 `email == normalizar_email(valor)`); la clave del rate-limit sigue siendo el valor tal cual
-se tipeó. La Fase 3 (mail, autoservicio `/forgot`) está descrita en la spec.
+se tipeó. La Fase 3 (mail, autoservicio `/forgot`) está implementada — detalle en
+"Correo y autoservicio" más abajo.
 
 **Reseteo por link e invitación** (Fase 2). Los tokens viven en `password_reset_tokens` y los
 maneja `apps/web/reset_service.py`: `secrets.token_urlsafe(32)` de 256 bits, se persiste SÓLO
@@ -86,6 +87,31 @@ es público a sabiendas (`_PUBLIC_PATHS`): la MISMA página 200 "Este link ya no
 token inexistente, vencido, ya usado o de un usuario deshabilitado, sin distinguir el motivo;
 al elegir contraseña con éxito redirige 303 a `/login?reset=ok` (banner). `POST /reset/{token}`
 tiene su propio rate-limit, 10 intentos por IP cada 15 minutos, aparte del de `/login`.
+
+## Correo y autoservicio
+
+Fase 3 (`core/infrastructure/mailer.py`, `apps/web/mail_templates.py`). `send_mail` manda por
+`smtplib` con STARTTLS (puerto 587, sin dependencia nueva), timeout 15 s (`SMTP_TIMEOUT_S`); sin
+`MONITOR_SMTP_HOST` configurado levanta `MailNotConfigured` — `settings.mail_enabled =
+bool(smtp_host)` es la perilla que gatea los tres puntos de entrada. Variables `MONITOR_SMTP_*` y
+cómo crear la contraseña de aplicación de Gmail: `docs/despliegue.md`.
+
+- **Canal `mail` en `/users/{id}/reset`**: el admin lo dispara desde el Manager y el correo sale
+  DENTRO del request; si el envío falla, la respuesta muestra el error de mail Y el link copiable
+  como respaldo — la vía manual nunca se pierde.
+- **Invitación por mail**: `POST /users/add access=invite` manda el link de invitación por correo
+  cuando `settings.mail_enabled` y el usuario tiene email; el botón "Enviar link por mail" aparece
+  deshabilitado con el motivo cuando falta cualquiera de las dos condiciones (mismo respaldo del
+  link copiable si el envío falla).
+- **`GET/POST /forgot`** (`routers/auth.py`, público en `_PUBLIC_PATHS`): respuesta neutra siempre,
+  nunca confirma si el usuario o el email existen; el envío corre en `BackgroundTasks` para no
+  bloquear la respuesta. Rate-limit propio, aparte del de `/login` y `/reset/{token}`: 3 intentos
+  por IP cada 15 minutos y 3 por dato tipeado cada 60 minutos (`_forgot_attempts_ip` /
+  `_forgot_attempts_dato`, mismo `_rate_limited` del login). Un usuario invitado
+  (`hashed_password="!"`) queda excluido: pedir reset por acá no le genera un token.
+- Con `mail_enabled=False` (sin SMTP en prod) el Manager esconde "Enviar link por mail" y
+  `/forgot` degrada a avisar que se pida el link al administrador — nunca rompe, sólo apaga el
+  canal.
 
 ## Al testear la web
 

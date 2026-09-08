@@ -72,6 +72,17 @@ freeze de prod: `deploy/freeze/prod-2026-09-07.txt`.
   `forwarded_allow_ips="127.0.0.1"` son default (verificado con `inspect.signature` sobre
   `uvicorn.Config`), así que `request.url.scheme` sigue el `X-Forwarded-Proto` de nginx.
 - `MONITOR_TRUSTED_PROXY_IPS` solo si el proxy no es local (`docs/auth.md › Rate-limit`).
+- **Correo saliente (Manager: reseteo por mail, invitaciones, «¿Olvidaste tu contraseña?»)**:
+  `MONITOR_SMTP_HOST=smtp.gmail.com`, `MONITOR_SMTP_PORT=587`, `MONITOR_SMTP_USER=<tu cuenta gmail>`,
+  `MONITOR_SMTP_PASSWORD=<contraseña de aplicación>` y opcional `MONITOR_SMTP_FROM`. Van en el `.env`
+  del servidor (mismo lugar que las credenciales BYMA), nunca en el repo. Host vacío = correo
+  apagado: el Manager esconde «Enviar link por mail» y `/forgot` avisa que pidan el link al
+  administrador. **Contraseña de aplicación de Gmail**: la cuenta necesita verificación en 2 pasos;
+  después en `myaccount.google.com › Seguridad › Contraseñas de aplicaciones` se crea una para
+  «Monitor» (16 caracteres, se muestra una sola vez). Verificar egress a 587 desde OCI en el primer
+  deploy (`ssh monitor-oci 'timeout 5 bash -c "</dev/tcp/smtp.gmail.com/587" && echo abierto'`); si
+  está cerrado, abrir la regla de salida en la security list. `MONITOR_PUBLIC_URL=http://129.80.148.166`
+  hace explícita la base de los links (sin ella se usa el Host del request, que nginx reenvía).
 
 ## Primer arranque (laptop o servidor nuevo) — la única receta
 

@@ -232,6 +232,10 @@ privadas), mismo script de tema, tarjeta centrada `panel-bg`/`panel-border`, bot
 | **F2** | `password_reset_tokens` + contrato §3 + `/reset/{token}` + canal "link copiable" + alta por invitación (link copiable) + actividad derivada + `_PUBLIC_PATHS` | mail |
 | **F3** | `mailer.py` + settings + canal "mail" + invitación por mail + `/forgot` + link en el login + rate-limits + nginx + docs de despliegue (env SMTP, `public_url`, cómo crear la contraseña de aplicación de Gmail) | — |
 
+**Estado (2026-09-08)**: F1 hecha y deployada. F2 hecha y deployada. F3 hecha (gate verde,
+`/security-review` pendiente del controller); deploy a prod pendiente del OK explícito de David
+(configurar el `.env` con las credenciales SMTP también queda a mano suya).
+
 Docs que se tocan: `docs/auth.md` y `.claude/rules/auth.md` (rutas públicas, tokens, mailer, `is_active`),
 `docs/despliegue.md` (env nuevas), `deploy/nginx/monitores.conf`, `CLAUDE.md` (una línea en **Web**: rutas
 públicas = las 5 del test), `docs/decisiones.md` (HTTP sin dominio, Gmail).

@@ -72,7 +72,8 @@ que corresponde. Ver `agents.md › §0.8 Fase 0`.
   (tarjetas) descartadas; mockups en el canvas enlazado desde la spec.
 - **Correo**: Gmail con contraseña de aplicación, SMTP 587 STARTTLS con `smtplib` (sin
   dependencia nueva). Si molesta el remitente, cambiar `MONITOR_SMTP_*` a un proveedor
-  transaccional no toca código.
+  transaccional no toca código. Correo por env en el server; sin SMTP la feature degrada al
+  link copiable.
 - **HTTP sin dominio**: no hay dominio ni lo va a haber por un largo rato. El link de reseteo
   viaja en claro igual que hoy viaja la contraseña del login; mitigaciones: token de 256 bits
   hasheado, un solo uso, 60 min (invitación 72 h), consumirlo cierra las otras sesiones.
