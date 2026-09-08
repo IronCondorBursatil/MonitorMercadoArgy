@@ -411,3 +411,33 @@ def test_un_usuario_comun_no_puede_tocar_el_manager(usuarios):
             assert r.status_code == 403, f"{path} devolvió {r.status_code}"
         assert c.get("/users", follow_redirects=False).status_code == 403
         assert c.get(f"/users/{bob}/ficha", follow_redirects=False).status_code == 403
+
+
+# ── alta ────────────────────────────────────────────────────────────────────
+@pytest.mark.noauth
+def test_alta_guarda_perfil_y_trazabilidad(usuarios):
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.post("/users/add", data={"username": "mcaceres", "password": "clave-segura-1",
+                                       "full_name": "Mariana Cáceres", "email": "M.Caceres@Ejemplo.com",
+                                       "notes": "cliente", "tabs": ["bonos", "fci"]})
+    assert r.status_code == 200 and 'action="/users/' in r.text and "mcaceres" in r.text
+    with SessionLocal() as s:
+        m = s.query(UserORM).filter(UserORM.username == "mcaceres").first()
+        assert m.email == "m.caceres@ejemplo.com" and m.full_name == "Mariana Cáceres"
+        assert m.created_by == "admin" and m.created_at is not None
+        assert m.password_changed_at is not None and m.is_active is True
+        assert m.allowed_tabs == ["bonos", "fci"]
+
+
+@pytest.mark.noauth
+def test_alta_rechaza_duplicados_y_email_invalido(usuarios):
+    with TestClient(app) as c:
+        _login_admin(c)
+        assert c.post("/users/add", data={"username": "bob", "password": "clave-segura-1"}).status_code == 400
+        assert c.post("/users/add", data={"username": "otro", "password": "clave-segura-1",
+                                          "email": "bob@ejemplo.com"}).status_code == 400
+        assert c.post("/users/add", data={"username": "otro", "password": "clave-segura-1",
+                                          "email": "mal"}).status_code == 400
+    with SessionLocal() as s:
+        assert s.query(UserORM).filter(UserORM.username == "otro").first() is None

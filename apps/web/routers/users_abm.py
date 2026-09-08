@@ -96,33 +96,47 @@ def add_user(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
+    full_name: str = Form(""),
+    email: str = Form(""),
+    notes: str = Form(""),
     is_admin: bool = Form(False),
     tabs: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
     admin: UserORM = Depends(get_admin_user_html),
 ):
-    invalido = _username_invalido(username) or password_invalida(password)
+    mail = normalizar_email(email)
+    invalido = _username_invalido(username) or password_invalida(password) or email_invalido(mail)
     if invalido:
-        return _users_page(request, db, status_code=400, error=invalido)
+        return _users_page(request, db, status_code=400, abrir_alta=True, error=invalido)
+    if db.query(UserORM).filter(UserORM.username == username).first():
+        return _users_page(request, db, status_code=400, abrir_alta=True,
+                           error=f"El usuario {username} ya existe.")
+    if mail and db.query(UserORM).filter(UserORM.email == mail).first():
+        return _users_page(request, db, status_code=400, abrir_alta=True,
+                           error=f"Ya hay un usuario con el email {mail}.")
 
-    # Check if exists
-    existing = db.query(UserORM).filter(UserORM.username == username).first()
-    if existing:
-        return _users_page(request, db, error=f"El usuario {username} ya existe.")
-
+    ahora = datetime.now()
     new_user = UserORM(
         username=username,
         hashed_password=get_password_hash(password),
         is_admin=is_admin,
-        allowed_tabs=["*"] if is_admin else tabs
+        allowed_tabs=["*"] if is_admin else _tabs_validas(tabs),
+        full_name=_texto(full_name, _NOMBRE_MAX),
+        email=mail,
+        notes=_texto(notes, _NOTAS_MAX),
+        is_active=True,
+        created_at=ahora,
+        created_by=getattr(admin, "username", None),
+        password_changed_at=ahora,
     )
     db.add(new_user)
     db.commit()
-    _audit.info("users action=add by=%s target=%s is_admin=%s tabs=%s",
+    _audit.info("users action=add by=%s target=%s is_admin=%s tabs=%s email=%s",
                 _limpio(getattr(admin, "username", "?")), _limpio(username),
-                bool(is_admin), _limpio(",".join(tabs or [])), extra={"console": True})
-
-    return _users_page(request, db, success=f"Usuario {username} creado exitosamente.")
+                bool(is_admin), _limpio(",".join(new_user.allowed_tabs or [])),
+                _limpio(mail or "-"), extra={"console": True})
+    return _users_page(request, db, selected_id=new_user.id,
+                       success=f"Usuario {username} creado.")
 
 @router.post("/users/delete/{user_id}", response_class=HTMLResponse)
 def delete_user(request: Request, user_id: int, db: Session = Depends(get_db),
