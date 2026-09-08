@@ -12,6 +12,12 @@ CER = ["CER", "LECER", "BONCER", "BONCER ZC", "CON CUPON", "STEP-UP"]
 DOLAR_LINKED = ["DOLAR_LINKED"]
 TAMAR = ["PURO"]            # TAMAR-linked: pay accrued TAMAR rate at maturity
 DUAL_TAMAR = ["DUAL", "DUAL_CER_TAMAR"]  # Dual TAMAR (fixed-floor) + Dual CER/TAMAR (new TXMJ* series)
+# DUAL dólar-linked/TAMAR (TMVE8): paga max(riel TAMAR capitalizado, 100 × FX / TC inicial).
+# Grupo PROPIO y NO dentro de DUAL_TAMAR a propósito: `apps/cli/bei.py` y la curva `tamar`
+# (`routers/curva.py`) toman DUAL_TAMAR como universo de TEA en pesos "pura" y un riel dólar
+# la distorsionaría. El panel TAMAR/Dual (`routers/panels_schema.py`), `app._ALL_TYPES` y el
+# grupo «TAMAR» de la cartera lo suman EXPLÍCITAMENTE (spec 2026-09-08 §2).
+DUAL_DL = ["DUAL_DL_TAMAR"]
 OBLIGACIONES_NEGOCIABLES = ["HARD DOLLAR", "DOLLAR LINKED"]  # ONs corporativas: hard-dollar (paga USD) / dollar-linked (paga pesos × FX). Ambos bajo categoría "Obligaciones Negociables".
 
 # Deuda SUBSOBERANA (provincias y municipios). Tipos propios —NO se reusan los de las
@@ -75,7 +81,7 @@ def has_closed_form_payoff(instrument_type) -> bool:
     return str(instrument_type or "").upper().strip() in ANALYTIC_PAYOFF_TYPES
 
 BOND_TYPES = [*SOBERANOS, *BOPREALES, *TASA_FIJA, *CER, *DOLAR_LINKED, *TAMAR,
-              *DUAL_TAMAR, *OBLIGACIONES_NEGOCIABLES, *PROVINCIALES]
+              *DUAL_TAMAR, *DUAL_DL, *OBLIGACIONES_NEGOCIABLES, *PROVINCIALES]
 
 KNOWN_TYPES = frozenset(BOND_TYPES + ACCIONES)
 

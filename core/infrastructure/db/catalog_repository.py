@@ -456,6 +456,20 @@ def _price_alias(raw) -> Optional[str]:
     return v[len(_PRECIO_DE):].strip().upper() or None
 
 
+def _fx_base(raw) -> Optional[float]:
+    """`raw_fields["tc_inicial"]` (pesos/USD, hoja Dólar Linked y hoja TAMAR) →
+    `Instrument.fx_base`. Coma decimal tolerada; vacío, 0 o basura → None (un 0 no es un
+    tipo de cambio: es dato ausente)."""
+    v = (raw or {}).get("tc_inicial")
+    if v is None or str(v).strip() == "":
+        return None
+    try:
+        f = float(str(v).strip().replace(",", "."))
+    except (ValueError, TypeError):
+        return None
+    return f if f > 0 else None
+
+
 def _orm_to_domain(orm: InstrumentORM) -> Instrument:
     return Instrument(
         ticker=orm.ticker, short_name=orm.short_name, instrument_type=orm.instrument_type,
@@ -482,6 +496,7 @@ def _orm_to_domain(orm: InstrumentORM) -> Instrument:
         coupon_rate=_coupon_pct(orm.raw_fields),   # cupón anual % (display-only)
         sector_override=(orm.raw_fields or {}).get("sector_override") or None,  # categoría manual ABM
         price_alias=_price_alias(orm.raw_fields),   # "precio_de:X" → cotiza con X
+        fx_base=_fx_base(orm.raw_fields),           # riel DL de DUAL_DL_TAMAR
     )
 
 

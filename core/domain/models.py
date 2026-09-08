@@ -85,6 +85,10 @@ class Instrument(BaseModel):
     serie_clase: Optional[str] = None  # ON: "Clase XXXI" / "Serie 13 Clase A"; display-only (vive en raw_fields)
     coupon_rate: Optional[float] = None  # cupón anual nominal % (raw_fields "cupon anual %"); display-only
     sector_override: Optional[str] = None  # ON: sector elegido a mano en ABM (raw_fields["sector_override"])
+    # DUAL dólar-linked/TAMAR (TMVE8): tipo de cambio INICIAL del prospecto (pesos/USD).
+    # Vive en raw_fields["tc_inicial"] —el mismo campo de la hoja Dólar Linked, donde es
+    # inerte— y es el denominador del riel DL: 100 × FX / fx_base. Sin él no hay riel.
+    fx_base: Optional[float] = None
     # Cotiza con el precio de OTRO símbolo (raw_fields["precio_fallback"] = "precio_de:X").
     # Caso real: TY30PUT es el BONTE 2030 (TY30P) con el put ejercido el 2027-05-30 —
     # mismo papel, otro schedule— y no tiene símbolo propio en BYMA ni Data912. El
@@ -193,6 +197,11 @@ class Instrument(BaseModel):
     def is_dual_cer_tamar(self) -> bool:
         """TXMJ* series: bullet bond paying max(CER+spread, TAMAR+spread) at maturity."""
         return self.norm_type == "DUAL_CER_TAMAR"
+
+    @property
+    def is_dual_dl_tamar(self) -> bool:
+        """TMVE8: bullet que paga max(riel TAMAR capitalizado, 100 × FX/fx_base) a vto."""
+        return self.norm_type == "DUAL_DL_TAMAR"
 
     @property
     def is_30_360(self) -> bool:

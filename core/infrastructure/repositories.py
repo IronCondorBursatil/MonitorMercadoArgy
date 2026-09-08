@@ -384,6 +384,11 @@ def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Ins
     cer_spread_raw = _first_present(row, ("cer_spread", "spread_cer"))
     cer_spread_val = _opt_float(cer_spread_raw, "cer_spread", raw_ticker)
 
+    fx_base_raw = _first_present(row, ("tc_inicial", "tc inicial", "fx_base"))
+    fx_base_val = _opt_float(fx_base_raw, "tc_inicial", raw_ticker)
+    if fx_base_val is not None and fx_base_val <= 0:
+        fx_base_val = None          # 0 del form = dato ausente, no un tipo de cambio
+
     freq_raw = _first_present(row, ("frecuencia pagos", "frecuencia"))
     freq = _safe_int(freq_raw, default=0) if freq_raw is not None else 0
     if freq <= 0:
@@ -409,7 +414,7 @@ def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Ins
         cer_base=cer_b, cer_lag=lag_val, category=category,
         floor_rate_monthly=floor, spread_rate=spread, cer_spread=cer_spread_val,
         payment_frequency=freq, day_count=day_count, ley_aplicable=ley or None,
-        isin=isin or None,
+        isin=isin or None, fx_base=fx_base_val,
     )
 
 
