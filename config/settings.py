@@ -281,6 +281,24 @@ class Settings(BaseSettings):
     # (correcto detrás del nginx local, que reenvía Host). Override: MONITOR_PUBLIC_URL.
     public_url: str = ""
 
+    # --- Correo saliente (Manager v2, spec §4): SMTP con STARTTLS, stdlib. Host vacío =
+    # correo APAGADO (el Manager esconde el canal mail y /forgot no manda nada). Gmail:
+    # smtp.gmail.com:587 con contraseña de aplicación (exige 2FA en la cuenta). La
+    # contraseña SOLO por env/.env del servidor (MONITOR_SMTP_PASSWORD), nunca en el repo.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""          # remitente visible; vacío = smtp_user
+
+    @property
+    def mail_enabled(self) -> bool:
+        return bool(self.smtp_host)
+
+    @property
+    def smtp_sender(self) -> str:
+        return self.smtp_from or self.smtp_user
+
     # Zona horaria del PROCESO. El droplet corre en Etc/UTC y la app usa `datetime.now()`
     # / `date.today()` naive por todos lados, así que sin esto (a) el header muestra
     # 11:09 en vez de 08:09, y (b) —más grave— entre las 21:00 y las 24:00 de Buenos
