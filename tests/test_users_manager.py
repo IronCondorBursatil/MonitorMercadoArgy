@@ -519,3 +519,17 @@ def test_login_con_email_desconocido_o_clave_mal_es_indistinguible(usuarios):
     assert r1.status_code == r2.status_code == r3.status_code == 200
     assert r1.text == r2.text == r3.text
     assert "access_token" not in c.cookies
+
+
+# ── canal a mano editable ───────────────────────────────────────────────────
+@pytest.mark.noauth
+def test_el_modal_de_clave_manual_permite_tipearla(usuarios):
+    with TestClient(app) as c:
+        _login_admin(c)
+        html = c.get("/users").text
+    i = html.index("function resetPassword(")
+    modal = html[i:i + 4000]
+    assert 'id="rp-pwd"' in modal and "readonly" not in modal.split('id="rp-pwd"')[1][:200], (
+        "el campo de la contraseña tiene que ser editable")
+    assert 'id="rp-gen"' in modal and "Generar otra" in modal
+    assert "input.value.length < 10" in modal or "value.length < 10" in modal

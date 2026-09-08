@@ -187,24 +187,27 @@ function escapeHtml(s) {
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 // Reseteo a mano: modal propio (sin confirm() ni navigator.clipboard, que sobre HTTP
-// no existe). La contraseña queda VISIBLE y seleccionable hasta que el admin confirma;
-// el copiado usa window.mrCopy (base.html), que cae a execCommand sin HTTPS.
+// no existe). La contraseña viene GENERADA pero es EDITABLE: el admin puede tipear la
+// que quiera (mínimo 10 caracteres, igual que el servidor). El copiado usa window.mrCopy
+// (base.html), que cae a execCommand sin HTTPS.
 function resetPassword(userId, username) {
-  const pwd = generateSecurePassword();
   const ov = document.createElement("div");
   ov.className = "modal-overlay";
   ov.innerHTML = `
-    <div class="modal-card" style="max-width:460px" role="dialog" aria-modal="true" aria-labelledby="rp-title">
+    <div class="modal-card" style="max-width:480px" role="dialog" aria-modal="true" aria-labelledby="rp-title">
       <div class="modal-head"><b id="rp-title">Definir contraseña a mano</b><span class="mut">${escapeHtml(username)}</span></div>
       <div class="modal-body">
-        <p style="margin:0 0 4px">Nueva contraseña para <b>${escapeHtml(username)}</b>:</p>
+        <p style="margin:0 0 4px">Nueva contraseña para <b>${escapeHtml(username)}</b> (podés tipear la tuya):</p>
         <div style="display:flex; gap:8px; margin:10px 0">
-          <input id="rp-pwd" type="text" readonly value="${escapeHtml(pwd)}"
+          <input id="rp-pwd" type="text" value="${escapeHtml(generateSecurePassword())}" minlength="10" maxlength="72"
+                 autocomplete="off" spellcheck="false"
                  style="flex:1; font-family:var(--font-mono); font-size:15px; letter-spacing:.5px; padding:9px 10px">
+          <button type="button" id="rp-gen" class="btn sec" title="Generar otra contraseña segura">Generar otra</button>
           <button type="button" id="rp-copy" class="btn sec">Copiar</button>
         </div>
-        <p class="help" style="margin:0">Guardala <b>antes</b> de confirmar: una vez aplicada no se puede volver a ver
-           (se almacena hasheada con bcrypt). Al aplicarla se cierran las sesiones abiertas del usuario.</p>
+        <p class="help" id="rp-help" style="margin:0">Mínimo 10 caracteres. Guardala <b>antes</b> de confirmar: una vez
+           aplicada no se puede volver a ver (se almacena hasheada con bcrypt). Al aplicarla se cierran las
+           sesiones abiertas del usuario.</p>
         <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px">
           <button type="button" id="rp-cancel" class="btn sec">Cancelar</button>
           <button type="button" id="rp-ok" class="btn">Aplicar ahora</button>
@@ -217,17 +220,31 @@ function resetPassword(userId, username) {
   document.addEventListener("keydown", onKey);
   ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
   const input = ov.querySelector("#rp-pwd");
+  const btnOk = ov.querySelector("#rp-ok");
   const btnCopy = ov.querySelector("#rp-copy");
+  const validar = () => {
+    const corta = input.value.length < 10;
+    btnOk.disabled = corta;
+    btnOk.style.opacity = corta ? ".5" : "1";
+  };
+  input.addEventListener("input", validar);
+  validar();
   input.focus(); input.select();
+  ov.querySelector("#rp-gen").addEventListener("click", () => {
+    input.value = generateSecurePassword(); validar(); input.focus(); input.select();
+  });
   btnCopy.addEventListener("click", () => {
-    window.mrCopy(pwd, (ok) => {
+    window.mrCopy(input.value, (ok) => {
       btnCopy.textContent = ok ? "¡Copiado!" : "Copiá con Ctrl+C";
       input.focus(); input.select();
       setTimeout(() => { btnCopy.textContent = "Copiar"; }, 2500);
     });
   });
   ov.querySelector("#rp-cancel").addEventListener("click", close);
-  ov.querySelector("#rp-ok").addEventListener("click", () => { close(); submitReset(userId, pwd); });
+  btnOk.addEventListener("click", () => {
+    if (input.value.length < 10) return;
+    const pwd = input.value; close(); submitReset(userId, pwd);
+  });
 }
 function submitReset(userId, pwd) {
   const form = document.createElement("form");
