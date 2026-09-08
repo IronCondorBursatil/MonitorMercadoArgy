@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from apps.web import reset_service
 from apps.web.deps_auth import get_db, get_admin_user_html
 from apps.web.templates import TEMPLATES as _TEMPLATES
 from apps.web.users_service import (TABS, TAB_KEYS, actividad_reciente, resumen,
@@ -53,19 +54,22 @@ def _tabs_validas(tabs) -> List[str]:
     return [t for t in (tabs or []) if t in TAB_KEYS]
 
 
-def _ctx_ficha(u: UserORM) -> dict:
-    return {"u": u, "v": vista_usuario(u), "actividad": actividad_reciente(u), "TABS": TABS}
+def _ctx_ficha(db, u: UserORM) -> dict:
+    inv = reset_service.invitaciones_vivas(db).get(u.id)
+    return {"u": u, "v": vista_usuario(u, invitacion=inv),
+            "actividad": actividad_reciente(u, tokens=reset_service.tokens_de(db, u)), "TABS": TABS}
 
 
 def _users_page(request, db, *, status_code: int = 200, selected_id: Optional[int] = None, **ctx):
     """ÚNICA forma de responder la página: arma todo el contexto (filas, resumen, ficha
     seleccionada). `selected_id` mantiene la ficha abierta tras un POST."""
     users = db.query(UserORM).order_by(UserORM.username).all()
+    invitaciones = reset_service.invitaciones_vivas(db)
     selected = db.get(UserORM, selected_id) if selected_id is not None else None
-    context = {"users": users, "filas": [vista_usuario(u) for u in users],
+    context = {"users": users, "filas": [vista_usuario(u, invitacion=invitaciones.get(u.id)) for u in users],
                "resumen": resumen(users), "TABS": TABS, "selected": selected, **ctx}
     if selected is not None:
-        context.update(_ctx_ficha(selected))
+        context.update(_ctx_ficha(db, selected))
     return _TEMPLATES.TemplateResponse(request, "pages/users.html", context,
                                        status_code=status_code)
 
@@ -88,7 +92,7 @@ def ficha(request: Request, user_id: int, db: Session = Depends(get_db)):
     if not user:
         return HTMLResponse(f'<div class="msg error">No existe el usuario id={user_id}.</div>',
                             status_code=404)
-    return _TEMPLATES.TemplateResponse(request, "fragments/user_ficha.html", _ctx_ficha(user))
+    return _TEMPLATES.TemplateResponse(request, "fragments/user_ficha.html", _ctx_ficha(db, user))
 
 
 @router.post("/users/add", response_class=HTMLResponse)
@@ -178,6 +182,16 @@ def reset_password(request: Request, user_id: int, channel: str = Form("manual")
     user = db.get(UserORM, user_id)
     if not user:
         return _no_existe(request, db, user_id)
+    if channel == "link":
+        token = reset_service.issue_reset_token(db, user, purpose="reset", channel="link",
+                                                by=getattr(admin, "username", None))
+        _audit.info("users action=reset_link channel=link purpose=reset by=%s target=%s",
+                    _limpio(getattr(admin, "username", "?")), _limpio(user.username),
+                    extra={"console": True})
+        return _users_page(request, db, selected_id=user_id,
+                           link_reset=reset_service.reset_link(request, token), link_para=user.username,
+                           link_vence="60 minutos",
+                           success=f"Link de reseteo generado para {user.username}. Vence en 60 minutos y sirve una sola vez; los links anteriores quedaron invalidados.")
     if channel != "manual":
         return _users_page(request, db, status_code=400, selected_id=user_id,
                            error="Ese canal de reseteo no está disponible todavía.")

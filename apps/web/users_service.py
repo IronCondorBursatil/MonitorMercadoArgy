@@ -11,6 +11,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from core.infrastructure.db.models import UserORM
+from core.security import SIN_PASSWORD_HASH
 
 # Pestañas en el MISMO orden que el nav de base.html y que `_TAB_LANDING` (auth.py).
 TABS: tuple[tuple[str, str], ...] = (
@@ -70,16 +71,41 @@ def fmt_momento(dt: Optional[datetime], hoy: Optional[date] = None) -> str:
     return f"{d.day:02d} {_MESES[d.month - 1]} {d.year}"
 
 
-def estado_usuario(u: UserORM) -> str:
-    return "activo" if u.is_active else "deshabilitado"
+def fmt_restante(hasta: datetime, ahora: Optional[datetime] = None) -> str:
+    """'vence en 2 d' · 'vence en 5 h' · 'vence en 45 min' · 'vencida'."""
+    ahora = ahora or datetime.now()
+    seg = (hasta - ahora).total_seconds()
+    if seg <= 0:
+        return "vencida"
+    if seg >= 86400:
+        return f"vence en {int(seg // 86400)} d"
+    if seg >= 3600:
+        return f"vence en {int(seg // 3600)} h"
+    return f"vence en {max(1, int(seg // 60))} min"
 
 
-def vista_usuario(u: UserORM, hoy: Optional[date] = None) -> dict:
-    """Lo que la tabla y la cabecera de la ficha muestran de un usuario."""
+def estado_usuario(u: UserORM, invitacion=None) -> str:
+    if not u.is_active:
+        return "deshabilitado"
+    if u.hashed_password == SIN_PASSWORD_HASH:
+        return "invitado"          # creado por invitación, todavía sin contraseña
+    return "activo"
+
+
+def vista_usuario(u: UserORM, hoy: Optional[date] = None, invitacion=None,
+                  ahora: Optional[datetime] = None) -> dict:
+    """Lo que la tabla y la cabecera de la ficha muestran de un usuario. `invitacion` es
+    el token de invitación VIVO del usuario (o None), que el router saca de la DB."""
+    estado = estado_usuario(u, invitacion)
+    if estado == "invitado":
+        inv_txt = f"Invitación · {fmt_restante(invitacion.expires_at, ahora)}" if invitacion else "Invitación vencida"
+    else:
+        inv_txt = ""
     return {
         "u": u,
         "iniciales": iniciales(u),
-        "estado": estado_usuario(u),
+        "estado": estado,
+        "invitacion_txt": inv_txt,
         "sin_email": not u.email,
         "ultimo_acceso": fmt_momento(u.last_login_at, hoy),
         "pwd_cambiada": fmt_momento(u.password_changed_at, hoy),
@@ -88,13 +114,25 @@ def vista_usuario(u: UserORM, hoy: Optional[date] = None) -> dict:
     }
 
 
-def actividad_reciente(u: UserORM, hoy: Optional[date] = None) -> list[dict]:
-    """Eventos DERIVADOS de las columnas (sin tabla de eventos), del más nuevo al más viejo.
-    La Fase 2 suma los tokens (link emitido / consumido / invitación aceptada)."""
+_QUE_CREADO = {"reset": "Link de reseteo generado", "invite": "Invitación generada"}
+_QUE_USADO = {"reset": "Contraseña elegida desde el link", "invite": "Invitación aceptada"}
+
+
+def actividad_reciente(u: UserORM, hoy: Optional[date] = None, tokens=()) -> list[dict]:
+    """Eventos DERIVADOS de las columnas y de los tokens (sin tabla de eventos), del más
+    nuevo al más viejo."""
     ev: list[dict] = []
     if u.last_login_at:
         ev.append({"cuando": u.last_login_at, "que": "Ingreso", "detalle": u.last_login_ip or ""})
-    if u.password_changed_at:
+    usados = []
+    for t in tokens:
+        quien = f"por {t.created_by}" if t.created_by else "autoservicio"
+        ev.append({"cuando": t.created_at, "que": _QUE_CREADO.get(t.purpose, "Link generado"),
+                   "detalle": f"{quien} · canal {t.channel}"})
+        if t.used_at and u.password_changed_at and abs((u.password_changed_at - t.used_at).total_seconds()) <= 2:
+            usados.append(t.used_at)
+            ev.append({"cuando": t.used_at, "que": _QUE_USADO.get(t.purpose, "Link usado"), "detalle": ""})
+    if u.password_changed_at and not any(abs((u.password_changed_at - x).total_seconds()) <= 2 for x in usados):
         ev.append({"cuando": u.password_changed_at, "que": "Contraseña cambiada",
                    "detalle": "por un administrador"})
     if u.created_at:

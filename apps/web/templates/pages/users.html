@@ -87,6 +87,19 @@
   {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
   {% if success %}<div class="msg success">{{ success }}</div>{% endif %}
 
+  {% if link_reset %}
+  <div class="panel" style="margin-bottom: 12px; padding: 12px 14px;">
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      <b>Link para {{ link_para }}</b><span class="mut">vence en {{ link_vence }} · un solo uso · pasáselo por el canal que quieras</span>
+    </div>
+    <div style="display: flex; gap: 8px; margin-top: 8px;">
+      <input id="link-reset" type="text" readonly value="{{ link_reset }}" style="flex: 1; font-family: var(--font-mono); font-size: 12px;" onclick="this.select()">
+      <button type="button" class="btn sec" onclick="umCopiarLink()">Copiar</button>
+    </div>
+    <div class="faint" style="margin-top: 6px;">No se puede volver a ver: si se pierde, generá otro (el anterior deja de servir).</div>
+  </div>
+  {% endif %}
+
   <details id="add-user-panel" class="um-add"{% if abrir_alta %} open{% endif %}>
     <summary></summary>
     <div class="panel">
@@ -136,7 +149,9 @@
             <td>{% if u.is_admin %}<span class="badge adm">Administrador</span>{% else %}<span class="badge">Usuario</span>{% endif %}</td>
             <td>{% if u.is_admin %}<span class="mut" style="font-style: italic;">Acceso total</span>{% else %}{% for t in f.tabs %}<span class="chip">{{ t }}</span>{% else %}<span style="color: var(--neg); font-size: 11px;">Sin accesos</span>{% endfor %}{% endif %}</td>
             <td class="mono mut">{{ f.ultimo_acceso }}</td>
-            <td>{% if u.is_active %}<span class="badge ok">Activo</span>{% else %}<span class="badge off">Deshabilitado</span>{% endif %}
+            <td>{% if f.estado == "deshabilitado" %}<span class="badge off">Deshabilitado</span>
+                {% elif f.estado == "invitado" %}<span class="badge warn">{{ f.invitacion_txt }}</span>
+                {% else %}<span class="badge ok">Activo</span>{% endif %}
                 {% if f.sin_email %} <span class="badge warn" title="Sin email: no puede recibir links">sin email</span>{% endif %}</td>
           </tr>
           {% endfor %}
@@ -181,6 +196,12 @@ function umFiltrar(q) {
   document.querySelectorAll("#um-rows tr").forEach(tr => {
     tr.style.display = !q || tr.dataset.q.indexOf(q) !== -1 ? "" : "none";
   });
+}
+function umCopiarLink() {
+  const i = document.getElementById("link-reset");
+  const b = event.currentTarget;
+  window.mrCopy(i.value, (ok) => { b.textContent = ok ? "¡Copiado!" : "Copiá con Ctrl+C"; i.focus(); i.select();
+    setTimeout(() => { b.textContent = "Copiar"; }, 2500); });
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => (

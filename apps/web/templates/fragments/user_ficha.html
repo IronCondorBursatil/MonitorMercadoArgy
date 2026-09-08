@@ -9,7 +9,9 @@
     <div class="um-ficha-who">
       <div class="um-ficha-user">{{ u.username }}</div>
       <div class="mut">{{ u.full_name or "—" }} ·
-        {% if u.is_active %}<span class="badge ok">Activo</span>{% else %}<span class="badge off">Deshabilitado</span>{% endif %}
+        {% if v.estado == "deshabilitado" %}<span class="badge off">Deshabilitado</span>
+        {% elif v.estado == "invitado" %}<span class="badge warn">{{ v.invitacion_txt }}</span>
+        {% else %}<span class="badge ok">Activo</span>{% endif %}
         {% if v.sin_email %}<span class="badge warn" title="Sin email: no puede recibir links">sin email</span>{% endif %}
       </div>
     </div>
@@ -43,6 +45,7 @@
     <div class="um-sect">
       <p class="um-sect-t">Seguridad</p>
       <div class="um-row">
+        <form method="POST" action="/users/{{ u.id }}/reset"><input type="hidden" name="channel" value="link"><button type="submit" class="btn">Generar link para copiar</button></form>
         <button type="button" class="btn sec" data-uid="{{ u.id }}" data-username="{{ u.username }}"
                 onclick="resetPassword(this.dataset.uid, this.dataset.username)">Definir contraseña a mano</button>
         <form method="POST" action="/users/{{ u.id }}/sesiones/cerrar"><button type="submit" class="btn sec">Cerrar sesiones</button></form>

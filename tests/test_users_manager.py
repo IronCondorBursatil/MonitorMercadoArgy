@@ -713,3 +713,41 @@ def test_reset_post_tiene_rate_limit_por_ip(usuarios):
                    for _ in range(11)]
     assert codigos[:10] == [200] * 10 and codigos[10] == 429
     auth_router._reset_attempts.clear()
+
+
+# ── canal link + actividad ──────────────────────────────────────────────────
+def test_fmt_restante_y_estado_invitado():
+    from datetime import timedelta
+    from apps.web.users_service import estado_usuario, fmt_restante
+    from core.security import SIN_PASSWORD_HASH
+    ahora = datetime(2026, 9, 8, 10, 0)
+    assert fmt_restante(ahora + timedelta(days=2, hours=3), ahora) == "vence en 2 d"
+    assert fmt_restante(ahora + timedelta(hours=5, minutes=10), ahora) == "vence en 5 h"
+    assert fmt_restante(ahora + timedelta(minutes=45), ahora) == "vence en 45 min"
+    assert fmt_restante(ahora - timedelta(seconds=1), ahora) == "vencida"
+    assert estado_usuario(_u(hashed_password=SIN_PASSWORD_HASH)) == "invitado"
+    assert estado_usuario(_u(hashed_password=SIN_PASSWORD_HASH, is_active=False)) == "deshabilitado"
+
+
+@pytest.mark.noauth
+def test_canal_link_genera_un_link_que_funciona_y_queda_en_la_actividad(usuarios):
+    import re
+    bob = _bob_id()
+    with TestClient(app) as admin_c, TestClient(app) as anon:
+        _login_admin(admin_c)
+        r = admin_c.post(f"/users/{bob}/reset", data={"channel": "link"})
+        assert r.status_code == 200
+        m = re.search(r'value="(http://testserver/reset/[A-Za-z0-9_\-]+)"', r.text)
+        assert m, "el link tiene que mostrarse una vez en un input readonly"
+        link = m.group(1)
+        assert "Link de reseteo generado" in r.text and "60 minutos" in r.text
+        assert anon.get(link.replace("http://testserver", "")).status_code == 200
+        r2 = anon.post(link.replace("http://testserver", ""),
+                       data={"password": "elegida-por-bob-1", "password2": "elegida-por-bob-1"},
+                       follow_redirects=False)
+        assert r2.status_code == 303
+        ficha = admin_c.get(f"/users/{bob}/ficha").text
+        assert "Contraseña elegida desde el link" in ficha
+        assert "por un administrador" not in ficha, "el evento genérico duplicaría el del token"
+        assert admin_c.post(f"/users/{bob}/reset", data={"channel": "mail"}).status_code == 400
+        assert admin_c.post("/users/999999/reset", data={"channel": "link"}).status_code == 404
