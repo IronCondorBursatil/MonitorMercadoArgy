@@ -72,7 +72,7 @@ ACCIONES = ["ACCION", "CEDEAR"]   # CEDEAR: alta automática del job de novedade
 # `tests/test_perf_W1_cashflows_ancla.py::test_analytic_payoff_types_coincide_con_el_registry`
 # recorre BOND_TYPES y exige la equivalencia exacta con `strategy_for`. Si mañana
 # una familia nueva estrena payoff cerrado, ese test rompe hasta agregarla acá.
-ANALYTIC_PAYOFF_TYPES = frozenset({*TAMAR, *DUAL_TAMAR})   # PURO, DUAL, DUAL_CER_TAMAR
+ANALYTIC_PAYOFF_TYPES = frozenset({*TAMAR, *DUAL_TAMAR, *DUAL_DL})   # PURO, DUAL, DUAL_CER_TAMAR, DUAL_DL_TAMAR
 
 
 def has_closed_form_payoff(instrument_type) -> bool:

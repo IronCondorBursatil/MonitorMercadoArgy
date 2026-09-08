@@ -148,7 +148,7 @@ PANELS = {
     "cer": ("BONOS CER", {"CER", "LECER", "BONCER", "BONCER ZC", "CON CUPON", "STEP-UP"}, _CER_COLS),
     "tasa_fija": ("TASA FIJA", {"LECAP", "BONCAP", "BONOFIJA"}, _TASA_FIJA_COLS),
     "dolar_linked": ("DOLAR LINKED", {"DOLAR_LINKED"}, _BONARES_COLS),
-    "tamar": ("TAMAR / DUAL", {"PURO", "DUAL", "DUAL_CER_TAMAR"}, _TAMAR_COLS),
+    "tamar": ("TAMAR / DUAL", {"PURO", "DUAL", "DUAL_CER_TAMAR", "DUAL_DL_TAMAR"}, _TAMAR_COLS),
     "obligaciones_negociables": ("OBLIGACIONES NEGOCIABLES · ON USD", set(OBLIGACIONES_NEGOCIABLES), _ON_COLS),
     # Deuda subsoberana (provincias/municipios). Columnas de ON: misma economía
     # (hard-dollar amortizable con paridad/VR), distinto emisor. Tipos propios →

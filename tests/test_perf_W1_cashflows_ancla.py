@@ -131,11 +131,13 @@ def test_analytic_payoff_types_coincide_con_el_registry():
     )
     from core.domain.models import Instrument
     from core.domain.pricing.registry import strategy_for
-    from core.domain.pricing.strategies import DualCerTamarStrategy, TamarStrategy
+    from core.domain.pricing.strategies import (
+        DualCerTamarStrategy, DualDlTamarStrategy, TamarStrategy,
+    )
 
-    assert ANALYTIC_PAYOFF_TYPES == frozenset({"PURO", "DUAL", "DUAL_CER_TAMAR"})
+    assert ANALYTIC_PAYOFF_TYPES == frozenset({"PURO", "DUAL", "DUAL_CER_TAMAR", "DUAL_DL_TAMAR"})
 
-    cerradas = (TamarStrategy, DualCerTamarStrategy)
+    cerradas = (TamarStrategy, DualCerTamarStrategy, DualDlTamarStrategy)
     for t in BOND_TYPES:
         inst = Instrument(ticker="X", short_name="X", instrument_type=t)
         analitica = isinstance(strategy_for(inst), cerradas)

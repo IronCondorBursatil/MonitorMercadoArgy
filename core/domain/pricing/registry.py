@@ -11,6 +11,7 @@ from core.domain.pricing.strategies import (
     CerStrategy,
     DolarLinkedStrategy,
     DualCerTamarStrategy,
+    DualDlTamarStrategy,
     HardDollarStrategy,
     TamarStrategy,
 )
@@ -24,6 +25,7 @@ from core.domain.pricing.strategies import (
 # `VanillaStrategy` aplica en TIR/duración (igual que el original). BOPREAL y los
 # CER 30/360 lo heredan vía VanillaStrategy / CerStrategy.
 _RULES: List[Tuple[Callable, PricingStrategy]] = [
+    (lambda i: i.is_dual_dl_tamar, DualDlTamarStrategy()),
     (lambda i: i.is_dual_cer_tamar, DualCerTamarStrategy()),
     (lambda i: i.is_tamar_puro or i.is_dual_tamar, TamarStrategy()),
     (lambda i: i.is_dolar_linked, DolarLinkedStrategy()),

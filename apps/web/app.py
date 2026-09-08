@@ -49,7 +49,7 @@ from apps.web.state import AppState
 from apps.web.supervisor import supervise
 from config.settings import settings
 from core.domain.instrument_groups import (
-    BOPREALES, CER, DOLAR_LINKED, DUAL_TAMAR, OBLIGACIONES_NEGOCIABLES,
+    BOPREALES, CER, DOLAR_LINKED, DUAL_DL, DUAL_TAMAR, OBLIGACIONES_NEGOCIABLES,
     PROVINCIALES, SOBERANOS, TAMAR, TASA_FIJA,
 )
 from core.infrastructure.async_http import ResilientClient
@@ -58,7 +58,7 @@ from core.infrastructure.provider_hub import ProviderHub
 logger = logging.getLogger(__name__)
 
 _ALL_TYPES = [*SOBERANOS, *BOPREALES, *TASA_FIJA, *CER, *DOLAR_LINKED, *TAMAR,
-              *DUAL_TAMAR, *OBLIGACIONES_NEGOCIABLES, *PROVINCIALES]
+              *DUAL_TAMAR, *DUAL_DL, *OBLIGACIONES_NEGOCIABLES, *PROVINCIALES]
 
 
 

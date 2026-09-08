@@ -11,6 +11,7 @@ el fall-through del código original.
 | DolarLinkedStrategy  | DOLAR_LINKED         | V.Téc/precio en pesos; TIR en USD      |
 | TamarStrategy        | PURO / DUAL          | payoff BONTE TAMAR; TIR cerrada; m=12  |
 | DualCerTamarStrategy | DUAL_CER_TAMAR       | payoff max-rieles; TIR cerrada; m=12   |
+| DualDlTamarStrategy  | DUAL_DL_TAMAR        | payoff max(TAMAR, 100×FX/fx_base); TIR cerrada; m=12 |
 
 El day-count 30/360 (BOPREAL y bonos CER marcados 30/360) NO es un tipo aparte:
 en el `services.py` original es un chequeo inline (`is_30_360`) dentro del camino
@@ -21,6 +22,7 @@ duración), exactamente como el motor viejo.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 import numpy as np
@@ -220,6 +222,43 @@ class TamarStrategy(VanillaStrategy):
         return super().price_from_tir(inst, tir, ctx)
 
 
+def _fx_mayorista(ctx: PricingContext) -> Optional[float]:
+    """Dólar del riel dólar-linked: mayorista venta VIVO (dolarapi, el mismo que usa
+    `DolarLinkedStrategy`); si no responde, el fixing A3500 del BCRA al settle (forward-fill
+    del provider); si tampoco, None. Nunca 0: un 0 de una fuente externa es dato ausente."""
+    rate = _fx_offer(ctx.fx, "get_mayorista_venta")
+    if rate is None and ctx.indices is not None:
+        fn = getattr(ctx.indices, "get_a3500", None)
+        rate = fn(ctx.settle) if callable(fn) else None
+    return rate if (rate is not None and rate > 0) else None
+
+
+def dual_dl_tamar_payoff_at(inst, ref: date, ctx: PricingContext, *,
+                            to_date: Optional[date] = None,
+                            fx_rate: Optional[float] = None) -> Optional[float]:
+    """Payoff per-100 de un DUAL_DL_TAMAR a `to_date` (default: vencimiento):
+    ``max(riel TAMAR, 100 × FX / fx_base)``.
+
+    El riel TAMAR es `tamar_dual_payoff_at` TAL CUAL: para este tipo devuelve la
+    capitalización mensual desde la emisión (sin floor —no es DUAL— y sin riel CER —no es
+    DUAL_CER_TAMAR—), así que `tamar.py` y su contrato de cuatro pasos no se tocan. El riel
+    DL usa el dólar del settle SIN proyectarlo (decisión de David, spec §1); `fx_rate`
+    permite inyectarlo (popup/tests). Sin `fx_base`, sin dólar o sin serie TAMAR → None:
+    no se inventa y no se precia con el riel TAMAR solo (un dual sin su segundo riel es un
+    dato incompleto; la ABM exige `tc_inicial`)."""
+    if not inst.fx_base or inst.fx_base <= 0:
+        return None
+    rate = fx_rate if fx_rate is not None else _fx_mayorista(ctx)
+    if rate is None or rate <= 0:
+        return None
+    end = to_date if to_date is not None else inst.maturity_date
+    riel_tamar = tamar_dual_payoff_at(inst, ref, ctx.indices,
+                                      tamar_forecast=ctx.tamar_forecast, to_date=end)
+    if riel_tamar is None:
+        return None
+    return max(riel_tamar, 100.0 * rate / inst.fx_base)
+
+
 class DualCerTamarStrategy(VanillaStrategy):
     """DUAL CER/TAMAR (serie TXMJ*). Bullet que paga a vencimiento
     ``max(riel TAMAR, 100 × CER_vto/cer_base × (1+cer_spread)^años)`` —
@@ -341,3 +380,57 @@ class DualCerTamarStrategy(VanillaStrategy):
             years = inst.year_fraction_to(inst.maturity_date, settle)
             return payback / (1 + tir) ** years
         return super().price_from_tir(inst, tir, ctx)
+
+
+class DualDlTamarStrategy(VanillaStrategy):
+    """DUAL dólar-linked/TAMAR (TMVE8). Bullet que paga a vencimiento
+    ``max(riel TAMAR capitalizado mensual desde la emisión, 100 × FX / fx_base)``
+    (`dual_dl_tamar_payoff_at`).
+
+    Misma convención que `DualCerTamarStrategy`: **TIR nominal (TEA)** contra el payoff
+    proyectado, `(payoff / precio)^(1/años) − 1`; **V.Téc = max de rieles devengado al
+    settle** (100 antes de la emisión); **MD bullet con m=12**; `price_from_tir` es la
+    inversa exacta (round-trip por construcción). El riel DL toma el dólar del settle y no lo
+    proyecta (spec 2026-09-08 §1). Sin `fx_base` o sin dólar NO precia (None). Vencido →
+    camino general (`VanillaStrategy`)."""
+
+    def technical_value(self, inst, ctx: PricingContext):
+        ref = ctx.settle
+        if not inst.emission_date or inst.emission_date >= ref:
+            return 100.0
+        return dual_dl_tamar_payoff_at(inst, ref, ctx, to_date=ref)
+
+    @staticmethod
+    def _vivo(inst, ctx: PricingContext) -> bool:
+        return bool(inst.emission_date and inst.maturity_date and inst.maturity_date > ctx.settle)
+
+    def tir(self, inst, price, ctx: PricingContext):
+        if not self._vivo(inst, ctx):
+            return super().tir(inst, price, ctx)
+        payoff = dual_dl_tamar_payoff_at(inst, ctx.settle, ctx)
+        if payoff is None or payoff <= 0 or price is None or price <= 0:
+            return None
+        years = inst.year_fraction_to(inst.maturity_date, ctx.settle)
+        if years <= 0:
+            return None
+        try:
+            return (payoff / price) ** (1.0 / years) - 1.0
+        except (ValueError, OverflowError, ZeroDivisionError):
+            return None
+
+    def duration(self, inst, tir, ctx: PricingContext):
+        if tir is None or not np.isfinite(tir) or tir <= -1.0:
+            return None
+        if self._vivo(inst, ctx):
+            years = inst.year_fraction_to(inst.maturity_date, ctx.settle)
+            return years / (1 + tir) ** (1.0 / 12.0)
+        return super().duration(inst, tir, ctx)
+
+    def price_from_tir(self, inst, tir, ctx: PricingContext):
+        if not self._vivo(inst, ctx):
+            return super().price_from_tir(inst, tir, ctx)
+        payoff = dual_dl_tamar_payoff_at(inst, ctx.settle, ctx)
+        if payoff is None:
+            return None
+        years = inst.year_fraction_to(inst.maturity_date, ctx.settle)
+        return payoff / (1 + tir) ** years

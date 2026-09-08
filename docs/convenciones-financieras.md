@@ -27,18 +27,19 @@
    moneda por sufijo.
 2. [Bonos CER (NT N°8/2024)](#bonos-cer-nt-n82024)
 3. [Bonos TAMAR (PURO, DUAL, DUAL_CER_TAMAR)](#bonos-tamar-puro-dual-dual_cer_tamar)
-4. [Bonos DOLAR LINKED](#bonos-dolar-linked)
-5. [Obligaciones Negociables (ON hard-dollar)](#obligaciones-negociables-on-hard-dollar)
-6. [Soberanos: 3 especies por moneda (ARS / MEP / CABLE) + pricing de la pata ARS](#soberanos-3-especies-por-moneda-ars--mep--cable--pricing-de-la-pata-ars)
-7. [Bonos LECAP / BONCAP capitalizables](#bonos-lecap--boncap-capitalizables)
-8. [Futuros DLR, valor relativo y escenarios](#futuros-dlr-valor-relativo-y-escenarios)
-9. [Curvas y BEI (NT N°3/2019 + NT N°8/2024)](#curvas-y-bei-nt-n32019--nt-n82024)
-10. [Política de precisión y tolerancias](#política-de-precisión-y-tolerancias)
-11. [Verificación independiente: inventario de goldens](#verificación-independiente-inventario-de-goldens)
-12. [Schema de las hojas / campos del instrumento](#schema-de-las-hojas--campos-del-instrumento)
-13. [Cómo extender la matemática financiera](#cómo-extender-la-matemática-financiera)
-14. [Refutado — no volver a escribir](#refutado--no-volver-a-escribir)
-15. [No verificado en código](#no-verificado-en-código)
+4. [Bonos DUAL DÓLAR-LINKED / TAMAR (`DUAL_DL_TAMAR`)](#bonos-dual-dólar-linked--tamar-dual_dl_tamar)
+5. [Bonos DOLAR LINKED](#bonos-dolar-linked)
+6. [Obligaciones Negociables (ON hard-dollar)](#obligaciones-negociables-on-hard-dollar)
+7. [Soberanos: 3 especies por moneda (ARS / MEP / CABLE) + pricing de la pata ARS](#soberanos-3-especies-por-moneda-ars--mep--cable--pricing-de-la-pata-ars)
+8. [Bonos LECAP / BONCAP capitalizables](#bonos-lecap--boncap-capitalizables)
+9. [Futuros DLR, valor relativo y escenarios](#futuros-dlr-valor-relativo-y-escenarios)
+10. [Curvas y BEI (NT N°3/2019 + NT N°8/2024)](#curvas-y-bei-nt-n32019--nt-n82024)
+11. [Política de precisión y tolerancias](#política-de-precisión-y-tolerancias)
+12. [Verificación independiente: inventario de goldens](#verificación-independiente-inventario-de-goldens)
+13. [Schema de las hojas / campos del instrumento](#schema-de-las-hojas--campos-del-instrumento)
+14. [Cómo extender la matemática financiera](#cómo-extender-la-matemática-financiera)
+15. [Refutado — no volver a escribir](#refutado--no-volver-a-escribir)
+16. [No verificado en código](#no-verificado-en-código)
 
 ---
 
@@ -332,6 +333,30 @@ Tres caminos, en este orden (`_xirr_from_years`, `:151-209`):
 - Guardianes: `tests/test_aud_B_financiero_dual_cer_tamar.py` (spread + max + round-trip),
   `test_rem_R1_financiero_cer_lag.py`, `test_fin_Z1_financiero_vtec_settlement.py`,
   `test_rem_R1_financiero_dual_md.py`.
+
+---
+
+## Bonos DUAL DÓLAR-LINKED / TAMAR (`DUAL_DL_TAMAR`)
+
+- Caso: TMVE8 (emisión 2026-07-31, vto 2028-01-31). Ficha BYMA: a vencimiento paga el máximo
+  entre el VN al **tipo de cambio aplicable** y el VN al **tipo de cambio inicial** más TAMAR
+  TEM capitalizable mensual. Spec: `docs/superpowers/specs/2026-09-08-dual-dl-tamar-design.md`.
+- **Payoff** (`pricing/strategies.py::dual_dl_tamar_payoff_at`): `max(riel TAMAR, 100 × FX /
+  fx_base)`. Riel TAMAR = `tamar_dual_payoff_at` sin modificar (capitalización mensual 30/360
+  desde la emisión, `spread_rate` sumado a la TNA). Riel DL: FX = mayorista venta vivo
+  (`fx.get_mayorista_venta`, el mismo de Dólar Linked), fallback A3500 BCRA al settle; **sin
+  proyectar el dólar** (decisión 2026-09-08). `fx_base` = `raw_fields["tc_inicial"]`.
+- **TIR**: TEA nominal en pesos `(payoff/precio)^(1/años) − 1`, `años = year_fraction_to`
+  (30/360). **V.Téc** = max de rieles devengado al settle; 100 antes de la emisión. **MD**
+  bullet m=12. `price_from_tir` inversa exacta. Sin `fx_base`/FX/TAMAR → None (no se precia
+  con el riel TAMAR solo).
+- Grupo propio `instrument_groups.DUAL_DL` (fuera de BEI y de la curva `tamar`; adentro del
+  panel TAMAR/Dual, `_ALL_TYPES` y la cartera). Tipo analítico: fila ancla, sin schedule.
+- Popup: `<T>_TAM` (TEA del riel TAMAR, clon PURO) y `<T>_DL` (TIR en USD del riel DL: clon
+  `DOLAR_LINKED` zero-coupon de 100 USD a vto, precio ÷ mayorista).
+- Guardianes: `tests/test_dual_dl_tamar.py` (rieles, V.Téc, round-trip, m=12, None),
+  `tests/test_bond_detail_leg_dl.py`, `tests/test_abm_dual_dl_tamar.py`. Sin golden externo
+  todavía (inventario).
 
 ---
 

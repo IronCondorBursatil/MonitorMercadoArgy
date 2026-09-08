@@ -23,7 +23,7 @@ from apps.web.deps import get_fx, get_repo, get_state
 from apps.web.templates import TEMPLATES as _TEMPLATES
 from core.domain import portfolio
 from core.domain.instrument_groups import (
-    BOPREALES, CER, DOLAR_LINKED, DUAL_TAMAR, SOBERANOS, TAMAR, TASA_FIJA,
+    BOPREALES, CER, DOLAR_LINKED, DUAL_DL, DUAL_TAMAR, SOBERANOS, TAMAR, TASA_FIJA,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ router = APIRouter()
 _GRUPO = {}
 for _label, _types in (("Soberano", SOBERANOS), ("Bopreal", BOPREALES), ("Tasa Fija", TASA_FIJA),
                        ("CER", CER), ("Dolar Linked", DOLAR_LINKED),
-                       ("TAMAR", TAMAR + DUAL_TAMAR)):
+                       ("TAMAR", TAMAR + DUAL_TAMAR + DUAL_DL)):
     for _t in _types:
         _GRUPO[_t] = _label
 
