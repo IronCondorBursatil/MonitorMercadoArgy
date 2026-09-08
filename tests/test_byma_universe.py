@@ -403,9 +403,14 @@ def test_un_bonte_o_dual_de_titulos_publicos_no_recibe_una_clase_inventada(tmp_d
     with SessionLocal.begin() as s:
         s.add(_uni_row("TO26"))
         s.add(_uni_row("TTM26"))
-    for sym in ("TO26", "TTM26"):
-        pf = universe.prefill_for(sym)
-        assert pf["sheet"] == "Soberanos" and "clase" not in pf["fields"], sym
+    # TO26 (BONOFIJA: T+dígito) no matchea nada — queda en Soberanos sin clase inventada.
+    pf_to26 = universe.prefill_for("TO26")
+    assert pf_to26["sheet"] == "Soberanos" and "clase" not in pf_to26["fields"]
+    # TTM26 (BONTE dual): TT+letra matchea la familia TAMAR (spec 2026-09-08 §5, misma
+    # forma que TTJ26) — abre la hoja TAMAR sin clase inventada ni tipo preseleccionado.
+    pf_ttm26 = universe.prefill_for("TTM26")
+    assert pf_ttm26["sheet"] == "TAMAR" and "clase" not in pf_ttm26["fields"]
+    assert "tipo" not in pf_ttm26["fields"]
     assert universe._clase_letra("TY30P") is None
     assert universe._clase_letra("S31G6") == "LECAP" and universe._clase_letra("T30J7") == "BONCAP"
 

@@ -285,11 +285,11 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
         ],
     },
     "TAMAR": {
-        "label": "TAMAR (PURO / DUAL / DUAL_CER_TAMAR)",
+        "label": "TAMAR (PURO / DUAL / DUAL_CER_TAMAR / DUAL_DL_TAMAR)",
         "fields": [
             {"key": "ticker",          "label": "Ticker",               "type": "text",   "required": True},
             {"key": "tipo",            "label": "Tipo",                 "type": "select", "required": True,
-             "options": ["PURO", "DUAL", "DUAL_CER_TAMAR"]},
+             "options": ["PURO", "DUAL", "DUAL_CER_TAMAR", "DUAL_DL_TAMAR"]},
             {"key": "fecha_emision",   "label": "Fecha emisión",        "type": "date",   "required": True},
             {"key": "fecha_vencimiento","label": "Vencimiento",         "type": "date",   "required": True},
             {"key": "cupon anual %",   "label": "Cupón anual % (si aplica)", "type": "text",
@@ -308,6 +308,9 @@ SHEET_SCHEMAS: Dict[str, Dict[str, Any]] = {
              "help": "Solo DUAL_CER_TAMAR — CER 10h pre-emisión"},
             {"key": "cer_spread",      "label": "Spread CER (decimal)", "type": "number",
              "step": "0.0001", "help": "Solo DUAL_CER_TAMAR"},
+            {"key": "tc_inicial",      "label": "TC inicial (pesos/USD)", "type": "number",
+             "step": "0.0001",
+             "help": "Solo DUAL_DL_TAMAR — tipo de cambio inicial del prospecto; denominador del riel dólar-linked"},
         ],
     },
     "Obligaciones_Negociables": {
@@ -723,7 +726,7 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
 
     Dos reglas de cierre, por tipo:
 
-    · **Payoff analítico** (PURO / DUAL / DUAL_CER_TAMAR, ver
+    · **Payoff analítico** (PURO / DUAL / DUAL_CER_TAMAR / DUAL_DL_TAMAR, ver
       `instrument_groups.ANALYTIC_PAYOFF_TYPES`): se persiste SOLO la fila **ancla**
       (`es_ancla=1`, monto 0 al vencimiento). Un schedule nominal sería *incorrecto*
       para ellos —su pago sale de `tamar.tamar_dual_payoff_at`— y además llegaría al
@@ -807,6 +810,11 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
                 f"{primary}: un {itype} necesita fecha de VENCIMIENTO. Su pago no sale de "
                 f"un schedule sino de la fórmula cerrada TAMAR, así que en la DB se guarda "
                 f"una sola fila ancla con esa fecha. Completá «Vencimiento» y guardá de nuevo.")
+        if itype == "DUAL_DL_TAMAR" and not (inst.fx_base and inst.fx_base > 0):
+            raise ValueError(
+                f"{primary}: un DUAL_DL_TAMAR necesita el TC INICIAL (pesos/USD) del prospecto: "
+                f"es el denominador del riel dólar-linked y sin él el bono no se preciaría. "
+                f"Completá «TC inicial» y guardá de nuevo.")
         if not analitico and not cfs:
             raise ValueError(
                 f"{primary}: no se puede guardar un {itype} sin FLUJO DE FONDOS (quedaría "

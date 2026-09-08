@@ -280,12 +280,17 @@ _CAT_SHEET = {
 
 
 # Clase de un TÍTULO PÚBLICO por el prefijo del ticker. Sólo cuando es inequívoco: `S`+dígito
-# es una LECAP y `T`+dígito una BONCAP (T15E7). `T`+letra son BONTE/duales (TO26, TY30P,
-# TTM26): no se inventa nada, la hoja queda en Soberanos y el operador decide. Se aplica
-# SOLO sobre categoría "Títulos Públicos" — una ON con ticker T+dígito (Tarjeta Naranja
-# T641O) tiene categoría "Obligaciones Negociables" y por eso queda afuera.
+# es una LECAP y `T`+dígito una BONCAP (T15E7). `T`+letra son BONTE/duales (TO26, TY30P):
+# no se inventa nada, la hoja queda en Soberanos y el operador decide — salvo que matcheen
+# la familia TAMAR (`_TAMAR_PREFIJO`, abajo), que sí tiene hoja propia. Se aplica SOLO sobre
+# categoría "Títulos Públicos" — una ON con ticker T+dígito (Tarjeta Naranja T641O) tiene
+# categoría "Obligaciones Negociables" y por eso queda afuera.
 _LETRA_LECAP = re.compile(r"^S\d")
 _LETRA_BONCAP = re.compile(r"^T\d")
+
+# Títulos públicos de la familia TAMAR por prefijo: TM (TMF27, TMVE8), TT (TTJ26), TX (TXMJ8)
+# seguidos de LETRA. T+dígito es BONCAP y va antes; TO26/TY30P (BONOFIJA) no matchean.
+_TAMAR_PREFIJO = re.compile(r"^T[MTX][A-Z]")
 
 
 def _clase_letra(symbol: str) -> Optional[str]:
@@ -303,9 +308,11 @@ def prefill_for(key: str) -> Optional[dict]:
     las patas `primary` por moneda (ARS→ticker_ars, MEP→ticker_mep, cable→ticker_ccl),
     ISIN, emisor y ley (del prefijo ISIN). La hoja se deduce de la categoría (default ON);
     un TÍTULO PÚBLICO cuyo ticker es `S`+dígito (LECAP) o `T`+dígito (BONCAP) va a Tasa
-    Fija con la clase por prefijo (`T`+letra —TO26, TY30P, TTM26— y cualquier ON con
-    ticker T+dígito —Tarjeta Naranja T641O— quedan fuera), y el vencimiento de la ficha
-    (si el job lo trajo) prefillea el campo de la hoja."""
+    Fija con la clase por prefijo (`T`+letra —TO26, TY30P— y cualquier ON con ticker
+    T+dígito —Tarjeta Naranja T641O— quedan fuera); si no matchea eso pero el ticker es
+    TM/TT/TX+letra (familia TAMAR: TMVE8, TTJ26, TXMJ8, TTM26) va a la hoja TAMAR sin
+    elegir `tipo` (PURO/DUAL/… lo decide el operador), y el vencimiento de la ficha (si
+    el job lo trajo) prefillea el campo de la hoja."""
     key = (key or "").strip().upper()
     if not key:
         return None
@@ -334,10 +341,13 @@ def prefill_for(key: str) -> Optional[dict]:
             fields[f] = (o.symbol or "").upper()
     sheet = _CAT_SHEET.get(categoria or "", "Obligaciones_Negociables")
     if categoria == "Títulos Públicos":
-        clase = _clase_letra(fields.get("ticker_ars") or key)
+        ticker = (fields.get("ticker_ars") or key or "").upper()
+        clase = _clase_letra(ticker)
         if clase:
             sheet = "Tasa_Fija"
             fields["clase"] = clase
+        elif _TAMAR_PREFIJO.match(ticker):
+            sheet = "TAMAR"          # el tipo (PURO/DUAL/…) lo elige el operador: el prefijo no lo distingue
     fields["short_name"] = emisor or ""
     fields["isin"] = isin or ""
     if vencimiento:
