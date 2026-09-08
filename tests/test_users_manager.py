@@ -851,3 +851,80 @@ def test_el_token_no_aparece_en_la_auditoria(usuarios, caplog):
     assert any("action=reset_link" in m for m in lineas) and any("reset_consumed" in m for m in lineas)
     assert all(token not in m for m in lineas), "el token en claro se logueó"
     assert all(token[:12] not in m for m in lineas)
+
+
+# ── canal mail ──────────────────────────────────────────────────────────────
+@pytest.fixture
+def mail_on(monkeypatch):
+    from config.settings import settings
+    monkeypatch.setattr(settings, "smtp_host", "smtp.test")
+    monkeypatch.setattr(settings, "smtp_user", "monitor@test")
+    enviados = []
+    def fake_send(to, subject, text, html=None):
+        enviados.append({"to": to, "subject": subject, "text": text, "html": html})
+    monkeypatch.setattr("apps.web.routers.users_abm.send_mail", fake_send)
+    return enviados
+
+
+@pytest.mark.noauth
+def test_canal_mail_manda_el_link_y_no_lo_muestra(usuarios, mail_on):
+    import re
+    bob = _bob_id()
+    with TestClient(app) as admin_c, TestClient(app) as anon:
+        _login_admin(admin_c)
+        r = admin_c.post(f"/users/{bob}/reset", data={"channel": "mail"})
+        assert r.status_code == 200 and "Link enviado a bob@ejemplo.com" in r.text
+        assert 'id="link-reset"' not in r.text, "si el mail salió, el link no se muestra"
+        assert len(mail_on) == 1 and mail_on[0]["to"] == "bob@ejemplo.com"
+        link = re.search(r"http://testserver/reset/[A-Za-z0-9_\-]+", mail_on[0]["text"]).group(0)
+        assert "Bob" in mail_on[0]["text"] and "admin" in mail_on[0]["text"]
+        assert anon.get(link.replace("http://testserver", "")).status_code == 200
+        assert 'name="password2"' in anon.get(link.replace("http://testserver", "")).text
+
+
+@pytest.mark.noauth
+def test_canal_mail_si_falla_el_envio_muestra_el_link(usuarios, mail_on, monkeypatch):
+    def boom(*a, **k):
+        raise OSError("SMTP caído")
+    monkeypatch.setattr("apps.web.routers.users_abm.send_mail", boom)
+    bob = _bob_id()
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.post(f"/users/{bob}/reset", data={"channel": "mail"})
+    assert r.status_code == 200 and "No se pudo mandar el mail" in r.text and 'id="link-reset"' in r.text
+
+
+@pytest.mark.noauth
+def test_canal_mail_sin_email_o_sin_smtp_da_400(usuarios, monkeypatch):
+    from config.settings import settings
+    bob = _bob_id()
+    with TestClient(app) as c:
+        _login_admin(c)
+        monkeypatch.setattr(settings, "smtp_host", "")
+        r = c.post(f"/users/{bob}/reset", data={"channel": "mail"})
+        assert r.status_code == 400 and "no está configurado" in r.text
+        ficha = c.get(f"/users/{bob}/ficha").text
+        assert "Enviar link por mail" in ficha and "disabled" in ficha
+        monkeypatch.setattr(settings, "smtp_host", "smtp.test")
+        _set_bob(email=None)
+        r = c.post(f"/users/{bob}/reset", data={"channel": "mail"})
+        assert r.status_code == 400 and "no tiene email" in r.text
+
+
+@pytest.mark.noauth
+def test_invitacion_con_email_y_smtp_manda_el_mail(usuarios, mail_on):
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.post("/users/add", data={"username": "jperez", "access": "invite", "email": "jperez@ejemplo.com",
+                                       "full_name": "Juan Pérez"})
+        assert r.status_code == 200 and "se mandó a jperez@ejemplo.com" in r.text and 'id="link-reset"' in r.text
+    assert len(mail_on) == 1 and mail_on[0]["to"] == "jperez@ejemplo.com" and "72 horas" in mail_on[0]["text"]
+    assert "Te invitaron" in mail_on[0]["subject"]
+
+
+@pytest.mark.noauth
+def test_invitacion_sin_email_no_intenta_mandar(usuarios, mail_on):
+    with TestClient(app) as c:
+        _login_admin(c)
+        assert c.post("/users/add", data={"username": "sinmail", "access": "invite"}).status_code == 200
+    assert mail_on == []

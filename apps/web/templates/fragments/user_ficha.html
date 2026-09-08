@@ -45,7 +45,9 @@
     <div class="um-sect">
       <p class="um-sect-t">Seguridad</p>
       <div class="um-row">
-        <form method="POST" action="/users/{{ u.id }}/reset"><input type="hidden" name="channel" value="link"><button type="submit" class="btn">Generar link para copiar</button></form>
+        <form method="POST" action="/users/{{ u.id }}/reset"><input type="hidden" name="channel" value="mail">
+          <button type="submit" class="btn" {% if not mail_enabled %}disabled title="El correo no está configurado en el servidor"{% elif not u.email %}disabled title="El usuario no tiene email cargado"{% endif %}>Enviar link por mail</button></form>
+        <form method="POST" action="/users/{{ u.id }}/reset"><input type="hidden" name="channel" value="link"><button type="submit" class="btn sec">Generar link para copiar</button></form>
         <button type="button" class="btn sec" data-uid="{{ u.id }}" data-username="{{ u.username }}"
                 onclick="resetPassword(this.dataset.uid, this.dataset.username)">Definir contraseña a mano</button>
         <form method="POST" action="/users/{{ u.id }}/sesiones/cerrar"><button type="submit" class="btn sec">Cerrar sesiones</button></form>

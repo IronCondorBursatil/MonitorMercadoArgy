@@ -8,10 +8,13 @@ from sqlalchemy.orm import Session
 
 from apps.web import reset_service
 from apps.web.deps_auth import get_db, get_admin_user_html
+from apps.web.mail_templates import mail_invitacion, mail_reset
 from apps.web.templates import TEMPLATES as _TEMPLATES
 from apps.web.users_service import (TABS, TAB_KEYS, actividad_reciente, resumen,
                                     vista_usuario, email_invalido, normalizar_email)
+from config.settings import settings
 from core.infrastructure.db.models import UserORM
+from core.infrastructure.mailer import send_mail
 from core.security import SIN_PASSWORD_HASH, get_password_hash, password_invalida
 
 router = APIRouter(dependencies=[Depends(get_admin_user_html)])
@@ -57,7 +60,8 @@ def _tabs_validas(tabs) -> List[str]:
 def _ctx_ficha(db, u: UserORM) -> dict:
     inv = reset_service.invitaciones_vivas(db).get(u.id)
     return {"u": u, "v": vista_usuario(u, invitacion=inv),
-            "actividad": actividad_reciente(u, tokens=reset_service.tokens_de(db, u)), "TABS": TABS}
+            "actividad": actividad_reciente(u, tokens=reset_service.tokens_de(db, u)), "TABS": TABS,
+            "mail_enabled": settings.mail_enabled}
 
 
 def _users_page(request, db, *, status_code: int = 200, selected_id: Optional[int] = None, **ctx):
@@ -151,8 +155,22 @@ def add_user(
                                             by=getattr(admin, "username", None))
     _audit.info("users action=invite_created by=%s target=%s",
                 _limpio(getattr(admin, "username", "?")), _limpio(username), extra={"console": True})
-    return _users_page(request, db, selected_id=new_user.id,
-                       link_reset=reset_service.reset_link(request, token), link_para=username,
+    link = reset_service.reset_link(request, token)
+    if settings.mail_enabled and mail:
+        nombre = (new_user.full_name or new_user.username).split()[0]
+        try:
+            send_mail(mail, *mail_invitacion(nombre, username, link, 72, getattr(admin, "username", None)))
+            _audit.info("users action=invite_sent target=%s sent=ok", _limpio(username), extra={"console": True})
+            return _users_page(request, db, selected_id=new_user.id, link_reset=link, link_para=username,
+                               link_vence="72 horas",
+                               success=f"Usuario {username} creado por invitación; el link se mandó a {mail} (vence en 72 horas). Acá lo tenés también por si querés pasárselo vos.")
+        except Exception as e:   # noqa: BLE001
+            _audit.info("users action=invite_sent target=%s sent=fail err=%s", _limpio(username),
+                        _limpio(type(e).__name__), extra={"console": True})
+            return _users_page(request, db, selected_id=new_user.id, link_reset=link, link_para=username,
+                               link_vence="72 horas",
+                               error=f"Usuario {username} creado, pero el mail falló ({type(e).__name__}). Pasale el link a mano:")
+    return _users_page(request, db, selected_id=new_user.id, link_reset=link, link_para=username,
                        link_vence="72 horas",
                        success=f"Usuario {username} creado por invitación. Pasale el link: elige su contraseña al abrirlo.")
 
@@ -191,11 +209,35 @@ def delete_user(request: Request, user_id: int, db: Session = Depends(get_db),
 def reset_password(request: Request, user_id: int, channel: str = Form("manual"),
                    password: str = Form(""), db: Session = Depends(get_db),
                    admin: UserORM = Depends(get_admin_user_html)):
-    """Canales: `manual` (el admin define la contraseña) y `link` (token de un solo uso
-    mostrado una vez). `mail` llega en la Fase 3 (spec §5.1)."""
+    """Canales: `manual` (el admin define la contraseña), `link` (token de un solo uso
+    mostrado una vez) y `mail` (el mismo token, mandado por correo)."""
     user = db.get(UserORM, user_id)
     if not user:
         return _no_existe(request, db, user_id)
+    if channel == "mail":
+        if not settings.mail_enabled:
+            return _users_page(request, db, status_code=400, selected_id=user_id,
+                               error="El correo no está configurado en el servidor (MONITOR_SMTP_HOST). Usá «Generar link para copiar».")
+        if not user.email:
+            return _users_page(request, db, status_code=400, selected_id=user_id,
+                               error=f"{user.username} no tiene email cargado. Cargalo en Datos o usá el link para copiar.")
+        token = reset_service.issue_reset_token(db, user, purpose="reset", channel="mail",
+                                                by=getattr(admin, "username", None))
+        link = reset_service.reset_link(request, token)
+        nombre = (user.full_name or user.username).split()[0]
+        try:
+            send_mail(user.email, *mail_reset(nombre, user.username, link, 60, getattr(admin, "username", None)))
+        except Exception as e:   # noqa: BLE001 — se informa al admin y se le da el link igual
+            _audit.info("users action=reset_link channel=mail purpose=reset by=%s target=%s sent=fail err=%s",
+                        _limpio(getattr(admin, "username", "?")), _limpio(user.username),
+                        _limpio(type(e).__name__), extra={"console": True})
+            return _users_page(request, db, selected_id=user_id, link_reset=link, link_para=user.username,
+                               link_vence="60 minutos",
+                               error=f"No se pudo mandar el mail ({type(e).__name__}). Pasale este link a mano:")
+        _audit.info("users action=reset_link channel=mail purpose=reset by=%s target=%s sent=ok",
+                    _limpio(getattr(admin, "username", "?")), _limpio(user.username), extra={"console": True})
+        return _users_page(request, db, selected_id=user_id,
+                           success=f"Link enviado a {user.email}. Vence en 60 minutos y sirve una sola vez.")
     if channel == "link":
         token = reset_service.issue_reset_token(db, user, purpose="reset", channel="link",
                                                 by=getattr(admin, "username", None))
