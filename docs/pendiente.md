@@ -31,11 +31,12 @@ de decisiones (`docs/decisiones.md`).
   día); sustitutos vivos con corte del mismo informe: TTS26 (169,10 / TIR 22,56 %) y TTD26
   (169,00 / 24,78 %). IAMC no publica el informe diario desde 2026-05-26 y su feed en BYMA
   open está paywalleado.
-- **TMVE8: verificar la primera cotización cargada** contra `V.Téc = max(tc_inicial × riel
-  TAMAR, 100 × A3500)` — la escala se confirmó el 2026-09-08 con Data912 (`c=139680`, o sea
-  pesos por 100 VN denominados en USD, como TZVD8/D31M7 y no como los duales TAMAR), pero
-  todavía no hubo una rueda con el papel en el catálogo: el primer día que aparezca, contrastar
-  precio, V.Téc y paridad antes de dar por buena la columna.
+- **TMVE8 y PR17: cargados el 2026-09-08 con `scripts/alta_tmve8_pr17.py`** (procedencia en el
+  script). Verificados con providers reales contra eldashboard: TMVE8 (precio 139.680, TC
+  inicial 1499,8387 = A3500 del 28/07/2026) TIR 36,20 % vs 36,10 %, V.Téc 153.930, paridad
+  0,907; PR17 (643,13) TIR 37,47 % vs 37,85 %, V.Téc 723,38 vs 722,05. Queda: PR17 tiene los
+  cupones BADLAR proyectados planos (22,83 %) como TB27/BAS26/SFN27 — regenerar el schedule
+  cuando la BADLAR se mueva, o darle un motor flotante (decisión D: sin tipo nuevo).
 - **`/escenarios`: `DUAL_DL_TAMAR` hereda beta FX 0 del grupo TAMAR** — cuando manda el riel
   dólar la posición se mueve ~1:1 con el dólar, así que el escenario la muestra insensible al
   FX y subestima el impacto. Revisar cuando haya posición cargada.
