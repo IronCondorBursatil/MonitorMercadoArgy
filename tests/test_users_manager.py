@@ -169,6 +169,19 @@ def usuarios():
     auth_router._login_attempts.clear()
 
 
+@pytest.fixture(autouse=True)
+def limiters_limpios():
+    """Los baldes de /forgot y /reset son globales del módulo `auth`: limpios antes y después
+    de CADA test, para que ninguno dependa del orden ni le deje un 429 armado al siguiente."""
+    baldes = (auth_router._forgot_attempts_ip, auth_router._forgot_attempts_dato,
+              auth_router._reset_attempts)
+    for b in baldes:
+        b.clear()
+    yield
+    for b in baldes:
+        b.clear()
+
+
 def _login(c, user, pw):
     return c.post("/login", data={"username": user, "password": pw}, follow_redirects=False)
 
@@ -706,13 +719,10 @@ def test_reset_de_usuario_deshabilitado_o_vencido_es_la_misma_pagina(usuarios):
 
 @pytest.mark.noauth
 def test_reset_post_tiene_rate_limit_por_ip(usuarios):
-    from apps.web.routers import auth as auth_router
-    auth_router._reset_attempts.clear()
     with TestClient(app) as c:
         codigos = [c.post("/reset/token-falso", data={"password": "x" * 12, "password2": "x" * 12}).status_code
                    for _ in range(11)]
     assert codigos[:10] == [200] * 10 and codigos[10] == 429
-    auth_router._reset_attempts.clear()
 
 
 # ── canal link + actividad ──────────────────────────────────────────────────
@@ -885,6 +895,10 @@ def test_canal_mail_manda_el_link_y_no_lo_muestra(usuarios, mail_on):
         assert "Bob" in mail_on[0]["text"] and "admin" in mail_on[0]["text"]
         assert anon.get(link.replace("http://testserver", "")).status_code == 200
         assert 'name="password2"' in anon.get(link.replace("http://testserver", "")).text
+    with SessionLocal() as s:
+        from apps.web import reset_service as rs
+        t = rs.tokens_de(s, s.get(UserORM, bob))[0]
+        assert (t.channel, t.created_by, t.purpose) == ("mail", "admin", "reset")
 
 
 @pytest.mark.noauth
@@ -927,6 +941,28 @@ def test_canal_mail_sin_email_o_sin_smtp_da_400(usuarios, mail_on, monkeypatch):
 
 
 @pytest.mark.noauth
+def test_el_boton_enviar_por_mail_se_habilita_solo_con_correo_y_email(usuarios, mail_on):
+    """El botón de la ficha es el canal `mail` de `POST /users/{id}/reset`: habilitado con el
+    correo prendido y el usuario con email; sin email queda `disabled` con el motivo en el
+    `title` (texto exacto del template `fragments/user_ficha.html`)."""
+    import re
+    bob = _bob_id()
+
+    def boton(html):
+        m = re.search(r"<button[^>]*>Enviar link por mail</button>", html)
+        assert m, "la ficha no trae el botón «Enviar link por mail»"
+        return m.group(0)
+
+    with TestClient(app) as c:
+        _login_admin(c)
+        b = boton(c.get(f"/users/{bob}/ficha").text)
+        assert "disabled" not in b, b
+        _set_bob(email=None)
+        b = boton(c.get(f"/users/{bob}/ficha").text)
+        assert "disabled" in b and 'title="El usuario no tiene email cargado"' in b, b
+
+
+@pytest.mark.noauth
 def test_invitacion_con_email_y_smtp_manda_el_mail(usuarios, mail_on):
     with TestClient(app) as c:
         _login_admin(c)
@@ -945,18 +981,54 @@ def test_invitacion_sin_email_no_intenta_mandar(usuarios, mail_on):
     assert mail_on == []
 
 
+@pytest.mark.noauth
+def test_invitacion_si_falla_el_envio_crea_al_usuario_y_muestra_el_link(usuarios, mail_on, monkeypatch):
+    """El envío es lo único que puede fallar: el usuario ya existe (invitado, sin clave) y el
+    admin ve el error de mail Y el link de respaldo, que abre el formulario."""
+    import re
+    from core.security import SIN_PASSWORD_HASH
+
+    def boom(*a, **k):
+        raise OSError("SMTP caído")
+    monkeypatch.setattr("apps.web.routers.users_abm.send_mail", boom)
+    with TestClient(app) as admin_c, TestClient(app) as anon:
+        _login_admin(admin_c)
+        r = admin_c.post("/users/add", data={"username": "jperez", "access": "invite",
+                                             "email": "jperez@ejemplo.com"})
+        assert r.status_code == 200 and "pero el mail falló" in r.text and 'id="link-reset"' in r.text
+        link = re.search(r'value="(http://testserver/reset/[A-Za-z0-9_\-]+)"', r.text).group(1)
+        assert 'name="password2"' in anon.get(link.replace("http://testserver", "")).text
+    with SessionLocal() as s:
+        j = s.query(UserORM).filter(UserORM.username == "jperez").first()
+        assert j is not None and j.hashed_password == SIN_PASSWORD_HASH
+    assert mail_on == []
+
+
 # ── /forgot ─────────────────────────────────────────────────────────────────
+def _tokens_reset_de_bob() -> int:
+    from core.infrastructure.db.models import PasswordResetTokenORM
+    with SessionLocal() as s:
+        return s.query(PasswordResetTokenORM).filter(
+            PasswordResetTokenORM.user_id == _bob_id(), PasswordResetTokenORM.purpose == "reset").count()
+
+
 @pytest.mark.noauth
 def test_forgot_responde_igual_exista_o_no_y_solo_manda_al_valido(usuarios, mail_on):
-    from apps.web.routers import auth as auth_router
-    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+    """Misma página 200 para: usuario, email (normalizado), inexistente, deshabilitado, sin
+    email, INVITADO (sin contraseña elegida: su link lo maneja el admin) y username con otra
+    mayúscula (el username se compara exacto; sólo el email se normaliza). Sólo los dos
+    primeros mandan mail y emiten token `reset/self`. Mutación: quitar
+    `and user.hashed_password != SIN_PASSWORD_HASH` del handler → el invitado recibe mail."""
+    import re
+    from core.security import SIN_PASSWORD_HASH
     _set_bob(is_active=True)
     with TestClient(app) as c:
         assert "¿Olvidaste tu contraseña?" in c.get("/login").text
         assert 'name="dato"' in c.get("/forgot").text
 
         def post(dato):
-            auth_router._forgot_attempts_ip.clear()   # el límite por IP se prueba aparte
+            # los dos límites (IP y dato) se prueban aparte: acá se piden más de 3 "bob"
+            auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
             return c.post("/forgot", data={"dato": dato})
 
         r_user = post("bob")
@@ -966,24 +1038,31 @@ def test_forgot_responde_igual_exista_o_no_y_solo_manda_al_valido(usuarios, mail
         r_off = post("bob")
         _set_bob(is_active=True, email=None)
         r_sinmail = post("bob")
-    assert r_user.status_code == r_mail.status_code == r_nadie.status_code == r_off.status_code == r_sinmail.status_code == 200
-    assert r_user.text == r_mail.text == r_nadie.text == r_off.text == r_sinmail.text
+        _set_bob(email="bob@ejemplo.com", hashed_password=SIN_PASSWORD_HASH)
+        reset_antes = _tokens_reset_de_bob()
+        r_inv = post("bob")
+        _set_bob(hashed_password=get_password_hash("bobpass1234"))
+        r_Bob = post("Bob")
+    respuestas = (r_user, r_mail, r_nadie, r_off, r_sinmail, r_inv, r_Bob)
+    assert all(r.status_code == 200 for r in respuestas)
+    assert len({r.text for r in respuestas}) == 1, "todas las respuestas tienen que ser IDÉNTICAS"
     assert "Revisá tu correo" in r_user.text
     assert len(mail_on) == 2 and all(m["to"] == "bob@ejemplo.com" for m in mail_on)
-    import re
+    assert _tokens_reset_de_bob() == reset_antes == 2, "ni el invitado ni 'Bob' emiten un token"
     link = re.search(r"http://testserver/reset/[A-Za-z0-9_\-]+", mail_on[-1]["text"]).group(0)
     with TestClient(app) as anon:
         assert 'name="password2"' in anon.get(link.replace("http://testserver", "")).text
-    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+    with SessionLocal() as s:
+        from apps.web import reset_service as rs
+        t = rs.tokens_de(s, s.query(UserORM).filter(UserORM.username == "bob").first())[0]
+        assert (t.channel, t.created_by, t.purpose) == ("self", None, "reset")
 
 
 @pytest.mark.noauth
 def test_forgot_con_mail_apagado_no_hace_nada_y_lo_dice(usuarios, monkeypatch):
-    from apps.web.routers import auth as auth_router
     from config.settings import settings
     from core.infrastructure.db.models import PasswordResetTokenORM
     monkeypatch.setattr(settings, "smtp_host", "")
-    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
     with TestClient(app) as c:
         g = c.get("/forgot")
         assert g.status_code == 200 and "Pedile el link a tu administrador" in g.text and 'name="dato"' not in g.text
@@ -991,21 +1070,26 @@ def test_forgot_con_mail_apagado_no_hace_nada_y_lo_dice(usuarios, monkeypatch):
         assert r.status_code == 200 and "Revisá tu correo" in r.text
     with SessionLocal() as s:
         assert s.query(PasswordResetTokenORM).count() == 0
-    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
 
 
 @pytest.mark.noauth
 def test_forgot_rate_limit_por_ip_y_por_dato(usuarios, mail_on):
-    from apps.web.routers import auth as auth_router
-    auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+    """Dos baldes. Por IP: 3 en 15 min. Por dato: 3 por hora con la clave NORMALIZADA ("bob",
+    "BOB" y " bob " son el mismo balde), con el balde de IP limpio antes de cada POST para
+    que el 429 lo dé el DATO y no la IP; otro dato desde la misma IP limpia sigue pasando.
+    Mutación: `_FORGOT_DATO = (10**6, 3600)` pone el segundo bloque en rojo."""
     with TestClient(app) as c:
         codigos = [c.post("/forgot", data={"dato": f"x{i}@ejemplo.com"}).status_code for i in range(4)]
     assert codigos == [200, 200, 200, 429]
-    auth_router._forgot_attempts_ip.clear()
-    with TestClient(app) as c:
-        codigos = [c.post("/forgot", data={"dato": "bob"}).status_code for i in range(4)]
-    assert codigos[3] == 429, "el mismo dato tiene su propio límite (3 por hora)"
     auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+    with TestClient(app) as c:
+        codigos = []
+        for dato in ("bob", "BOB", " bob ", "bob"):
+            auth_router._forgot_attempts_ip.clear()
+            codigos.append(c.post("/forgot", data={"dato": dato}).status_code)
+        assert codigos == [200, 200, 200, 429], "el mismo dato (normalizado) tiene su propio límite: 3 por hora"
+        auth_router._forgot_attempts_ip.clear()
+        assert c.post("/forgot", data={"dato": "otra@ejemplo.com"}).status_code == 200, "fue el dato, no la IP"
 
 
 @pytest.mark.noauth
@@ -1036,3 +1120,60 @@ def test_forgot_no_arma_el_link_con_el_host_del_request(usuarios, mail_on, monke
     assert r2.status_code == 200 and r2.text == r_nadie.text
     assert len(mail_on) == 1, "sin URL pública no puede salir NINGÚN mail (y menos uno con el Host del atacante)"
     assert all("evil.example" not in m["text"] and "evil.example" not in (m["html"] or "") for m in mail_on)
+
+
+@pytest.mark.noauth
+def test_forgot_si_falla_el_envio_responde_igual_y_loguea_sin_el_link(usuarios, mail_on, monkeypatch, caplog):
+    """El envío corre en background: si falla, la respuesta pública es la MISMA que para un
+    dato inexistente y queda un WARNING en `monitor.mail` con el usuario y el tipo de error,
+    nunca con el link (el token en claro no va a ningún log)."""
+    import logging
+
+    def boom(*a, **k):
+        raise OSError("SMTP caído")
+    monkeypatch.setattr("apps.web.routers.auth.send_mail", boom)
+    with caplog.at_level(logging.WARNING, logger="monitor.mail"), TestClient(app) as c:
+        r_bob = c.post("/forgot", data={"dato": "bob"})
+        r_nadie = c.post("/forgot", data={"dato": "nadie@ejemplo.com"})
+    assert r_bob.status_code == 200 and r_bob.text == r_nadie.text
+    avisos = [rec.getMessage() for rec in caplog.records
+              if rec.name == "monitor.mail" and rec.levelno >= logging.WARNING]
+    assert len(avisos) == 1 and "bob" in avisos[0] and "OSError" in avisos[0], avisos
+    assert "/reset/" not in avisos[0]
+
+
+@pytest.mark.noauth
+def test_ni_el_token_ni_el_link_aparecen_en_los_logs_con_el_correo_prendido(usuarios, mail_on, monkeypatch, caplog):
+    """Los cinco caminos que mandan (o intentan mandar) un mail —canal mail ok y fallido,
+    invitación por mail, /forgot requested y noop— dejan sus líneas de auditoría, y en
+    ninguna línea de `monitor.audit` ni de `monitor.mail` aparece el token ni `/reset/`."""
+    import logging
+    import re
+    from apps.web.routers import users_abm
+    bob = _bob_id()
+    fake = users_abm.send_mail          # el stub de `mail_on`
+
+    def boom(*a, **k):
+        raise OSError("SMTP caído")
+    with caplog.at_level(logging.INFO), TestClient(app) as admin_c, TestClient(app) as anon:
+        _login_admin(admin_c)
+        assert admin_c.post(f"/users/{bob}/reset", data={"channel": "mail"}).status_code == 200
+        monkeypatch.setattr("apps.web.routers.users_abm.send_mail", boom)
+        assert admin_c.post(f"/users/{bob}/reset", data={"channel": "mail"}).status_code == 200
+        monkeypatch.setattr("apps.web.routers.users_abm.send_mail", fake)
+        assert admin_c.post("/users/add", data={"username": "jperez", "access": "invite",
+                                                "email": "jperez@ejemplo.com"}).status_code == 200
+        assert anon.post("/forgot", data={"dato": "bob"}).status_code == 200
+        assert anon.post("/forgot", data={"dato": "nadie@ejemplo.com"}).status_code == 200
+    tokens = [re.search(r"/reset/([A-Za-z0-9_\-]+)", m["text"]).group(1) for m in mail_on]
+    assert len(tokens) == 3 and all(len(t) >= 40 for t in tokens)
+    lineas = [rec.getMessage() for rec in caplog.records if rec.name in ("monitor.audit", "monitor.mail")]
+    assert any("action=reset_link channel=mail" in m and "sent=ok" in m for m in lineas), lineas
+    assert any("action=reset_link channel=mail" in m and "sent=fail err=OSError" in m for m in lineas), lineas
+    assert any("action=invite_sent" in m and "sent=ok" in m for m in lineas), lineas
+    assert any("forgot=requested target=bob" in m for m in lineas), lineas
+    assert any("forgot=noop" in m and "target=" not in m for m in lineas), lineas
+    for m in lineas:
+        assert "/reset/" not in m, m
+        for t in tokens:
+            assert t not in m and t[:12] not in m, m

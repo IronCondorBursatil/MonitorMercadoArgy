@@ -89,12 +89,45 @@ def test_send_mail_usa_starttls_con_contexto_login_y_timeout(smtp_config, monkey
     assert isinstance(s.timeout, (int, float)) and s.timeout is not None
     nombres = [c[0] for c in s.llamadas]
     assert nombres == ["starttls", "login", "send", "quit"]
-    assert isinstance(s.llamadas[0][1], ssl.SSLContext)
+    ctx = s.llamadas[0][1]
+    assert isinstance(ctx, ssl.SSLContext)
+    assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname is True, "TLS se verifica SIEMPRE"
     assert s.llamadas[1][1:] == ("monitor@ejemplo.com", "app-password")
     msg = s.llamadas[2][1]
     assert msg["To"] == "m.caceres@ejemplo.com" and msg["From"] == "monitor@ejemplo.com" and msg["Subject"] == "Asunto"
     assert msg.get_body(preferencelist=("plain",)).get_content().strip() == "texto plano"
     assert "<p>html</p>" in msg.get_body(preferencelist=("html",)).get_content()
+
+
+def test_send_mail_sin_usuario_no_hace_login_y_respeta_el_remitente_visible(smtp_config, monkeypatch):
+    """Un relay sin autenticación (`smtp_user=""`) no manda `login`; `smtp_from` es el
+    remitente visible tal cual (nombre + dirección)."""
+    import smtplib
+    from core.infrastructure import mailer
+    _FakeSMTP.instancias.clear()
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(settings, "smtp_user", "")
+    monkeypatch.setattr(settings, "smtp_from", "Monitor <monitor@dominio.test>")
+    mailer.send_mail("a@b.co", "x", "y")
+    s = _FakeSMTP.instancias[-1]
+    assert [c[0] for c in s.llamadas] == ["starttls", "send", "quit"]
+    assert s.llamadas[1][1]["From"] == "Monitor <monitor@dominio.test>"
+
+
+def test_asend_mail_corre_send_mail_en_otro_hilo_con_los_mismos_args(monkeypatch):
+    """`asend_mail` es `to_thread(send_mail, …)`: mismos argumentos, otro hilo (SMTP es
+    bloqueante y no puede frenar el event loop)."""
+    import asyncio
+    import threading
+    from core.infrastructure import mailer
+    visto = {}
+
+    def fake(to, subject, text, html=None):
+        visto.update(hilo=threading.get_ident(), args=(to, subject, text, html))
+    monkeypatch.setattr(mailer, "send_mail", fake)
+    asyncio.run(mailer.asend_mail("a@b", "s", "t"))
+    assert visto["args"] == ("a@b", "s", "t", None)
+    assert visto["hilo"] != threading.get_ident(), "tiene que correr fuera del hilo del loop"
 
 
 def test_send_mail_sin_configurar_lanza_y_no_toca_la_red(monkeypatch):
@@ -120,5 +153,7 @@ def test_plantillas_traen_el_link_en_texto_y_html_sin_hosts_externos():
         assert "<img" not in html and "<script" not in html
     a, t, h = mail_reset("Mariana", "mcaceres", link, 60, None)
     assert "60 minutos" in t and "una sola vez" in t
-    a2, t2, _ = mail_invitacion("Juan", "jperez", link, 72, "admin")
-    assert "72 horas" in t2 and "admin" in t2
+    a2, t2, _ = mail_invitacion("Juan", "jperez", link, 72, "dberisso")
+    assert "72 horas" in t2 and "dberisso, administrador" in t2
+    _, t3, _ = mail_invitacion("Juan", "jperez", link, 72, None)
+    assert "dberisso" not in t3 and "Un administrador" in t3

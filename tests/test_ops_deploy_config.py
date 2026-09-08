@@ -11,6 +11,7 @@ Estos tests no prueban que el servidor esté configurado (eso lo verifica
 mantengan las propiedades que el resto del sistema asume.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -133,6 +134,19 @@ def test_nginx_limita_el_POST_de_login_pero_no_el_GET():
 
 def test_nginx_no_publica_su_version():
     assert "server_tokens off;" in _efectivo(NGINX)
+
+
+@pytest.mark.parametrize("cabecera", ["location = /login", "location = /forgot", "location ~ ^/reset/"])
+def test_nginx_las_rutas_de_credenciales_van_por_la_zona_login_sin_pisar_los_headers(cabecera):
+    """Cada bloque lleva la zona `login` (rate-limit que sobrevive al restart de la app) y NO
+    declara ningún `proxy_set_header`: uno solo descartaría los del nivel server (`Host`) y
+    rompería la validación de origen del CSRF justo en esa ruta."""
+    txt = _efectivo(NGINX)
+    m = re.search(re.escape(cabecera) + r"\s*\{(.*?)\}", txt, re.S)
+    assert m, f"falta el bloque `{cabecera}`"
+    bloque = m.group(1)
+    assert "limit_req zone=login" in bloque, bloque
+    assert "proxy_set_header" not in bloque, bloque
 
 
 # ── sudoers ────────────────────────────────────────────────────────────────
