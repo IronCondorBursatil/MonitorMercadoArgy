@@ -4,6 +4,7 @@ paths:
   - "apps/web/routers/auth.py"
   - "apps/web/routers/users_abm.py"
   - "core/security.py"
+  - "apps/web/users_service.py"
 ---
 
 # Auth — reglas que cargan al tocar login, permisos o usuarios
@@ -48,9 +49,23 @@ certificado) y con `secure` el browser descarta la cookie → login en loop. Se 
 (`MONITOR_COOKIE_SECURE=true`) recién después de `deploy/setup-https.sh` (`docs/despliegue.md`).
 uvicorn ≥ 0.48 ya honra `X-Forwarded-Proto` por default; no tocar el `ExecStart`.
 
-## Usuarios
+## Usuarios (Manager v2, spec 2026-09-08)
 
-- Resetear una contraseña cierra las sesiones de ese usuario (commit `5452c3f`); mantenerlo.
+- Rutas del admin (`routers/users_abm.py`, todas bajo `get_admin_user_html`): `GET /users[?u=id]`,
+  `GET /users/{id}/ficha` (fragmento HTMX), `POST /users/add`, `POST /users/{id}/datos`,
+  `/permisos`, `/reset` (form `channel`: `manual`; `link`/`mail` en Fases 2-3), `/sesiones/cerrar`,
+  `/estado` (form `activo` 0/1), `POST /users/delete/{id}`. Las viejas `/users/update/{id}` y
+  `/users/reset-password/{id}` ya no existen.
+- **Toda respuesta HTML de la ABM pasa por `_users_page`** (arma filas, resumen y ficha
+  seleccionada); no llamar `TemplateResponse("pages/users.html")` a mano.
+- Reglas puras (email, estado, actividad derivada, `TABS`) en `apps/web/users_service.py`, sin
+  FastAPI: se testean solas.
+- `is_active=0` (deshabilitado): el login responde EXACTAMENTE igual que una clave incorrecta
+  (no confirma que la cuenta existe) y `deps_auth._get_user_from_token` rechaza la cookie aunque
+  la `token_version` coincida. No se puede deshabilitar a uno mismo ni al último admin activo.
+- Resetear la contraseña (canal manual) o "Cerrar sesiones" suben `token_version` y cierran las
+  sesiones de ese usuario (commit `5452c3f`); cambiar permisos NO (se releen por request).
+- Política de contraseña única: `core/security.password_invalida` (10 chars / 72 bytes).
 - No hay bootstrap automático del admin: la única receta es `scripts/init_admin.py` con
   `MONITOR_ADMIN_PASSWORD` (`docs/despliegue.md › Primer arranque`). Nunca un default
   hardcodeado.

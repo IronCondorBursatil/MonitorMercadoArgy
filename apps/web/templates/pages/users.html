@@ -1,513 +1,224 @@
 {% extends "base.html" %}
-{% block title %}Security Manager - Monitor Renta Fija AR{% endblock %}
+{% block title %}Manager de usuarios - Monitor Renta Fija AR{% endblock %}
 
 {% block head %}
 <style>
-  :root {
-    --glass-bg: rgba(30, 41, 59, 0.7);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
-    --danger: #ef4444;
-    --success: #10b981;
-  }
-  
-  .manager-container {
-    max-width: 1000px;
-    margin: 2rem auto;
-    padding: 0 1rem;
-    font-family: system-ui, -apple-system, sans-serif;
-  }
-  
-  .glass-panel {
-    background: var(--glass-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  }
-
-  .manager-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-  }
-  
-  .manager-header h2 {
-    margin: 0;
-    font-size: 1.8rem;
-    font-weight: 600;
-    background: linear-gradient(to right, #60a5fa, #a78bfa);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .msg { padding: 1rem; margin-bottom: 1.5rem; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 0.5rem; }
-  .msg.error { background: rgba(239, 68, 68, 0.1); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
-  .msg.success { background: rgba(16, 185, 129, 0.1); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
-
-  /* Premium Table */
-  .premium-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-  }
-  .premium-table th {
-    text-align: left;
-    padding: 1rem;
-    color: var(--text-dim);
-    font-weight: 600;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--glass-border);
-  }
-  .premium-table td {
-    padding: 1rem;
-    vertical-align: middle;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  }
-  .premium-table tr:last-child td {
-    border-bottom: none;
-  }
-  
-  /* Badges */
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.025em;
-  }
-  .badge.admin {
-    background: rgba(167, 139, 250, 0.15);
-    color: #c4b5fd;
-    border: 1px solid rgba(167, 139, 250, 0.3);
-  }
-  .badge.user {
-    background: rgba(96, 165, 250, 0.15);
-    color: #93c5fd;
-    border: 1px solid rgba(96, 165, 250, 0.3);
-  }
-  .badge.tag {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-dim);
-    border: 1px solid var(--glass-border);
-    margin: 0.15rem;
-  }
-
-  /* Form Elements */
-  .input-field {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--glass-border);
-    border-radius: 6px;
-    color: var(--text);
-    font-size: 0.95rem;
-    transition: all 0.2s;
-  }
-  .input-field:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-  }
-  
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-weight: 500;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    border: none;
-    gap: 0.5rem;
-  }
-  .btn-primary {
-    background: var(--primary);
-    color: white;
-  }
-  .btn-primary:hover { background: var(--primary-hover); }
-  
-  .btn-danger {
-    background: rgba(239, 68, 68, 0.1);
-    color: #fca5a5;
-    border: 1px solid rgba(239, 68, 68, 0.2);
-  }
-  .btn-danger:hover {
-    background: var(--danger);
-    color: white;
-  }
-
-  .btn-reset {
-    background: rgba(16, 185, 129, 0.1);
-    color: #6ee7b7;
-    border: 1px solid rgba(16, 185, 129, 0.2);
-  }
-  .btn-reset:hover {
-    background: var(--success);
-    color: white;
-  }
-
-  /* Toggles (Switches) */
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-  }
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  .slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background-color: rgba(255, 255, 255, 0.1);
-    transition: .3s;
-    border-radius: 24px;
-    border: 1px solid var(--glass-border);
-  }
-  .slider:before {
-    position: absolute;
-    content: "";
-    height: 16px;
-    width: 16px;
-    left: 3px;
-    bottom: 3px;
-    background-color: var(--text-dim);
-    transition: .3s;
-    border-radius: 50%;
-  }
-  input:checked + .slider {
-    background-color: var(--primary);
-    border-color: var(--primary);
-  }
-  input:checked + .slider:before {
-    transform: translateX(20px);
-    background-color: white;
-  }
-  
-  .permissions-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 1rem;
-    margin-top: 1rem;
-    padding: 1rem;
-    background: rgba(0, 0, 0, 0.15);
-    border-radius: 8px;
-  }
-  
-  .permission-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    font-size: 0.9rem;
-    color: var(--text);
-  }
-
-  /* Modals */
-  details.edit-modal summary {
-    list-style: none;
-    cursor: pointer;
-  }
-  details.edit-modal summary::-webkit-details-marker {
-    display: none;
-  }
-  .edit-panel {
-    margin-top: 1rem;
-    padding: 1.5rem;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 8px;
-    border: 1px solid var(--glass-border);
-  }
+  /* Manager v2 (Opción A): tabla + ficha lateral. Sólo tokens de app.css. */
+  .um-wrap { padding: 14px 18px; }
+  .um-top { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .um-top h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .um-top .sum { color: var(--text-dim); font-size: 12px; }
+  .um-tools { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .um-tools input { width: 260px; }
+  .um-grid { display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 14px; align-items: start; }
+  @media (max-width: 1100px) { .um-grid { grid-template-columns: 1fr; } }
+  .um-table thead th { text-align: left; padding: 6px 10px; }
+  .um-table tbody td { padding: 7px 10px; white-space: normal; vertical-align: middle; }
+  .um-table tbody tr { cursor: pointer; }
+  .um-table tbody tr.sel td { background: var(--accent-light); }
+  .um-hint { padding: 8px 10px; color: var(--text-faint); font-size: 11px; }
+  .um-user { display: flex; align-items: center; gap: 10px; }
+  .um-user b { font-weight: 600; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-light); color: var(--accent);
+            display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; flex: none; }
+  .mut { color: var(--text-dim); font-size: 12px; } .faint { color: var(--text-faint); font-size: 11px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 9999px; font-size: 11px;
+           font-weight: 600; border: 1px solid var(--panel-border); color: var(--text-dim); }
+  .badge.adm { color: var(--accent); border-color: var(--accent-light); background: var(--accent-light); }
+  .badge.ok { color: var(--pos); border-color: rgba(8,153,129,.4); }
+  .badge.off { color: var(--text-faint); background: rgba(255,255,255,.03); }
+  .badge.warn { color: #e8b339; border-color: rgba(232,179,57,.4); }
+  .chip { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; background: rgba(255,255,255,.05);
+          border: 1px solid var(--panel-border); color: var(--text-dim); margin: 1px 4px 1px 0; }
+  .msg { padding: 9px 12px; margin-bottom: 12px; border-radius: 6px; font-size: 13px; }
+  .msg.error { background: rgba(242,54,69,.12); color: var(--neg); border: 1px solid rgba(242,54,69,.35); }
+  .msg.success { background: rgba(8,153,129,.12); color: var(--pos); border: 1px solid rgba(8,153,129,.35); }
+  .btn.sec { background: transparent; color: var(--text); border: 1px solid var(--panel-border); }
+  .btn.danger { background: transparent; color: var(--neg); border: 1px solid rgba(242,54,69,.35); }
+  /* toggles */
+  .tg { position: relative; display: inline-block; width: 30px; height: 16px; flex: none; }
+  .tg input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .tg .sl { position: absolute; inset: 0; border-radius: 16px; background: var(--panel-border); transition: .2s; }
+  .tg .sl::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; top: 2px; left: 2px;
+                   background: var(--text-dim); transition: .2s; }
+  .tg input:checked + .sl { background: var(--accent); }
+  .tg input:checked + .sl::after { left: 16px; background: #fff; }
+  .perm { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+  .perm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; padding: 10px 12px;
+               background: rgba(0,0,0,.18); border-radius: 6px; }
+  .um-admin { margin-bottom: 8px; }
+  /* ficha */
+  .um-ficha-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--panel-border); }
+  .um-ficha-head .avatar { width: 34px; height: 34px; font-size: 12px; }
+  .um-ficha-who { flex: 1; min-width: 0; } .um-ficha-user { font-weight: 600; }
+  .um-close { color: var(--text-faint); text-decoration: none; font-size: 14px; }
+  .um-ficha-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 16px; }
+  .um-sect-t { font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); font-weight: 600; margin: 0 0 8px; }
+  .um-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .um-fields .fld { display: flex; flex-direction: column; gap: 3px; }
+  .um-fields .fld span { font-size: 11px; color: var(--text-dim); }
+  .um-span2 { grid-column: span 2; }
+  .um-acts { margin-top: 10px; display: flex; justify-content: flex-end; }
+  .um-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .um-row form { margin: 0; }
+  .um-ev { display: grid; grid-template-columns: 96px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--panel-border); font-size: 12px; }
+  .um-foot { border-top: 1px solid var(--panel-border); padding-top: 12px; display: flex; justify-content: flex-end; }
+  .ficha-empty { padding: 40px 20px; text-align: center; color: var(--text-faint); }
+  /* alta */
+  .um-add { margin-bottom: 14px; } .um-add summary { list-style: none; display: none; }
+  .um-add .panel { border-color: var(--accent); }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="manager-container">
-  
-  <div class="manager-header">
-    <h2>Security & Access Manager</h2>
-    <button class="btn btn-primary" onclick="document.getElementById('add-user-panel').toggleAttribute('open')">
-      + Nuevo Usuario
-    </button>
+<div class="um-wrap">
+  <div class="um-top">
+    <div>
+      <h2>Usuarios</h2>
+      <div class="sum">{{ resumen.total }} usuarios · {{ resumen.activos }} activos · {{ resumen.deshabilitados }} deshabilitados{% if resumen.sin_email %} · {{ resumen.sin_email }} sin email{% endif %}</div>
+    </div>
+    <div class="um-tools">
+      <input type="search" id="um-q" placeholder="Buscar usuario, nombre o email" oninput="umFiltrar(this.value)" autocomplete="off">
+      <button type="button" class="btn" onclick="document.getElementById('add-user-panel').toggleAttribute('open')">+ Nuevo usuario</button>
+    </div>
   </div>
 
-  {% if error %}
-    <div class="msg error">
-      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-      {{ error }}
-    </div>
-  {% endif %}
-  {% if success %}
-    <div class="msg success">
-      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-      {{ success }}
-    </div>
-  {% endif %}
+  {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+  {% if success %}<div class="msg success">{{ success }}</div>{% endif %}
 
-  <!-- ADD USER PANEL -->
-  <details id="add-user-panel" class="edit-modal" style="margin-bottom: 2rem;">
-    <summary style="display:none;"></summary>
-    <div class="glass-panel" style="border-color: var(--primary);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h3 style="margin: 0;">Alta de Nuevo Usuario</h3>
-        <button class="btn" style="background: transparent; color: var(--text-dim);" onclick="document.getElementById('add-user-panel').removeAttribute('open')">✕</button>
+  <details id="add-user-panel" class="um-add"{% if abrir_alta %} open{% endif %}>
+    <summary></summary>
+    <div class="panel">
+      <div class="panel-head" style="cursor: default;">
+        <span>Nuevo usuario</span>
+        <button type="button" class="um-close" style="background: none; border: none; cursor: pointer;"
+                onclick="document.getElementById('add-user-panel').removeAttribute('open')">✕</button>
       </div>
-      
-      <form method="POST" action="/users/add">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
-          <div>
-            <label style="display:block; margin-bottom:0.5rem; font-size:0.85rem; color:var(--text-dim);">Nombre de Usuario</label>
-            <input type="text" name="username" class="input-field" required autocomplete="off">
-          </div>
-          <div>
-            <label style="display:block; margin-bottom:0.5rem; font-size:0.85rem; color:var(--text-dim);">Contraseña Inicial</label>
-            <div style="display: flex; gap: 0.5rem;">
-              <input type="password" name="password" id="new-user-pwd" class="input-field" required autocomplete="new-password">
-              <button type="button" class="btn btn-primary" onclick="genPwdForInput('new-user-pwd')" title="Generar contraseña segura">🎲</button>
-            </div>
-          </div>
+      <form method="POST" action="/users/add" class="um-ficha-body">
+        <div class="um-fields">
+          <label class="fld"><span>Usuario *</span><input type="text" name="username" required autocomplete="off" maxlength="64"></label>
+          <label class="fld"><span>Contraseña inicial *</span>
+            <span style="display: flex; gap: 6px;"><input type="password" name="password" id="new-user-pwd" required autocomplete="new-password" minlength="10">
+              <button type="button" class="btn sec" onclick="genPwdForInput('new-user-pwd')" title="Generar contraseña segura">Generar</button></span></label>
+          <label class="fld"><span>Nombre</span><input type="text" name="full_name" autocomplete="off" maxlength="120"></label>
+          <label class="fld"><span>Email</span><input type="text" name="email" autocomplete="off" maxlength="254" inputmode="email"></label>
+          <label class="fld um-span2"><span>Notas internas</span><input type="text" name="notes" autocomplete="off" maxlength="500" placeholder="Opcional: quién es, qué pidió"></label>
         </div>
-
-        <div class="permission-item" style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(167, 139, 250, 0.1); border-radius: 6px; border: 1px solid rgba(167, 139, 250, 0.2);">
-          <label class="toggle-switch">
-            <input type="checkbox" name="is_admin" value="true" onchange="document.getElementById('new-user-tabs').style.opacity = this.checked ? '0.3' : '1'; document.getElementById('new-user-tabs').style.pointerEvents = this.checked ? 'none' : 'auto';">
-            <span class="slider"></span>
-          </label>
-          <div>
-            <strong style="color: #c4b5fd;">Superusuario (Administrador)</strong>
-            <div style="font-size: 0.8rem; color: var(--text-dim);">Tiene acceso irrestricto a todos los módulos y puede gestionar usuarios.</div>
+        <div>
+          <p class="um-sect-t">Permisos</p>
+          <label class="perm um-admin"><span class="tg"><input type="checkbox" name="is_admin" value="true" onchange="umToggleTabs(this)"><span class="sl"></span></span>
+            <b>Administrador</b> <span class="faint">(acceso total + Manager)</span></label>
+          <div class="perm-grid">
+            {% for key, label in TABS %}
+            <label class="perm"><span class="tg"><input type="checkbox" name="tabs" value="{{ key }}" {% if key in ("bonos", "on") %}checked{% endif %}><span class="sl"></span></span>{{ label }}</label>
+            {% endfor %}
           </div>
         </div>
-        
-        <div id="new-user-tabs">
-          <label style="display:block; margin-bottom:0.5rem; font-size:0.85rem; color:var(--text-dim);">Permisos de Módulos (solo usuarios regulares)</label>
-          <div class="permissions-grid">
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="bonos" checked><span class="slider"></span></label> Bonos</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="on" checked><span class="slider"></span></label> O.N's</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="curva"><span class="slider"></span></label> Curva</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="cartera"><span class="slider"></span></label> Cartera</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="bcra"><span class="slider"></span></label> BCRA</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="cashflows"><span class="slider"></span></label> Cashflows</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="fci"><span class="slider"></span></label> FCI</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="escenarios"><span class="slider"></span></label> Escenarios</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="opciones"><span class="slider"></span></label> Opciones</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="catalogo"><span class="slider"></span></label> Catálogo</label>
-            <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="abm"><span class="slider"></span></label> ABM Bonos</label>
-          </div>
-        </div>
-        
-        <div style="margin-top: 1.5rem; text-align: right;">
-          <button type="submit" class="btn btn-primary">Guardar Usuario</button>
-        </div>
+        <div class="um-acts"><button type="submit" class="btn">Crear usuario</button></div>
       </form>
     </div>
   </details>
 
-  <!-- USERS LIST -->
-  <div class="glass-panel">
-    <table class="premium-table">
-      <thead>
-        <tr>
-          <th>Usuario</th>
-          <th>Rol</th>
-          <th>Módulos Permitidos</th>
-          <th style="text-align: right;">Acciones de Seguridad</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for u in users %}
-        <tr>
-          <td>
-            <div style="font-weight: 500; font-size: 1.05rem;">{{ u.username }}</div>
-            <div style="font-size: 0.75rem; color: var(--text-dim);">ID: {{ u.id }}</div>
-          </td>
-          <td>
-            {% if u.is_admin %}
-              <span class="badge admin">Administrador</span>
-            {% else %}
-              <span class="badge user">Usuario</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if u.is_admin %}
-              <span style="color: var(--text-dim); font-style: italic; font-size: 0.85rem;">Acceso Total</span>
-            {% else %}
-              <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; max-width: 300px;">
-                {% for tab in (u.allowed_tabs or []) %}
-                  {% if tab != "*" %}<span class="badge tag">{{ tab }}</span>{% endif %}
-                {% else %}
-                  <span style="color: var(--danger); font-size: 0.85rem;">Sin accesos</span>
-                {% endfor %}
-              </div>
-            {% endif %}
-          </td>
-          <td style="text-align: right;">
-            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
-              <button class="btn btn-reset" onclick="document.getElementById('edit-{{ u.id }}').toggleAttribute('open')" title="Editar Permisos">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-              </button>
-              <button class="btn btn-reset" data-uid="{{ u.id }}" data-username="{{ u.username }}" onclick="resetPassword(this.dataset.uid, this.dataset.username)" title="Generar y Blanquear Contraseña">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
-                Reset
-              </button>
-              <!-- El username va por data-* y NO dentro del literal JS del handler: el tokenizador
-                   HTML decodifica las entidades ANTES de que el motor JS compile el atributo, así que
-                   el autoescape de Jinja no alcanza y un `'` en el nombre rompe el string (XSS almacenado). -->
-              <form method="POST" action="/users/delete/{{ u.id }}" style="margin: 0;" data-username="{{ u.username }}" onsubmit="return confirm('¿Peligro: Seguro que deseas eliminar definitivamente al usuario ' + this.dataset.username + '?');">
-                <button type="submit" class="btn btn-danger" title="Borrar Usuario">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                </button>
-              </form>
-            </div>
-          </td>
-        </tr>
-        
-        <!-- EDIT PANEL (Hidden by default) -->
-        <tr style="background: transparent;">
-          <td colspan="4" style="padding: 0; border: none;">
-            <details id="edit-{{ u.id }}" class="edit-modal">
-              <summary style="display:none;"></summary>
-              <div class="edit-panel">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                  <h4 style="margin: 0; color: var(--primary);">Editando permisos de {{ u.username }}</h4>
-                  <button class="btn" style="background: transparent; padding: 0; color: var(--text-dim);" onclick="document.getElementById('edit-{{ u.id }}').removeAttribute('open')">✕ Cerrar</button>
-                </div>
-                
-                <form method="POST" action="/users/update/{{ u.id }}">
-                  <div class="permission-item" style="margin-bottom: 1rem;">
-                    <label class="toggle-switch">
-                      <input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %} onchange="document.getElementById('tabs-{{ u.id }}').style.opacity = this.checked ? '0.3' : '1'; document.getElementById('tabs-{{ u.id }}').style.pointerEvents = this.checked ? 'none' : 'auto';">
-                      <span class="slider"></span>
-                    </label>
-                    <strong style="color: #c4b5fd;">Rol Administrador (Acceso Total)</strong>
-                  </div>
-                  
-                  <div id="tabs-{{ u.id }}" style="{% if u.is_admin %}opacity: 0.3; pointer-events: none;{% endif %}">
-                    <label style="font-size:0.85rem; color:var(--text-dim);">Accesos a Módulos:</label>
-                    <div class="permissions-grid">
-                      {% set u_tabs = u.allowed_tabs or [] %}
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="bonos" {% if "bonos" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Bonos</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="on" {% if "on" in u_tabs %}checked{% endif %}><span class="slider"></span></label> O.N's</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="curva" {% if "curva" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Curva</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="cartera" {% if "cartera" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Cartera</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="bcra" {% if "bcra" in u_tabs %}checked{% endif %}><span class="slider"></span></label> BCRA</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="cashflows" {% if "cashflows" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Cashflows</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="fci" {% if "fci" in u_tabs %}checked{% endif %}><span class="slider"></span></label> FCI</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="escenarios" {% if "escenarios" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Escenarios</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="opciones" {% if "opciones" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Opciones</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="catalogo" {% if "catalogo" in u_tabs %}checked{% endif %}><span class="slider"></span></label> Catálogo</label>
-                      <label class="permission-item"><label class="toggle-switch"><input type="checkbox" name="tabs" value="abm" {% if "abm" in u_tabs %}checked{% endif %}><span class="slider"></span></label> ABM Bonos</label>
-                    </div>
-                  </div>
-                  
-                  <div style="margin-top: 1rem; text-align: right;">
-                    <button type="submit" class="btn btn-primary">Aplicar Cambios</button>
-                  </div>
-                </form>
-              </div>
-            </details>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="um-grid">
+    <div class="panel">
+      <table class="um-table">
+        <thead><tr><th>Usuario</th><th>Rol</th><th>Módulos</th><th>Último acceso</th><th>Estado</th></tr></thead>
+        <tbody id="um-rows">
+          {% for f in filas %}{% set u = f.u %}
+          <tr class="{% if selected and selected.id == u.id %}sel{% endif %}"
+              data-q="{{ u.username|lower }} {{ (u.full_name or '')|lower }} {{ u.email or '' }}"
+              hx-get="/users/{{ u.id }}/ficha" hx-target="#ficha" hx-swap="innerHTML"
+              hx-replace-url="/users?u={{ u.id }}" onclick="umSeleccionar(this)">
+            <td><div class="um-user"><div class="avatar">{{ f.iniciales }}</div>
+              <div><div><b>{{ u.username }}</b>{% if u.full_name %} <span class="mut">· {{ u.full_name }}</span>{% endif %}</div>
+                <div class="faint">{{ u.email or "—" }}</div></div></div></td>
+            <td>{% if u.is_admin %}<span class="badge adm">Administrador</span>{% else %}<span class="badge">Usuario</span>{% endif %}</td>
+            <td>{% if u.is_admin %}<span class="mut" style="font-style: italic;">Acceso total</span>{% else %}{% for t in f.tabs %}<span class="chip">{{ t }}</span>{% else %}<span style="color: var(--neg); font-size: 11px;">Sin accesos</span>{% endfor %}{% endif %}</td>
+            <td class="mono mut">{{ f.ultimo_acceso }}</td>
+            <td>{% if u.is_active %}<span class="badge ok">Activo</span>{% else %}<span class="badge off">Deshabilitado</span>{% endif %}
+                {% if f.sin_email %} <span class="badge warn" title="Sin email: no puede recibir links">sin email</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="um-hint">Clic en una fila abre la ficha a la derecha · la URL guarda la selección (?u=)</div>
+    </div>
+
+    <div class="panel" id="ficha">
+      {% if selected %}{% include "fragments/user_ficha.html" %}{% else %}<div class="ficha-empty">Elegí un usuario para ver su ficha.</div>{% endif %}
+    </div>
   </div>
 </div>
 
 <script>
-// Funciones de seguridad para generar contraseñas criptográficamente fuertes
+// Contraseñas criptográficamente fuertes para el alta y el reseteo a mano.
 function generateSecurePassword(length = 12) {
   const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+~";
-  let retVal = "";
-  // Utilizamos crypto si está disponible para mayor entropía
-  if (window.crypto && window.crypto.getRandomValues) {
-    const values = new Uint32Array(length);
-    window.crypto.getRandomValues(values);
-    for (let i = 0; i < length; i++) {
-      retVal += charset[values[i] % charset.length];
-    }
-  } else {
-    for (let i = 0; i < length; i++) {
-      retVal += charset.charAt(Math.floor(Math.random() * charset.length));
-    }
-  }
-  return retVal;
+  const values = new Uint32Array(length);
+  window.crypto.getRandomValues(values);
+  let out = "";
+  for (let i = 0; i < length; i++) out += charset[values[i] % charset.length];
+  return out;
 }
-
 function genPwdForInput(inputId) {
-  const pwd = generateSecurePassword();
   const input = document.getElementById(inputId);
-  input.value = pwd;
-  input.type = "text"; // Mostrarla brevemente
-  setTimeout(() => input.type = "password", 5000); // Ocultar a los 5 segs
+  input.value = generateSecurePassword();
+  input.type = "text";                                  // mostrarla brevemente
+  setTimeout(() => { input.type = "password"; }, 5000);
 }
-
-// Reset de contrasena: modal propio en vez de confirm() + clipboard.
-//
-// EL BUG QUE REEMPLAZA: se hacia `navigator.clipboard.writeText(pwd).catch(...)`.
-// Sobre HTTP (el droplet no tiene TLS) `navigator.clipboard` es undefined, asi que
-// eso tiraba un TypeError SINCRONO; el .catch() no lo atrapaba y la funcion moria
-// antes de submitReset() — no copiaba NI reseteaba, y el confirm() ya se habia
-// llevado la contrasena de pantalla. Ahora la contrasena queda VISIBLE y
-// seleccionable hasta que el admin confirma, y el copiado usa window.mrCopy
-// (base.html), que cae a execCommand y funciona sin HTTPS.
+function umToggleTabs(cb) {
+  const g = cb.closest("form").querySelector(".perm-grid");
+  g.style.opacity = cb.checked ? ".35" : "1";
+  g.style.pointerEvents = cb.checked ? "none" : "auto";
+}
+function umSeleccionar(tr) {
+  document.querySelectorAll("#um-rows tr.sel").forEach(r => r.classList.remove("sel"));
+  tr.classList.add("sel");
+}
+function umFiltrar(q) {
+  q = (q || "").trim().toLowerCase();
+  document.querySelectorAll("#um-rows tr").forEach(tr => {
+    tr.style.display = !q || tr.dataset.q.indexOf(q) !== -1 ? "" : "none";
+  });
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+// Reseteo a mano: modal propio (sin confirm() ni navigator.clipboard, que sobre HTTP
+// no existe). La contraseña queda VISIBLE y seleccionable hasta que el admin confirma;
+// el copiado usa window.mrCopy (base.html), que cae a execCommand sin HTTPS.
 function resetPassword(userId, username) {
   const pwd = generateSecurePassword();
-
   const ov = document.createElement("div");
   ov.className = "modal-overlay";
   ov.innerHTML = `
-    <div class="modal-card" style="max-width:460px" role="dialog" aria-modal="true"
-         aria-labelledby="rp-title">
-      <div class="modal-head">
-        <b id="rp-title">Resetear contraseña</b>
-        <span class="mut">${escapeHtml(username)}</span>
-      </div>
+    <div class="modal-card" style="max-width:460px" role="dialog" aria-modal="true" aria-labelledby="rp-title">
+      <div class="modal-head"><b id="rp-title">Definir contraseña a mano</b><span class="mut">${escapeHtml(username)}</span></div>
       <div class="modal-body">
-        <p style="margin:0 0 4px">Nueva contraseña para
-           <b>${escapeHtml(username)}</b>:</p>
+        <p style="margin:0 0 4px">Nueva contraseña para <b>${escapeHtml(username)}</b>:</p>
         <div style="display:flex; gap:8px; margin:10px 0">
           <input id="rp-pwd" type="text" readonly value="${escapeHtml(pwd)}"
-                 style="flex:1; font-family:ui-monospace,Consolas,monospace;
-                        font-size:15px; letter-spacing:.5px; padding:9px 10px">
-          <button type="button" id="rp-copy" class="btn">Copiar</button>
+                 style="flex:1; font-family:var(--font-mono); font-size:15px; letter-spacing:.5px; padding:9px 10px">
+          <button type="button" id="rp-copy" class="btn sec">Copiar</button>
         </div>
-        <p class="help" style="margin:0">Guardala <b>antes</b> de confirmar: una vez
-           aplicada no se puede volver a ver (se almacena hasheada con bcrypt).
-           Tambien podes seleccionarla y copiarla a mano.</p>
+        <p class="help" style="margin:0">Guardala <b>antes</b> de confirmar: una vez aplicada no se puede volver a ver
+           (se almacena hasheada con bcrypt). Al aplicarla se cierran las sesiones abiertas del usuario.</p>
         <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px">
-          <button type="button" id="rp-cancel" class="btn">Cancelar</button>
-          <button type="button" id="rp-ok" class="btn btn-primary">Resetear ahora</button>
+          <button type="button" id="rp-cancel" class="btn sec">Cancelar</button>
+          <button type="button" id="rp-ok" class="btn">Aplicar ahora</button>
         </div>
       </div>
     </div>`;
   document.body.appendChild(ov);
-
   const close = () => { document.removeEventListener("keydown", onKey); ov.remove(); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
   ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
-
   const input = ov.querySelector("#rp-pwd");
   const btnCopy = ov.querySelector("#rp-copy");
-
-  // Preseleccionada: con Ctrl+C alcanza aunque falle todo lo demas.
   input.focus(); input.select();
-
   btnCopy.addEventListener("click", () => {
     window.mrCopy(pwd, (ok) => {
       btnCopy.textContent = ok ? "¡Copiado!" : "Copiá con Ctrl+C";
@@ -515,30 +226,18 @@ function resetPassword(userId, username) {
       setTimeout(() => { btnCopy.textContent = "Copiar"; }, 2500);
     });
   });
-
   ov.querySelector("#rp-cancel").addEventListener("click", close);
-  ov.querySelector("#rp-ok").addEventListener("click", () => {
-    close();
-    submitReset(userId, pwd);
-  });
+  ov.querySelector("#rp-ok").addEventListener("click", () => { close(); submitReset(userId, pwd); });
 }
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
 function submitReset(userId, pwd) {
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = `/users/reset-password/${userId}`;
-  
-  const input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'password';
-  input.value = pwd;
-  
-  form.appendChild(input);
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = `/users/${userId}/reset`;
+  for (const [name, value] of [["channel", "manual"], ["password", pwd]]) {
+    const i = document.createElement("input");
+    i.type = "hidden"; i.name = name; i.value = value;
+    form.appendChild(i);
+  }
   document.body.appendChild(form);
   form.submit();
 }

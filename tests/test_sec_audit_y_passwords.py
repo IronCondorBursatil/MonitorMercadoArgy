@@ -98,7 +98,7 @@ def test_las_acciones_de_admin_dicen_quien_le_hizo_que_a_quien(usuarios, caplog)
         with SessionLocal() as s:
             bob = s.query(UserORM).filter(UserORM.username == "bob").first().id
         with caplog.at_level(logging.INFO, logger="monitor.audit"):
-            c.post(f"/users/reset-password/{bob}", data={"password": "otraclave12"})
+            c.post(f"/users/{bob}/reset", data={"channel": "manual", "password": "otraclave12"})
     assert any("action=reset_password" in m and "by=" in m and "target=bob" in m
                for m in _lineas(caplog)), _lineas(caplog)
 
@@ -139,12 +139,12 @@ def test_el_reset_valida_pero_DESPUES_del_lookup(usuarios):
     `test_aud_D1_seguridad_web`. Validar antes convertiría ese 404 en un 400."""
     with TestClient(app) as c:
         _login_admin(c)
-        assert c.post("/users/reset-password/999999", data={"password": "x"}).status_code == 404
+        assert c.post("/users/999999/reset", data={"channel": "manual", "password": "x"}).status_code == 404
         with SessionLocal() as s:
             bob = s.query(UserORM).filter(UserORM.username == "bob").first()
             hash_antes = bob.hashed_password
             bob_id = bob.id
-        assert c.post(f"/users/reset-password/{bob_id}", data={"password": "x"}).status_code == 400
+        assert c.post(f"/users/{bob_id}/reset", data={"channel": "manual", "password": "x"}).status_code == 400
     with SessionLocal() as s:
         assert s.get(UserORM, bob_id).hashed_password == hash_antes
 
@@ -185,7 +185,7 @@ def test_resetear_la_password_cierra_las_sesiones_de_ese_usuario(usuarios):
         _login_admin(admin_c)
         with SessionLocal() as s:
             bob_id = s.query(UserORM).filter(UserORM.username == "bob").first().id
-        admin_c.post(f"/users/reset-password/{bob_id}", data={"password": "nuevaclave1"})
+        admin_c.post(f"/users/{bob_id}/reset", data={"channel": "manual", "password": "nuevaclave1"})
 
         assert bob_c.get("/", follow_redirects=False).status_code == 302, (
             "la sesión de bob sobrevivió al reset de su contraseña")
@@ -212,7 +212,7 @@ def test_cambiar_permisos_NO_cierra_la_sesion(usuarios):
         _login_admin(admin_c)
         with SessionLocal() as s:
             bob_id = s.query(UserORM).filter(UserORM.username == "bob").first().id
-        admin_c.post(f"/users/update/{bob_id}", data={"tabs": ["bonos", "fci"]})
+        admin_c.post(f"/users/{bob_id}/permisos", data={"tabs": ["bonos", "fci"]})
         assert bob_c.get("/", follow_redirects=False).status_code == 200
 
 
@@ -251,7 +251,7 @@ def test_la_columna_entra_por_migracion_forward_only(tmp_path):
 # ── Hallazgos de la auditoría 2026-09-04 ─────────────────────────────────────
 
 def test_la_promocion_a_admin_QUEDA_registrada(usuarios, caplog):
-    """`update_user` es el unico handler que OTORGA privilegios y era el unico de los
+    """`update_permisos` es el unico handler que OTORGA privilegios y era el unico de los
     cuatro sin linea de auditoria: promover a alguien a administrador --la accion mas
     sensible de toda la ABM-- no dejaba rastro en ningun lado.
 
@@ -262,7 +262,7 @@ def test_la_promocion_a_admin_QUEDA_registrada(usuarios, caplog):
         with SessionLocal() as s:
             bob = s.query(UserORM).filter(UserORM.username == "bob").first().id
         with caplog.at_level(logging.INFO, logger="monitor.audit"):
-            c.post(f"/users/update/{bob}", data={"is_admin": "true"})
+            c.post(f"/users/{bob}/permisos", data={"is_admin": "true"})
 
     lineas = _lineas(caplog)
     assert any("action=update" in m and "target=bob" in m for m in lineas), lineas

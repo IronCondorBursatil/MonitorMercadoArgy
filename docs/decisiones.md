@@ -66,6 +66,23 @@ que corresponde. Ver `agents.md › §0.8 Fase 0`.
 - **Alternativa**: cron en el servidor + chequeo de edad dentro de `/smoke`, si el email no
   alcanza.
 
+## D5 · Manager de usuarios v2 y reseteo de contraseña (decidido 2026-09-08)
+
+- **Layout**: Opción A (tabla + ficha en panel lateral HTMX). B (página por usuario) y C
+  (tarjetas) descartadas; mockups en el canvas enlazado desde la spec.
+- **Correo**: Gmail con contraseña de aplicación, SMTP 587 STARTTLS con `smtplib` (sin
+  dependencia nueva). Si molesta el remitente, cambiar `MONITOR_SMTP_*` a un proveedor
+  transaccional no toca código.
+- **HTTP sin dominio**: no hay dominio ni lo va a haber por un largo rato. El link de reseteo
+  viaja en claro igual que hoy viaja la contraseña del login; mitigaciones: token de 256 bits
+  hasheado, un solo uso, 60 min (invitación 72 h), consumirlo cierra las otras sesiones.
+  Camino a HTTPS sin comprar dominio (Let's Encrypt sobre `129-80-148-166.sslip.io`): spike
+  aparte, no verificado.
+- **Autoservicio** "¿Olvidaste tu contraseña?" sí (respuesta neutra, rate-limit). **Alta por
+  invitación** por defecto; contraseña inicial a mano como alternativa.
+- Fases: F1 Manager + schema + login (esta rama) · F2 tokens + `/reset/{token}` + link copiable ·
+  F3 mailer + `/forgot`.
+
 ## Decisiones ya tomadas durante la auditoría (2026-09-07)
 
 - Ramas apiladas in-place en vez de worktree, una por fase (`fase-0-baseline` →

@@ -1,0 +1,74 @@
+{# Ficha de un usuario. Se sirve como fragmento HTMX (GET /users/{id}/ficha) y se
+   incluye server-side en pages/users.html cuando viene ?u=<id>.
+   Contexto: u (UserORM), v (users_service.vista_usuario), actividad, TABS.
+   REGLA anti-XSS: el username va SÓLO en texto o en atributos data-*; nunca dentro
+   de un handler on*= (lo fija test_aud_D1_seguridad_web). #}
+<div class="um-ficha" data-uid="{{ u.id }}">
+  <div class="um-ficha-head">
+    <div class="avatar">{{ v.iniciales }}</div>
+    <div class="um-ficha-who">
+      <div class="um-ficha-user">{{ u.username }}</div>
+      <div class="mut">{{ u.full_name or "—" }} ·
+        {% if u.is_active %}<span class="badge ok">Activo</span>{% else %}<span class="badge off">Deshabilitado</span>{% endif %}
+        {% if v.sin_email %}<span class="badge warn" title="Sin email: no puede recibir links">sin email</span>{% endif %}
+      </div>
+    </div>
+    <a href="/users" class="um-close" title="Cerrar ficha">✕</a>
+  </div>
+
+  <div class="um-ficha-body">
+    <form method="POST" action="/users/{{ u.id }}/datos" class="um-sect">
+      <p class="um-sect-t">Datos</p>
+      <div class="um-fields">
+        <label class="fld"><span>Nombre</span><input type="text" name="full_name" value="{{ u.full_name or '' }}" maxlength="120" autocomplete="off"></label>
+        <label class="fld"><span>Email</span><input type="text" name="email" value="{{ u.email or '' }}" maxlength="254" autocomplete="off" inputmode="email"></label>
+        <label class="fld um-span2"><span>Notas internas</span><input type="text" name="notes" value="{{ u.notes or '' }}" maxlength="500" autocomplete="off"></label>
+      </div>
+      <div class="um-acts"><button type="submit" class="btn">Guardar datos</button></div>
+    </form>
+
+    <form method="POST" action="/users/{{ u.id }}/permisos" class="um-sect">
+      <p class="um-sect-t">Permisos</p>
+      <label class="perm um-admin"><span class="tg"><input type="checkbox" name="is_admin" value="true" {% if u.is_admin %}checked{% endif %} onchange="umToggleTabs(this)"><span class="sl"></span></span>
+        <b>Administrador</b> <span class="faint">(acceso total + Manager)</span></label>
+      <div class="perm-grid" {% if u.is_admin %}style="opacity: .35; pointer-events: none;"{% endif %}>
+        {% set u_tabs = u.allowed_tabs or [] %}
+        {% for key, label in TABS %}
+        <label class="perm"><span class="tg"><input type="checkbox" name="tabs" value="{{ key }}" {% if key in u_tabs %}checked{% endif %}><span class="sl"></span></span>{{ label }}</label>
+        {% endfor %}
+      </div>
+      <div class="um-acts"><button type="submit" class="btn">Aplicar permisos</button></div>
+    </form>
+
+    <div class="um-sect">
+      <p class="um-sect-t">Seguridad</p>
+      <div class="um-row">
+        <button type="button" class="btn sec" data-uid="{{ u.id }}" data-username="{{ u.username }}"
+                onclick="resetPassword(this.dataset.uid, this.dataset.username)">Definir contraseña a mano</button>
+        <form method="POST" action="/users/{{ u.id }}/sesiones/cerrar"><button type="submit" class="btn sec">Cerrar sesiones</button></form>
+        {% if u.is_active %}
+        <form method="POST" action="/users/{{ u.id }}/estado"><input type="hidden" name="activo" value="0"><button type="submit" class="btn danger">Deshabilitar cuenta</button></form>
+        {% else %}
+        <form method="POST" action="/users/{{ u.id }}/estado"><input type="hidden" name="activo" value="1"><button type="submit" class="btn">Habilitar cuenta</button></form>
+        {% endif %}
+      </div>
+      <div class="faint">Contraseña cambiada: {{ v.pwd_cambiada }} · Alta: {{ v.alta }}{% if u.created_by %} por {{ u.created_by }}{% endif %}</div>
+    </div>
+
+    <div class="um-sect">
+      <p class="um-sect-t">Actividad reciente</p>
+      {% for e in actividad %}
+      <div class="um-ev"><span class="mono faint">{{ e.texto }}</span><span>{{ e.que }}{% if e.detalle %} <span class="faint">· {{ e.detalle }}</span>{% endif %}</span></div>
+      {% else %}
+      <div class="faint">Sin actividad registrada todavía.</div>
+      {% endfor %}
+    </div>
+
+    <div class="um-sect um-foot">
+      <form method="POST" action="/users/delete/{{ u.id }}" data-username="{{ u.username }}"
+            onsubmit="return confirm('¿Seguro que querés eliminar definitivamente al usuario ' + this.dataset.username + '?');">
+        <button type="submit" class="btn danger">Eliminar usuario…</button>
+      </form>
+    </div>
+  </div>
+</div>

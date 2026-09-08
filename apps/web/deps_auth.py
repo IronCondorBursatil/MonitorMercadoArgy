@@ -87,6 +87,11 @@ def _get_user_from_token(request: Request, db: Session) -> Optional[UserORM]:
     # "legacy" permanente en la auth es un pasivo que despues nadie vuelve a mirar.
     if payload.get("ver", -1) != (user.token_version or 0):
         return _publish(request, None)
+    # Cuenta deshabilitada desde el Manager: la cookie puede ser válida (misma
+    # token_version) pero el usuario ya no tiene acceso. Se corta acá para que
+    # la sesión viva muera en el request siguiente, sin esperar a que expire.
+    if not user.is_active:
+        return _publish(request, None)
     return _publish(request, user)
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> UserORM:

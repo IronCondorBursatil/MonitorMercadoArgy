@@ -52,6 +52,19 @@ dominio no hay certificado). Activarlo sin HTTPS hace que el browser descarte la
 → login en loop. El pasaje a HTTPS y el momento de `MONITOR_COOKIE_SECURE=true` están en
 `docs/despliegue.md`.
 
+## Manager de usuarios
+
+Rediseñado el 2026-09-08 (spec `docs/superpowers/specs/2026-09-08-manager-usuarios-reseteo-design.md`,
+Opción A: tabla + ficha lateral HTMX). `users` tiene email (único si no es NULL, índice parcial
+`ux_users_email`), nombre, notas, `is_active`, alta (cuándo/quién), último ingreso (fecha/IP) y
+fecha del último cambio de contraseña; todo entró por la migración forward-only de `init_db`.
+Las reglas puras viven en `apps/web/users_service.py`; el router `routers/users_abm.py` tiene una
+ruta POST por acción y responde siempre con `_users_page`. Deshabilitar una cuenta bloquea el
+login (misma respuesta que una clave incorrecta) y mata la sesión viva en el siguiente request.
+Las páginas sin sesión (`/login`; en las fases siguientes `/forgot` y `/reset/{token}`) extienden
+`templates/base_public.html`: header de la app sin nav. Fases 2 y 3 (tokens, link copiable,
+mail, autoservicio) están descritas en la spec.
+
 ## Al testear la web
 
 `tests/conftest.py` tiene una fixture autouse `_auth_bypass` que corre los tests como

@@ -1,0 +1,50 @@
+{# Base de las páginas SIN sesión (login; en las Fases 2-3 /forgot y /reset/{token}).
+   Mismo header y tokens que base.html, pero SIN nav, badge de frescura ni menú de
+   fuente: todo eso pega a rutas privadas y un anónimo rebotaría a /login. #}
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Acceso - Monitor Renta Fija AR{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script>
+    // Tema guardado antes del primer paint (mismo mecanismo que base.html).
+    (function () {
+      var t = localStorage.getItem("theme");
+      if (t) document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
+  <style>
+    .pub-main { min-height: calc(100vh - 41px); display: flex; align-items: center; justify-content: center; padding: 30px 20px; }
+    .pub-card { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; padding: 28px 32px;
+                width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+    .pub-card h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: .2px; }
+    .pub-card .sub { color: var(--text-dim); font-size: 12.5px; margin: 0 0 18px; }
+    .pub-card .fld { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .pub-card .fld span { font-size: 11px; color: var(--text-dim); }
+    .pub-card input { width: 100%; padding: 10px 11px; font-size: 14px; background: var(--page-bg); }
+    .pub-card button[type="submit"] { width: 100%; padding: 10px 15px; font-size: 14px; }
+    .pub-card .links { text-align: center; margin-top: 14px; font-size: 12.5px; }
+    .pub-card a { color: var(--accent); text-decoration: none; }
+    .pub-card a:hover { text-decoration: underline; }
+    .msg { padding: 9px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; text-align: center; }
+    .msg.error { background: rgba(242,54,69,.12); color: var(--neg); border: 1px solid rgba(242,54,69,.35); }
+    .msg.success { background: rgba(8,153,129,.12); color: var(--pos); border: 1px solid rgba(8,153,129,.35); }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <h1>MONITOR · Renta Fija AR</h1>
+      <span class="meta" style="margin-left: auto;">{% block header_meta %}Acceso{% endblock %}</span>
+    </div>
+  </header>
+  <main class="pub-main">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

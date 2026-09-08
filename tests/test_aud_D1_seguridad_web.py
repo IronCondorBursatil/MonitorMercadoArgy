@@ -114,11 +114,11 @@ def _crear_tablas_users():
 def test_users_abm_id_inexistente_no_tira_500():
     _crear_tablas_users()
     with TestClient(app, raise_server_exceptions=False) as c:
-        r1 = c.post("/users/reset-password/999999", data={"password": "x"})
-        r2 = c.post("/users/update/999999", data={"is_admin": "false"})
+        r1 = c.post("/users/999999/reset", data={"channel": "manual", "password": "x"})
+        r2 = c.post("/users/999999/permisos", data={"is_admin": "false"})
         r3 = c.post("/users/delete/999999")
-    assert r1.status_code == 404, f"reset-password devolvió {r1.status_code}"
-    assert r2.status_code == 404, f"update devolvió {r2.status_code}"
+    assert r1.status_code == 404, f"reset devolvió {r1.status_code}"
+    assert r2.status_code == 404, f"permisos devolvió {r2.status_code}"
     assert r3.status_code == 404, f"delete devolvió {r3.status_code}"
     assert "borrado" not in r3.text.lower(), "delete miente: dice que borró un id inexistente"
 
@@ -142,6 +142,10 @@ class _ManejadoresInline(HTMLParser):
 
 
 def test_users_page_no_mete_el_username_en_atributos_de_evento():
+    """Cubre la página /users Y la ficha (fragmento HTMX y página con ?u=): el par
+    data-username + handler que consume el username en JS vive en
+    fragments/user_ficha.html (botón de reset y onsubmit del form de borrar), no en la
+    tabla de /users. Sin renderizar la ficha este test pasaba en vacío."""
     from core.infrastructure.db.engine import SessionLocal
     from core.infrastructure.db.models import UserORM
 
@@ -156,11 +160,23 @@ def test_users_page_no_mete_el_username_en_atributos_de_evento():
                           is_admin=False, allowed_tabs=["fci"]))
         s.commit()
     try:
+        with SessionLocal() as s:
+            ids = [u.id for u in s.query(UserORM).filter(UserORM.username.in_(payloads)).all()]
+        assert len(ids) == len(payloads)
         with TestClient(app) as c:
             r = c.get("/users")
-        assert r.status_code == 200
-        parser = _ManejadoresInline()
-        parser.feed(r.text)
+            assert r.status_code == 200
+            parser = _ManejadoresInline()
+            parser.feed(r.text)
+            # La ficha (fragmento HTMX y página con ?u=) es donde vive el par data-username +
+            # handler: sin esto el test pasaba en vacío sobre la plantilla que importa.
+            for uid in ids:
+                r_ficha = c.get(f"/users/{uid}/ficha")
+                assert r_ficha.status_code == 200
+                parser.feed(r_ficha.text)
+                r_pagina = c.get(f"/users?u={uid}")
+                assert r_pagina.status_code == 200
+                parser.feed(r_pagina.text)
         culpables = [h for h in parser.handlers
                      if "alert(1)" in h or "alert(2)" in h]
         assert not culpables, f"el username rompe el literal JS del handler: {culpables}"
