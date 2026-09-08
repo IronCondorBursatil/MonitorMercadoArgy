@@ -5,6 +5,9 @@ paths:
   - "apps/web/routers/users_abm.py"
   - "core/security.py"
   - "apps/web/users_service.py"
+  - "apps/web/reset_service.py"
+  - "apps/web/mail_templates.py"
+  - "core/infrastructure/mailer.py"
 ---
 
 # Auth — reglas que cargan al tocar login, permisos o usuarios
@@ -42,6 +45,8 @@ acá o en routers (agents.md §0.1.13). No debilitar validaciones para que un te
   `settings.trusted_proxy_ips` (default `127.0.0.1,::1`; `MONITOR_TRUSTED_PROXY_IPS`, vacío =
   no confiar en ninguno). Supone UN proxy y que la ÚLTIMA entrada del XFF es suya (nginx
   `$proxy_add_x_forwarded_for`). Con un CDN delante habría que tomar otra posición del header.
+- `/forgot` y `/reset/` también pasan por la zona `login` de nginx (POST-only), además de sus
+  límites propios en la app (`deploy/nginx/monitores.conf`; guardián en `tests/test_ops_deploy_config.py`).
 
 ## Cookie `secure`
 
@@ -68,19 +73,29 @@ uvicorn ≥ 0.48 ya honra `X-Forwarded-Proto` por default; no tocar el `ExecStar
   verificando igual contra el dummy.
 - `/reset/{token}` (público a sabiendas): la MISMA página 200 para inexistente/vencido/usado/
   deshabilitado; éxito → 303 `/login?reset=ok`; rate-limit 10 por IP / 15 min.
-- Canal `mail` de `/reset`: manda el correo DENTRO del request (`core/infrastructure/mailer.py`);
-  si falla, el admin ve el error de envío Y el link copiable como respaldo — nunca se pierde la
-  vía manual. `POST /users/add` con SMTP activo y el usuario con email ofrece "Enviar link por
-  mail" (mismo respaldo si falla); sin SMTP o sin email el botón queda deshabilitado con el motivo.
+- Canal `mail` de `POST /users/{id}/reset` = el botón «Enviar link por mail» de la FICHA: emite un
+  token `reset` (60 min) y manda el correo DENTRO del request (`core/infrastructure/mailer.py`); si
+  falla, el admin ve el error de envío Y el link copiable como respaldo — nunca se pierde la vía
+  manual. No re-envía una invitación. Sin SMTP, sin `MONITOR_PUBLIC_URL` o sin email del usuario el
+  botón queda deshabilitado con el motivo en el `title` (y el POST responde 400).
+- `POST /users/add access=invite` manda la invitación por mail AUTOMÁTICAMENTE si `mail_enabled` y
+  el alta trae email (canal persistido `mail`; si no, `link`), y muestra el link al admin igual; si
+  el envío falla: error + link.
+- Link que viaja por mail = `reset_service.mail_link` (sólo `public_url`); link que se muestra al
+  admin = `reset_link(request, …)`. `mail_enabled` exige `smtp_host` **y** `public_url`: el Host de
+  un POST anónimo a `/forgot` lo elige quien lo manda (reset poisoning). Guardián:
+  `tests/test_users_manager.py::test_forgot_no_arma_el_link_con_el_host_del_request`.
 - `GET/POST /forgot` (público, en `_PUBLIC_PATHS`): respuesta neutra siempre (nunca confirma si
   el usuario o el email existen), el envío corre por `BackgroundTasks` (no bloquea la respuesta);
   rate-limit propio, aparte del de `/login` y `/reset/{token}` — 3 intentos por IP / 15 min y 3
-  por dato tipeado / 60 min (`_forgot_attempts_ip` / `_forgot_attempts_dato`, mismo `_rate_limited`
+  por dato tipeado (normalizado y acotado a 254 caracteres) / 60 min (`_forgot_attempts_ip` /
+  `_forgot_attempts_dato`, mismo `_rate_limited`
   del login). Un invitado (`hashed_password="!"`) queda excluido: no se le puede pedir reset ahí.
 - `mailer.py` (`send_mail`): `smtplib` + STARTTLS, sin dependencia nueva; timeout 15 s
-  (`SMTP_TIMEOUT_S`); sin `MONITOR_SMTP_HOST` levanta `MailNotConfigured`
-  (`settings.mail_enabled = bool(smtp_host)`, gatea canal mail/invitación/`/forgot`). Variables
-  `MONITOR_SMTP_*` y la contraseña de aplicación de Gmail: `docs/despliegue.md`.
+  (`SMTP_TIMEOUT_S`); con el correo apagado levanta `MailNotConfigured`
+  (`settings.mail_enabled = bool(smtp_host and public_url)`, gatea canal mail/invitación/`/forgot`;
+  SMTP sin `MONITOR_PUBLIC_URL` = ERROR al arrancar y correo apagado). Variables `MONITOR_SMTP_*`,
+  `MONITOR_PUBLIC_URL` y la contraseña de aplicación de Gmail: `docs/despliegue.md`.
 - El login acepta usuario o email (`normalizar_email`); la clave del rate-limit sigue siendo
   el valor tipeado.
 - **Toda respuesta HTML de la ABM pasa por `_users_page`** (arma filas, resumen y ficha

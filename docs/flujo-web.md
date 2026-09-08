@@ -77,8 +77,9 @@ que llegar del mismo host. Las docs de OpenAPI están apagadas por default
 
 ## Rutas públicas
 
-El conjunto está fijado por `tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS`
-(`/login`, `/logout`, `/api/health` + mount `/static`). Todo lo demás exige login; no
+El conjunto está fijado por `tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS` (hoy `/login`,
+`/logout`, `/api/health`, `/reset/{token}`, `/forgot` + mount `/static`; la lista viva es la del
+test, no ésta). Todo lo demás exige login; no
 crear endpoints de salud nuevos (`/api/health` ya es el probe externo). Los tests que
 recorren `app.routes` usan `tests/_routes.py` (agnóstico a la forma de `include_router`,
 que cambió en FastAPI 0.141).

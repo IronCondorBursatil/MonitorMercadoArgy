@@ -103,8 +103,9 @@ La sección "Actividad" de la ficha se arma con lo que ya hay: `last_login_at` (
   `login` → `send_message`. Sin dependencia nueva. Wrapper `asend_mail` con `asyncio.to_thread`. Sin reintentos.
 - **Settings** (pydantic-settings, prefijo `MONITOR_`): `smtp_host` (`""` = deshabilitado), `smtp_port=587`,
   `smtp_user`, `smtp_password` (**secreto: sólo por env / `.env` del server, nunca en el repo**), `smtp_from`
-  (default `smtp_user`), `public_url` (`""` → se usa `request.base_url`; en prod `http://129.80.148.166`).
-  `settings.mail_enabled = bool(smtp_host)`.
+  (default `smtp_user`), `public_url` (**obligatoria con SMTP**: base de todo link que viaja por mail,
+  `reset_service.mail_link`; en prod `http://129.80.148.166`; vacía = correo apagado y ERROR al arrancar).
+  `settings.mail_enabled = bool(smtp_host and public_url)` (fix post-review 2026-09-08).
 - **Gmail**: `smtp.gmail.com:587`, contraseña de aplicación (exige 2FA en la cuenta). Tope ~500 mails/día:
   sobra. Salida por 587 desde OCI: **HIPÓTESIS a verificar en el smoke de la Fase 3** (OCI bloquea 25 por
   default; si 587 está cerrado se abre en la security list).
@@ -138,7 +139,7 @@ actualizan a sabiendas (test_aud_D1 y compañía).
 | Ruta | Qué hace |
 |---|---|
 | `GET /forgot` | formulario "usuario o email". Si `mail_enabled` es falso, muestra "pedile el link a tu administrador" sin formulario |
-| `POST /forgot` | **siempre 200 con la misma página** ("Revisá tu correo"). Si el dato corresponde a un usuario activo con email, emite token `reset/self` y manda el mail **en background** (el tiempo de respuesta no depende del caso). Si no, loguea `forgot=noop` y no hace nada más |
+| `POST /forgot` | **siempre 200 con la misma página** ("Revisá tu correo"). Si el dato corresponde a un usuario activo, con email y con contraseña elegida (un invitado pendiente no: su link lo maneja el admin), emite token `reset/self` y manda el mail **en background** (el tiempo de respuesta no depende del caso). Si no, loguea `forgot=noop` y no hace nada más |
 | `GET /reset/{token}` | válido → formulario (nombre del usuario, dos campos, requisitos). Inválido por cualquier motivo → misma página "Este link ya no sirve" (200) |
 | `POST /reset/{token}` | valida token y contraseña (las dos iguales + política); consume; **303 a `/login?reset=ok`** (banner verde). Contraseña inválida → 400 con el formulario y el token sigue vivo |
 
@@ -191,6 +192,9 @@ privadas), mismo script de tema, tarjeta centrada `panel-bg`/`panel-border`, bot
 - Token aleatorio de 256 bits, guardado hasheado, **un solo uso**, TTL corto, invalidación de los anteriores
   al emitir uno nuevo, inválido para usuarios deshabilitados; consumirlo cierra las otras sesiones.
 - `/forgot` y `/reset` sin oráculo: misma página y mismo tiempo (envío en background) para todos los casos.
+- **Reset poisoning**: los links de mail nunca salen del Host del request (`/forgot` es anónimo y el `Host` lo
+  elige quien lo manda); se arman sólo con `public_url` (`reset_service.mail_link`). El link que se MUESTRA al
+  admin en su propia página sí puede caer a `request.base_url` (`reset_link`).
 - El token viaja en el path: `Referrer-Policy: same-origin` ya está (`security_web.py`); la página no carga
   recursos externos (CSP `'self'`); `autocomplete="new-password"`.
 - Email: validación mínima (un `@`, sin espacios ni caracteres de control, ≤ 254, minúsculas) y la misma

@@ -40,6 +40,9 @@ está en `settings.trusted_proxy_ips` (default `127.0.0.1,::1`; override
 del CDN y el limiter agrupa a todos en un bucket único — habría que setear ahí la IP del
 CDN y tomar otra posición del header.
 
+`/forgot` y `/reset/` también pasan por la zona `login` de nginx (POST-only), además de sus
+límites propios en la app (ver «Correo y autoservicio»).
+
 ## CSRF y headers
 
 `apps/web/security_web.py`: validación de origen para POST/PUT/PATCH/DELETE
@@ -77,9 +80,9 @@ del mismo usuario; un usuario deshabilitado no puede consumirlo; consumirlo sube
 `token_version` (cierra las demás sesiones) y actualiza `password_changed_at`; ligado a la
 `token_version` del usuario al emitirlo: cualquier gesto que la suba (clave a mano, cerrar
 sesiones, deshabilitar) lo invalida. El admin lo
-dispara desde el Manager por el canal `link` (`POST /users/{id}/reset channel=link`): el link
-se arma con `settings.public_url` (`MONITOR_PUBLIC_URL`, si no está seteado cae al
-`request.base_url`) y se muestra UNA sola vez en la ficha, para copiar. El alta por invitación
+dispara desde el Manager por el canal `link` (`POST /users/{id}/reset channel=link`): el link se
+muestra UNA sola vez en la ficha, para copiar (`reset_service.reset_link`: base `MONITOR_PUBLIC_URL`
+—ver `docs/despliegue.md`— o, si está vacía, la del propio request del admin). El alta por invitación
 (`POST /users/add access=invite`) crea el usuario con `hashed_password="!"`
 (`core.security.SIN_PASSWORD_HASH`, un centinela que no es un hash bcrypt) y un token `invite`
 de 72 h; no exige email, el link es lo que se le pasa al invitado. `GET/POST /reset/{token}`
@@ -91,27 +94,32 @@ tiene su propio rate-limit, 10 intentos por IP cada 15 minutos, aparte del de `/
 ## Correo y autoservicio
 
 Fase 3 (`core/infrastructure/mailer.py`, `apps/web/mail_templates.py`). `send_mail` manda por
-`smtplib` con STARTTLS (puerto 587, sin dependencia nueva), timeout 15 s (`SMTP_TIMEOUT_S`); sin
-`MONITOR_SMTP_HOST` configurado levanta `MailNotConfigured` — `settings.mail_enabled =
-bool(smtp_host)` es la perilla que gatea los tres puntos de entrada. Variables `MONITOR_SMTP_*` y
-cómo crear la contraseña de aplicación de Gmail: `docs/despliegue.md`.
+`smtplib` con STARTTLS en `settings.smtp_port` (sin dependencia nueva; host/puerto/credenciales en
+`docs/despliegue.md`), timeout 15 s (`SMTP_TIMEOUT_S`); con el correo apagado levanta
+`MailNotConfigured`. `settings.mail_enabled` exige `smtp_host` **y** `public_url` y es la perilla
+que gatea los tres puntos de entrada (SMTP sin `MONITOR_PUBLIC_URL` = correo apagado y ERROR al
+arrancar). Link que viaja por mail = `reset_service.mail_link` (sólo `public_url`: el `Host` de un
+POST anónimo a `/forgot` lo elige quien lo manda — reset poisoning); link que se muestra al admin =
+`reset_link(request, …)`. Cómo crear la contraseña de aplicación de Gmail: `docs/despliegue.md`.
 
-- **Canal `mail` en `/users/{id}/reset`**: el admin lo dispara desde el Manager y el correo sale
-  DENTRO del request; si el envío falla, la respuesta muestra el error de mail Y el link copiable
-  como respaldo — la vía manual nunca se pierde.
+- **Canal `mail` en `POST /users/{id}/reset`** = el botón «Enviar link por mail» de la ficha: emite
+  un token `reset` (60 min) y el correo sale DENTRO del request; si el envío falla, la respuesta
+  muestra el error de mail Y el link copiable como respaldo — la vía manual nunca se pierde. No
+  re-envía una invitación. Sin correo (SMTP o `MONITOR_PUBLIC_URL` vacíos) o sin email del usuario
+  el botón aparece deshabilitado con el motivo en el `title`, y el POST responde 400.
 - **Invitación por mail**: `POST /users/add access=invite` manda el link de invitación por correo
-  cuando `settings.mail_enabled` y el usuario tiene email; el botón "Enviar link por mail" aparece
-  deshabilitado con el motivo cuando falta cualquiera de las dos condiciones (mismo respaldo del
-  link copiable si el envío falla).
+  automáticamente cuando `settings.mail_enabled` y el alta trae email (el token queda con canal
+  `mail`; si no, `link`), y muestra el link al admin igual; si el envío falla: error + link.
 - **`GET/POST /forgot`** (`routers/auth.py`, público en `_PUBLIC_PATHS`): respuesta neutra siempre,
   nunca confirma si el usuario o el email existen; el envío corre en `BackgroundTasks` para no
   bloquear la respuesta. Rate-limit propio, aparte del de `/login` y `/reset/{token}`: 3 intentos
-  por IP cada 15 minutos y 3 por dato tipeado cada 60 minutos (`_forgot_attempts_ip` /
+  por IP cada 15 minutos y 3 por dato tipeado (normalizado y acotado a 254 caracteres) cada 60
+  minutos (`_forgot_attempts_ip` /
   `_forgot_attempts_dato`, mismo `_rate_limited` del login). Un usuario invitado
   (`hashed_password="!"`) queda excluido: pedir reset por acá no le genera un token.
-- Con `mail_enabled=False` (sin SMTP en prod) el Manager esconde "Enviar link por mail" y
-  `/forgot` degrada a avisar que se pida el link al administrador — nunca rompe, sólo apaga el
-  canal.
+- Con `mail_enabled=False` (sin SMTP o sin `MONITOR_PUBLIC_URL`) el Manager muestra «Enviar link
+  por mail» deshabilitado con el motivo en el `title` y `/forgot` degrada a avisar que se pida el
+  link al administrador — nunca rompe, sólo apaga el canal.
 
 ## Al testear la web
 

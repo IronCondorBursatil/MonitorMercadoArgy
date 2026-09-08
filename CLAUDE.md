@@ -136,6 +136,10 @@ Cada uno es la regla + su porqué. La historia y el detalle están en `docs/` (�
   `/logout`, `/api/health`, `/reset/{token}`, `/forgot`, `/static`). Todo router nuevo lleva
   `RequireTabPermission`; no crear endpoints de salud nuevos; `/api/health` es público y por
   eso recortado.
+- **Un link que viaja por mail se arma con `settings.public_url`, nunca con el Host del request**
+  (`reset_service.mail_link`; `mail_enabled` exige `MONITOR_PUBLIC_URL`): un POST anónimo a `/forgot`
+  elige su `Host` (reset poisoning). Guardián:
+  `tests/test_users_manager.py::test_forgot_no_arma_el_link_con_el_host_del_request`.
 
 **Infra / robustez**
 - **Timeouts de httpx**: el centinela es `httpx.USE_CLIENT_DEFAULT`, **NO `None`** (`None` =
