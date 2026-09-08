@@ -200,6 +200,41 @@ def cerrar_sesiones(request: Request, user_id: int, db: Session = Depends(get_db
     return _users_page(request, db, selected_id=user_id,
                        success=f"Sesiones de {user.username} cerradas.")
 
+
+@router.post("/users/{user_id}/estado", response_class=HTMLResponse)
+def set_estado(request: Request, user_id: int, activo: str = Form(...),
+               db: Session = Depends(get_db), admin: UserORM = Depends(get_admin_user_html)):
+    """Deshabilitar ≠ borrar: los datos quedan, el usuario no entra y sus sesiones
+    mueren (token_version + chequeo de is_active en deps_auth)."""
+    user = db.get(UserORM, user_id)
+    if not user:
+        return _no_existe(request, db, user_id)
+    activar = activo == "1"
+    if not activar:
+        if user.id == getattr(admin, "id", None):
+            return _users_page(request, db, status_code=400, selected_id=user_id,
+                               error="No podés deshabilitar tu propia cuenta.")
+        if user.is_admin:
+            # Defensa en profundidad: quien pide ya es un admin activo distinto del
+            # target, así que en la práctica siempre quedan ≥ 2; cubre al admin falso de
+            # los tests (`_auth_bypass`), que no está en la DB.
+            admins_activos = db.query(UserORM).filter(
+                UserORM.is_admin.is_(True), UserORM.is_active.is_(True)).count()
+            if admins_activos <= 1:
+                return _users_page(request, db, status_code=400, selected_id=user_id,
+                                   error="No podés deshabilitar al último administrador activo.")
+    user.is_active = activar
+    if not activar:
+        user.token_version = (user.token_version or 0) + 1
+    db.commit()
+    _audit.info("users action=%s by=%s target=%s",
+                "user_enabled" if activar else "user_disabled",
+                _limpio(getattr(admin, "username", "?")), _limpio(user.username),
+                extra={"console": True})
+    return _users_page(request, db, selected_id=user_id,
+                       success=f"Cuenta de {user.username} {'habilitada' if activar else 'deshabilitada'}.")
+
+
 @router.post("/users/{user_id}/datos", response_class=HTMLResponse)
 def update_datos(request: Request, user_id: int, full_name: str = Form(""), email: str = Form(""),
                  notes: str = Form(""), db: Session = Depends(get_db),

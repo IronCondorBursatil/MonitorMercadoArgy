@@ -348,3 +348,66 @@ def test_cerrar_sesiones_saca_al_usuario_sin_cambiarle_la_clave(usuarios):
         assert bob_c.get("/", follow_redirects=False).status_code == 302
         assert _login(bob_c, "bob", "bobpass1234").status_code in (302, 303)   # misma clave
         assert admin_c.post("/users/999999/sesiones/cerrar").status_code == 404
+
+
+# ── estado ──────────────────────────────────────────────────────────────────
+@pytest.mark.noauth
+def test_deshabilitar_y_habilitar_desde_el_manager(usuarios):
+    bob = _bob_id()
+    with TestClient(app) as bob_c, TestClient(app) as admin_c:
+        assert _login(bob_c, "bob", "bobpass1234").status_code in (302, 303)
+        _login_admin(admin_c)
+        r = admin_c.post(f"/users/{bob}/estado", data={"activo": "0"})
+        assert r.status_code == 200 and "Habilitar cuenta" in r.text
+        assert bob_c.get("/", follow_redirects=False).status_code == 302
+        assert _login(bob_c, "bob", "bobpass1234").status_code == 200        # no entra
+        r = admin_c.post(f"/users/{bob}/estado", data={"activo": "1"})
+        assert r.status_code == 200 and "Deshabilitar cuenta" in r.text
+        assert _login(bob_c, "bob", "bobpass1234").status_code in (302, 303)
+        assert admin_c.post("/users/999999/estado", data={"activo": "0"}).status_code == 404
+
+
+@pytest.mark.noauth
+def test_no_se_puede_deshabilitar_a_uno_mismo_y_siempre_queda_un_admin_activo(usuarios):
+    """El guard de "uno mismo" es el que se ejercita: como quien pide es un admin ACTIVO,
+    el único caso de "último admin activo" es deshabilitarse a sí mismo. El guard de
+    último admin del handler queda como defensa en profundidad (p. ej. con el admin
+    falso de `_auth_bypass`, que no vive en la DB)."""
+    with SessionLocal() as s:
+        admin_id = s.query(UserORM).filter(UserORM.username == "admin").first().id
+        s.add(UserORM(username="admin2", hashed_password=get_password_hash("adminpass2"),
+                      is_admin=True, allowed_tabs=["*"], is_active=True))
+        s.commit()
+        admin2_id = s.query(UserORM).filter(UserORM.username == "admin2").first().id
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.post(f"/users/{admin_id}/estado", data={"activo": "0"})
+        assert r.status_code == 400 and "tu propia cuenta" in r.text
+        assert c.post(f"/users/{admin2_id}/estado", data={"activo": "0"}).status_code == 200
+        # admin2 quedó inactivo → admin es el ÚLTIMO admin activo; con admin2 logueado
+        # no se lo podría deshabilitar. Se simula desde admin2 rehabilitado:
+        c.post(f"/users/{admin2_id}/estado", data={"activo": "1"})
+    with TestClient(app) as c2:
+        assert _login(c2, "admin2", "adminpass2").status_code in (302, 303)
+        c2.post(f"/users/{admin_id}/estado", data={"activo": "0"})           # deja a admin2 solo
+        r = c2.post(f"/users/{admin2_id}/estado", data={"activo": "0"})
+        assert r.status_code == 400 and "tu propia cuenta" in r.text
+    with SessionLocal() as s:
+        activos = s.query(UserORM).filter(UserORM.is_admin.is_(True), UserORM.is_active.is_(True)).count()
+        assert activos >= 1
+
+
+@pytest.mark.noauth
+def test_un_usuario_comun_no_puede_tocar_el_manager(usuarios):
+    """Todas las rutas del Manager (ya existen todas al llegar acá) exigen admin: un
+    usuario común logueado recibe 403, nunca 302 ni 200."""
+    bob = _bob_id()
+    with TestClient(app) as c:
+        assert _login(c, "bob", "bobpass1234").status_code in (302, 303)
+        for path in (f"/users/{bob}/datos", f"/users/{bob}/permisos", f"/users/{bob}/reset",
+                     f"/users/{bob}/sesiones/cerrar", f"/users/{bob}/estado", "/users/add"):
+            r = c.post(path, data={"activo": "1", "channel": "manual", "password": "x" * 10,
+                                   "username": "z", "tabs": ["bonos"]}, follow_redirects=False)
+            assert r.status_code == 403, f"{path} devolvió {r.status_code}"
+        assert c.get("/users", follow_redirects=False).status_code == 403
+        assert c.get(f"/users/{bob}/ficha", follow_redirects=False).status_code == 403
