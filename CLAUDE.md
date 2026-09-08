@@ -133,8 +133,9 @@ Cada uno es la regla + su porqué. La historia y el detalle están en `docs/` (�
   `apps/web/on_src/`. No editarlo (deny de permisos + hook lo bloquean): el gate pasa igual y
   la próxima regeneración borra el fix. Tocar `apps/web/on_src/` y regenerar.
 - **Rutas públicas = `tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS`** (`/login`,
-  `/logout`, `/api/health`, `/static`). Todo router nuevo lleva `RequireTabPermission`; no
-  crear endpoints de salud nuevos; `/api/health` es público y por eso recortado.
+  `/logout`, `/api/health`, `/reset/{token}`, `/static`). Todo router nuevo lleva
+  `RequireTabPermission`; no crear endpoints de salud nuevos; `/api/health` es público y por
+  eso recortado.
 
 **Infra / robustez**
 - **Timeouts de httpx**: el centinela es `httpx.USE_CLIENT_DEFAULT`, **NO `None`** (`None` =

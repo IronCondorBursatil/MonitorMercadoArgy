@@ -32,7 +32,8 @@ acá o en routers (agents.md §0.1.13). No debilitar validaciones para que un te
 - `get_current_user_html` = sólo login (routers `header`, `source`, `stream`). Admin
   obligatorio en `/source/*` POST y `/users/*`.
 - Rutas públicas = `tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS` (`/login`,
-  `/logout`, `/api/health`) + `/static`. Agregar una es cambiar ese test a sabiendas.
+  `/logout`, `/api/health`, `/reset/{token}`) + `/static`. Agregar una es cambiar ese test
+  a sabiendas.
 
 ## Rate-limit del login
 
@@ -53,9 +54,21 @@ uvicorn ≥ 0.48 ya honra `X-Forwarded-Proto` por default; no tocar el `ExecStar
 
 - Rutas del admin (`routers/users_abm.py`, todas bajo `get_admin_user_html`): `GET /users[?u=id]`,
   `GET /users/{id}/ficha` (fragmento HTMX), `POST /users/add`, `POST /users/{id}/datos`,
-  `/permisos`, `/reset` (form `channel`: `manual`; `link`/`mail` en Fases 2-3), `/sesiones/cerrar`,
+  `/permisos`, `/reset` (form channel: manual | link (mail en Fase 3)), `/sesiones/cerrar`,
   `/estado` (form `activo` 0/1), `POST /users/delete/{id}`. Las viejas `/users/update/{id}` y
   `/users/reset-password/{id}` ya no existen.
+- Tokens de reseteo/invitación: `apps/web/reset_service.py` (contrato: `secrets.token_urlsafe(32)`,
+  se persiste SÓLO el SHA-256, un solo uso, vence a los 60 min (invitación 72 h), emitir uno
+  nuevo invalida los vivos del usuario, usuario deshabilitado → inválido, consumirlo sube
+  `token_version`). Nunca loguear el token.
+- `POST /users/add` acepta `access=invite|password` (default `password`); el invitado queda
+  con `hashed_password="!"` (`core.security.SIN_PASSWORD_HASH`) hasta aceptar el link;
+  `verify_password` devuelve False sin excepción para cualquier hash que no sea bcrypt,
+  verificando igual contra el dummy.
+- `/reset/{token}` (público a sabiendas): la MISMA página 200 para inexistente/vencido/usado/
+  deshabilitado; éxito → 303 `/login?reset=ok`; rate-limit 10 por IP / 15 min.
+- El login acepta usuario o email (`normalizar_email`); la clave del rate-limit sigue siendo
+  el valor tipeado.
 - **Toda respuesta HTML de la ABM pasa por `_users_page`** (arma filas, resumen y ficha
   seleccionada); no llamar `TemplateResponse("pages/users.html")` a mano.
 - Reglas puras (email, estado, actividad derivada, `TABS`) en `apps/web/users_service.py`, sin

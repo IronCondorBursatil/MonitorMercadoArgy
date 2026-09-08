@@ -22,7 +22,8 @@ cada router en `app.py`. `is_admin` bypasea; `"*"` = todas. Los routers de lectu
 (`header`, `source`, `stream`) van con `get_current_user_html` (solo login); `/source/*`
 POST (conmutar la fuente, guardar credenciales BYMA) y `/users/*` exigen **admin**.
 `/api/health` es público pero recortado (sin `last_error`, sin tickers). El conjunto de
-rutas públicas lo fija `tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS`.
+rutas públicas lo fija `tests/test_aud_G_tests_route_auth.py::_PUBLIC_PATHS` (incluye
+`/reset/{token}`, público a sabiendas y con su propio rate-limit, ver más abajo).
 
 Falta de **permiso** ≠ falta de **login**: `RequireTabPermission` levanta
 `TabForbiddenException` → **403** con la lista de pestañas habilitadas (`deps_auth.py` +
@@ -61,9 +62,28 @@ fecha del último cambio de contraseña; todo entró por la migración forward-o
 Las reglas puras viven en `apps/web/users_service.py`; el router `routers/users_abm.py` tiene una
 ruta POST por acción y responde siempre con `_users_page`. Deshabilitar una cuenta bloquea el
 login (misma respuesta que una clave incorrecta) y mata la sesión viva en el siguiente request.
-Las páginas sin sesión (`/login`; en las fases siguientes `/forgot` y `/reset/{token}`) extienden
-`templates/base_public.html`: header de la app sin nav. Fases 2 y 3 (tokens, link copiable,
-mail, autoservicio) están descritas en la spec.
+Las páginas sin sesión (`/login`, `/reset/{token}`; en la fase siguiente también `/forgot`)
+extienden `templates/base_public.html`: header de la app sin nav. El login (`POST /login`)
+acepta usuario o email indistintamente (busca `username == valor` o
+`email == normalizar_email(valor)`); la clave del rate-limit sigue siendo el valor tal cual
+se tipeó. La Fase 3 (mail, autoservicio `/forgot`) está descrita en la spec.
+
+**Reseteo por link e invitación** (Fase 2). Los tokens viven en `password_reset_tokens` y los
+maneja `apps/web/reset_service.py`: `secrets.token_urlsafe(32)` de 256 bits, se persiste SÓLO
+el SHA-256 (`core.security.hash_token`), nunca el token en claro ni en un log; un solo uso;
+vencen a los 60 minutos (`reset`) o 72 horas (`invite`); emitir uno nuevo invalida los vivos
+del mismo usuario; un usuario deshabilitado no puede consumirlo; consumirlo sube
+`token_version` (cierra las demás sesiones) y actualiza `password_changed_at`. El admin lo
+dispara desde el Manager por el canal `link` (`POST /users/{id}/reset channel=link`): el link
+se arma con `settings.public_url` (`MONITOR_PUBLIC_URL`, si no está seteado cae al
+`request.base_url`) y se muestra UNA sola vez en la ficha, para copiar. El alta por invitación
+(`POST /users/add access=invite`) crea el usuario con `hashed_password="!"`
+(`core.security.SIN_PASSWORD_HASH`, un centinela que no es un hash bcrypt) y un token `invite`
+de 72 h; no exige email, el link es lo que se le pasa al invitado. `GET/POST /reset/{token}`
+es público a sabiendas (`_PUBLIC_PATHS`): la MISMA página 200 "Este link ya no sirve" cubre
+token inexistente, vencido, ya usado o de un usuario deshabilitado, sin distinguir el motivo;
+al elegir contraseña con éxito redirige 303 a `/login?reset=ok` (banner). `POST /reset/{token}`
+tiene su propio rate-limit, 10 intentos por IP cada 15 minutos, aparte del de `/login`.
 
 ## Al testear la web
 

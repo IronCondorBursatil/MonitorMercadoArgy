@@ -191,8 +191,8 @@ def delete_user(request: Request, user_id: int, db: Session = Depends(get_db),
 def reset_password(request: Request, user_id: int, channel: str = Form("manual"),
                    password: str = Form(""), db: Session = Depends(get_db),
                    admin: UserORM = Depends(get_admin_user_html)):
-    """Canal `manual` (el admin define la contraseña). Los canales `link` y `mail`
-    llegan en las Fases 2 y 3 (spec §5.1)."""
+    """Canales: `manual` (el admin define la contraseña) y `link` (token de un solo uso
+    mostrado una vez). `mail` llega en la Fase 3 (spec §5.1)."""
     user = db.get(UserORM, user_id)
     if not user:
         return _no_existe(request, db, user_id)

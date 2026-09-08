@@ -120,7 +120,7 @@ La sección "Actividad" de la ficha se arma con lo que ya hay: `last_login_at` (
 |---|---|
 | `GET /users` | página: toolbar + tabla + panel lateral. `?u=<id>` precarga la ficha (deep link) |
 | `GET /users/{id}/ficha` | fragmento HTMX de la ficha |
-| `POST /users/add` | campos `username, full_name, email, notes, is_admin, tabs, access=invite\|password, password`. `invite` exige email; crea el usuario con `hashed_password="!"`, emite token `invite` y, si `mail_enabled`, lo manda; **siempre** devuelve el link al admin para copiarlo |
+| `POST /users/add` | campos `username, full_name, email, notes, is_admin, tabs, access=invite\|password, password`. `invite` no exige email (el link se copia; con email + SMTP además se manda, Fase 3); crea el usuario con `hashed_password="!"`, emite token `invite` y, si `mail_enabled`, lo manda; **siempre** devuelve el link al admin para copiarlo |
 | `POST /users/{id}/datos` | `full_name, email, notes`; email duplicado → 400 |
 | `POST /users/{id}/permisos` | reemplaza a `/users/update/{id}` (mismos guards del último admin) |
 | `POST /users/{id}/reset` | `channel=mail\|link\|manual` (+`password` en manual). `mail` exige email y `mail_enabled`; `link` devuelve el link una sola vez; `manual` = comportamiento actual |
