@@ -146,9 +146,10 @@ def delete_user(request: Request, user_id: int, db: Session = Depends(get_db),
         return _no_existe(request, db, user_id)
 
     # Avoid deleting the last admin
-    admins = db.query(UserORM).filter(UserORM.is_admin.is_(True)).count()
+    admins = db.query(UserORM).filter(
+        UserORM.is_admin.is_(True), UserORM.is_active.is_(True)).count()
     if user.is_admin and admins <= 1:
-        return _users_page(request, db, error="No puedes borrar al último administrador.")
+        return _users_page(request, db, error="No puedes borrar al último administrador activo.")
 
     borrado = user.username        # antes del delete: despues el objeto esta expirado
     db.delete(user)
@@ -289,10 +290,15 @@ def update_permisos(
 
     # No quitarle el rol al último admin
     if user.is_admin and not is_admin:
-        admins = db.query(UserORM).filter(UserORM.is_admin.is_(True)).count()
+        admins = db.query(UserORM).filter(
+            UserORM.is_admin.is_(True), UserORM.is_active.is_(True)).count()
         if admins <= 1:
             return _users_page(request, db, selected_id=user_id,
-                               error="No puedes quitarle el rol de admin al último administrador.")
+                               error="No puedes quitarle el rol de admin al último administrador activo.")
+
+    if user.is_admin and not is_admin and user.id == getattr(admin, "id", None):
+        return _users_page(request, db, status_code=400, selected_id=user_id,
+                           error="No podés quitarte a vos mismo el rol de admin.")
 
     antes_admin, antes_tabs = user.is_admin, list(user.allowed_tabs or [])
     user.is_admin = is_admin

@@ -454,3 +454,46 @@ def test_login_usa_los_tokens_y_el_header_de_la_app(usuarios):
     for var in ("var(--bg)", "var(--surface)", "var(--border)"):
         assert var not in r.text, f"login.html sigue usando la variable inexistente {var}"
     assert "/health/badge" not in r.text and "hx-get" not in r.text   # sin nav ni polling privado
+
+
+# ── review final I-1: los guards de último admin miran is_active ────────────
+@pytest.mark.noauth
+def test_no_se_puede_dejar_el_sistema_sin_admins_activos(usuarios):
+    """A deshabilita a B y después intenta degradarse o borrarse: los guards de
+    /permisos y /delete tienen que contar sólo admins ACTIVOS (antes contaban a B y
+    dejaban pasar → cero admins que pudieran entrar). Mutación: sacar el filtro
+    is_active de cualquiera de los dos counts pone esto en rojo."""
+    with SessionLocal() as s:
+        admin_id = s.query(UserORM).filter(UserORM.username == "admin").first().id
+        s.add(UserORM(username="admin2", hashed_password=get_password_hash("adminpass2"),
+                      is_admin=True, allowed_tabs=["*"], is_active=True))
+        s.commit()
+        admin2_id = s.query(UserORM).filter(UserORM.username == "admin2").first().id
+    with TestClient(app) as c:
+        _login_admin(c)
+        assert c.post(f"/users/{admin2_id}/estado", data={"activo": "0"}).status_code == 200
+        r = c.post(f"/users/{admin_id}/permisos", data={"is_admin": "false", "tabs": ["bonos"]})
+        assert "último administrador" in r.text, r.status_code
+        r = c.post(f"/users/delete/{admin_id}")
+        assert "último administrador" in r.text, r.status_code
+    with SessionLocal() as s:
+        activos = s.query(UserORM).filter(UserORM.is_admin.is_(True),
+                                          UserORM.is_active.is_(True)).count()
+        assert activos >= 1
+        assert s.get(UserORM, admin_id).is_admin is True
+
+
+@pytest.mark.noauth
+def test_un_admin_no_puede_quitarse_el_rol_a_si_mismo(usuarios):
+    """Con OTRO admin activo el guard de último admin no aplica; el de uno mismo sí."""
+    with SessionLocal() as s:
+        admin_id = s.query(UserORM).filter(UserORM.username == "admin").first().id
+        s.add(UserORM(username="admin2", hashed_password=get_password_hash("adminpass2"),
+                      is_admin=True, allowed_tabs=["*"], is_active=True))
+        s.commit()
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.post(f"/users/{admin_id}/permisos", data={"is_admin": "false", "tabs": ["bonos"]})
+        assert r.status_code == 400 and "vos mismo" in r.text
+    with SessionLocal() as s:
+        assert s.get(UserORM, admin_id).is_admin is True

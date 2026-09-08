@@ -142,6 +142,10 @@ class _ManejadoresInline(HTMLParser):
 
 
 def test_users_page_no_mete_el_username_en_atributos_de_evento():
+    """Cubre la página /users Y la ficha (fragmento HTMX y página con ?u=): el par
+    data-username + handler que consume el username en JS vive en
+    fragments/user_ficha.html (botón de reset y onsubmit del form de borrar), no en la
+    tabla de /users. Sin renderizar la ficha este test pasaba en vacío."""
     from core.infrastructure.db.engine import SessionLocal
     from core.infrastructure.db.models import UserORM
 
@@ -156,11 +160,23 @@ def test_users_page_no_mete_el_username_en_atributos_de_evento():
                           is_admin=False, allowed_tabs=["fci"]))
         s.commit()
     try:
+        with SessionLocal() as s:
+            ids = [u.id for u in s.query(UserORM).filter(UserORM.username.in_(payloads)).all()]
+        assert len(ids) == len(payloads)
         with TestClient(app) as c:
             r = c.get("/users")
-        assert r.status_code == 200
-        parser = _ManejadoresInline()
-        parser.feed(r.text)
+            assert r.status_code == 200
+            parser = _ManejadoresInline()
+            parser.feed(r.text)
+            # La ficha (fragmento HTMX y página con ?u=) es donde vive el par data-username +
+            # handler: sin esto el test pasaba en vacío sobre la plantilla que importa.
+            for uid in ids:
+                r_ficha = c.get(f"/users/{uid}/ficha")
+                assert r_ficha.status_code == 200
+                parser.feed(r_ficha.text)
+                r_pagina = c.get(f"/users?u={uid}")
+                assert r_pagina.status_code == 200
+                parser.feed(r_pagina.text)
         culpables = [h for h in parser.handlers
                      if "alert(1)" in h or "alert(2)" in h]
         assert not culpables, f"el username rompe el literal JS del handler: {culpables}"
