@@ -23,7 +23,7 @@ import threading
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.domain.models import Instrument, MarketSnapshot
+from core.domain.models import Cashflow, Instrument, MarketSnapshot
 from core.domain.portfolio import position_currency
 from core.domain.clock import today as _domain_today
 from core.domain.services import FinancialEngine, _is_cer_type, _cer_reference_date
@@ -62,9 +62,9 @@ def _is_usd_quoted(instrument: Instrument) -> bool:
     return position_currency(instrument.instrument_type, instrument.ticker) == "USD"
 
 
-_TAMAR_TYPES = frozenset({"PURO", "DUAL", "DUAL_CER_TAMAR"})
+_TAMAR_TYPES = frozenset({"PURO", "DUAL", "DUAL_CER_TAMAR", "DUAL_DL_TAMAR"})
 
-_VALID_LEGS = frozenset({"TF", "TAM", "CER"})
+_VALID_LEGS = frozenset({"TF", "TAM", "CER", "DL"})
 
 
 def _nominal_tna(instrument, tea):
@@ -114,6 +114,8 @@ def _apply_leg(instrument: Instrument, leg: Optional[str]):
     - TF:  mantiene el instrumento DUAL pero devuelve _ZeroTamar como indices
            override, de modo que max(TAMAR=0, floor) = floor siempre.
     - CER: sin transformación (devuelve el instrumento original).
+    - DL:  clona como DOLAR_LINKED zero-coupon (sólo DUAL_DL_TAMAR): TIR en USD del
+           riel dólar-linked.
 
     Retorna (instrument_efectivo, indices_override_o_None).
     """
@@ -125,6 +127,16 @@ def _apply_leg(instrument: Instrument, leg: Optional[str]):
         }), None
     if leg == "TF":
         return instrument, _ZeroTamar()
+    if leg == "DL":
+        # Riel dólar-linked SOLO: el mismo papel como DOLAR_LINKED zero-coupon de 100 USD a
+        # vencimiento → DolarLinkedStrategy publica la TIR en USD (precio ÷ mayorista) y el
+        # V.Téc en pesos (100 × FX). Sin código nuevo de pricing.
+        return instrument.model_copy(update={
+            "instrument_type": "DOLAR_LINKED", "cer_base": 1.0, "floor_rate_monthly": None,
+            "spread_rate": None,
+            "cashflows": (Cashflow(date=instrument.maturity_date, amortization=100.0,
+                                   interest=0.0),),
+        }), None
     return instrument, None
 
 
@@ -150,6 +162,9 @@ def _resolve_instrument_and_leg(ticker: str, repo, indices):
     # ticker inexistente (404 / is_cer False), igual que cualquier ticker desconocido.
     if leg == "TF" and not (instrument.is_tamar_puro or instrument.is_dual_tamar):
         return None
+    # DL sólo existe donde hay riel dólar-linked (y un vencimiento para el flujo único).
+    if leg == "DL" and not (instrument.is_dual_dl_tamar and instrument.maturity_date):
+        return None
     instrument, indices_override = _apply_leg(instrument, leg)
     # `Any`: `indices` llega sin tipo (duck `IndicesProvider`) y la unión parcial con
     # `_ZeroTamar` hacía que pyright viera `.get_cer` faltante en los consumidores —
@@ -171,6 +186,8 @@ def _cupon_label(instrument: Instrument) -> str:
         sp_part = f"TAMAR + {(sp or 0)*100:.3f}%"
         floor_part = f"floor {(floor or 0)*100:.2f}% mensual" if floor else "sin floor"
         return f"max({sp_part}, {floor_part})"
+    if itype == "DUAL_DL_TAMAR":
+        return f"max(TAMAR + {(sp or 0)*100:.3f}%, dólar-linked)"
     if itype == "DUAL_CER_TAMAR":
         return f"max(TAMAR + {(sp or 0)*100:.3f}%, CER + {(cer_sp or 0)*100:.3f}%)"
     if any(t in itype for t in ("LECAP", "BONCAP")):
@@ -228,6 +245,7 @@ def _bond_metadata(instrument: Instrument, *, leg: Optional[str] = None) -> Dict
     is_dual_cer = itype == "DUAL_CER_TAMAR"
     is_tamar_family = itype in _TAMAR_TYPES
     is_dual = itype == "DUAL"
+    is_dual_dl = itype == "DUAL_DL_TAMAR"
 
     # Leg TF: el floor actúa como tasa fija — no es TAMAR family a efectos de display.
     if leg == "TF":
@@ -267,11 +285,19 @@ def _bond_metadata(instrument: Instrument, *, leg: Optional[str] = None) -> Dict
     # Floor mensual: DUAL con piso fijo, y también el leg TF.
     if is_dual or leg == "TF":
         meta["floor_rate_monthly"] = _safe(instrument.floor_rate_monthly)
+    # DUAL_DL_TAMAR: el denominador del riel DL, y las dos patas del popup (sólo en la vista
+    # base: dentro de una pata no se anidan).
+    if is_dual_dl:
+        meta["tc_inicial"] = _safe(instrument.fx_base)
+        if leg is None:
+            meta["legs"] = [("Riel TAMAR", f"{instrument.ticker}_TAM"),
+                            ("Riel dólar-linked", f"{instrument.ticker}_DL")]
     return meta
 
 
 def _cashflows_all(instrument: Instrument, ref_date: date,
-                   indices=None, tamar_forecast: Optional[float] = None) -> List[Dict[str, Any]]:
+                   indices=None, tamar_forecast: Optional[float] = None,
+                   fx=None) -> List[Dict[str, Any]]:
     """Lista completa de cashflows (pasados + futuros), sorted ascending.
 
     Cada row trae:
@@ -300,6 +326,7 @@ def _cashflows_all(instrument: Instrument, ref_date: date,
                 and instrument.emission_date and instrument.maturity_date):
             payoff = FinancialEngine.projected_payoff(
                 instrument, indices, tamar_forecast=tamar_forecast, ref_date=ref_date,
+                fx_provider=fx,
             )
             if payoff is not None and payoff > 0:
                 mat_past = instrument.maturity_date < ref_date
@@ -550,7 +577,7 @@ def get_bond_detail(
         "ticker": ticker_u,
         "meta": meta,
         "cashflows": _cashflows_all(instrument, ref_date, indices=indices_eff,
-                                    tamar_forecast=tamar_forecast),
+                                    tamar_forecast=tamar_forecast, fx=fx),
         "market": market,
         "metrics": metrics,
         "chart_supported": chart_supported,

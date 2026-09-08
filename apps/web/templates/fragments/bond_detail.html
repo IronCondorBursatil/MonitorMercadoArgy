@@ -13,6 +13,10 @@
                 hx-target="#cer-drawer-body" hx-swap="innerHTML"
                 onclick="cerOpen()">Proyección CER ▸</button>
         {% endif %}
+        {% for label, tk in meta.legs|default([]) %}
+        <button type="button" hx-get="/bond/{{ tk }}/detail?lag={{ d.settlement_lag }}"
+                hx-target="#modal" hx-swap="innerHTML">{{ label }}</button>
+        {% endfor %}
         <button hx-get="/bond/{{ d.ticker }}/detail?lag=0" hx-target="#modal" hx-swap="innerHTML"
                 class="{{ 'on' if lag == 0 else '' }}">T+0</button>
         <button hx-get="/bond/{{ d.ticker }}/detail?lag=1" hx-target="#modal" hx-swap="innerHTML"
@@ -31,6 +35,7 @@
             <dt>Vencimiento</dt><dd>{{ meta.fecha_vencimiento or '—' }}</dd>
             <dt>Frecuencia</dt><dd>{{ meta.payment_frequency }}/año</dd>
             <dt>Cupón</dt><dd>{{ meta.cupon }}</dd>
+            {% if meta.tc_inicial is defined %}<dt>TC inicial</dt><dd>{{ num(meta.tc_inicial, 4) }}</dd>{% endif %}
             {% if meta.cer_base is defined %}<dt>CER base</dt><dd>{{ num(meta.cer_base, 4) }} (lag {{ meta.cer_lag }})</dd>{% endif %}
             {% if meta.spread_rate is defined %}<dt>Spread TAMAR</dt><dd>{{ pct(meta.spread_rate) }}</dd>{% endif %}
             {% if meta.cer_spread is defined %}<dt>Spread CER</dt><dd>{{ pct(meta.cer_spread) }}</dd>{% endif %}

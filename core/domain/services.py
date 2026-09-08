@@ -30,6 +30,7 @@ from core.domain.pricing import metrics
 from core.domain.pricing.context import PricingContext
 from core.domain.pricing.registry import strategy_for
 from core.domain.pricing.stubs import ZeroTamar
+from core.domain.pricing.strategies import dual_dl_tamar_payoff_at
 from core.domain.pricing.tamar import tamar_dual_payoff_at
 from core.domain.xirr import xirr as _xirr
 
@@ -120,8 +121,10 @@ class FinancialEngine:
     # ------------------------------------------------------------------ #
     @staticmethod
     def projected_payoff(instrument, indices_provider, tamar_forecast: Optional[float] = None,
-                         ref_date: Optional[date] = None) -> Optional[float]:
-        """Payback proyectado per-100 a vencimiento para bonos TAMAR-family."""
+                         ref_date: Optional[date] = None, fx_provider=None) -> Optional[float]:
+        """Payback proyectado per-100 a vencimiento para bonos TAMAR-family. Un
+        DUAL_DL_TAMAR necesita además el dólar (`fx_provider`): sin él devuelve None, nunca
+        el riel TAMAR solo."""
         if instrument is None or indices_provider is None:
             return None
         if not instrument.emission_date or not instrument.maturity_date:
@@ -129,6 +132,10 @@ class FinancialEngine:
         settle = ref_date if ref_date is not None else date.today()
         if instrument.maturity_date <= settle:
             return None
+        if instrument.is_dual_dl_tamar:
+            ctx = PricingContext(settle=settle, indices=indices_provider, fx=fx_provider,
+                                 tamar_forecast=tamar_forecast)
+            return dual_dl_tamar_payoff_at(instrument, settle, ctx)
         return tamar_dual_payoff_at(instrument, settle, indices_provider,
                                     tamar_forecast=tamar_forecast, to_date=instrument.maturity_date)
 
