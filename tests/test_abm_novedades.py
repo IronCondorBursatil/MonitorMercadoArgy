@@ -81,6 +81,18 @@ def test_descartar_y_restaurar_actualizan_estado_y_contador(novedades):
         assert "TSNVGG" not in [f["symbol"] for f in nov.listar("descartada")]
 
 
+def test_descartar_todo_el_grupo_solo_toca_esa_categoria(novedades):
+    with TestClient(app) as c:
+        st = app_mod.app.state.app_state
+        r = c.get("/abm/novedades")
+        assert 'hx-post="/abm/novedades/descartar-grupo"' in r.text
+        r = c.post("/abm/novedades/descartar-grupo", data={"categoria": "Acciones"})
+        assert r.status_code == 200 and "1 descartada(s) de Acciones" in r.text
+        assert "TSNVGG" in [f["symbol"] for f in nov.listar("descartada")]
+        assert "TSNV1O" in [f["symbol"] for f in nov.listar("nueva")]
+        assert st.novedades() == nov.contar_nuevas()
+
+
 def test_la_pagina_del_abm_trae_la_pestana_novedades_primera(novedades):
     with TestClient(app) as c:
         page = c.get("/abm").text

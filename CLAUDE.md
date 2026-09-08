@@ -65,11 +65,18 @@ Cada uno es la regla + su porqué. La historia y el detalle están en `docs/` (�
   se rechaza con filas `last_seen` salvo `force=True`. No hay script: es una operación de
   REPL (`py -3.12 -c "from core.infrastructure.byma.universe import ingest_byma_catalog;
   ingest_byma_catalog(force=True)"`) con el server parado y backup previo.
-- **Alta automática de letras = la ÚNICA escritura automática en `instruments`**
-  (`apps/web/letras_service.py` + `core/infrastructure/letras_sync.py`, al final de
-  `_price_history_loop`, DESPUÉS del backup); el job diario de novedades del universo
-  (`_universe_loop`, 08:00 AR) escribe SOLO `byma_catalog` y `universe_novedades`, nunca
-  `instruments` (spec `docs/superpowers/specs/2026-09-07-novedades-universo-design.md`).
+- **Escrituras automáticas en `instruments`: letras y equities ticker-only, nada más.**
+  Letras: `apps/web/letras_service.py` + `core/infrastructure/letras_sync.py`, al final de
+  `_price_history_loop`, DESPUÉS del backup. Acciones/CEDEARs: `register_stocks` (al
+  arranque y desde el job de novedades; sin términos ni flujos, no hay nada que decidir).
+  El job diario de novedades del universo (`_universe_loop`, 08:00 AR) escribe
+  `byma_catalog`, `universe_novedades` y esas altas de equities; NUNCA un bono (spec
+  `docs/superpowers/specs/2026-09-07-novedades-universo-design.md`). Una novedad por
+  activo: unificado por ISIN cuando la ficha lo trae (D/C = moneda, X/Y/Z = ámbito: mismo
+  activo), si no por `ticker_pesos`.
+  Para ese job, **visto = cotizó** (precio > 0: el maestro BYMA viaja con precio 0 y no es
+  dato), `.SB` y las variantes X/Y/Z no entran, y hay UNA novedad por especie
+  (`ticker_pesos`). La migración v3 de `init_db` deshizo la corrida que no lo respetaba.
   Reglas duras, fijadas por tests: **sólo agrega**
   (sin update ni delete; las diferencias se reportan por WARNING), **sólo con dato completo**
   (sin `fechaEmision` no hay alta), **nunca una vencida**, **`tem: 0` es dato AUSENTE**, y

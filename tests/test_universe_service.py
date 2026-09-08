@@ -88,6 +88,23 @@ def test_una_especie_nueva_entra_al_catalogo_y_a_novedades(base):
     assert _fila("K001").last_seen == HOY.isoformat()      # lo visto se marca
 
 
+def test_un_simbolo_con_precio_cero_no_esta_visto(base):
+    """El hub conserva el maestro entero de BYMA con precio 0 (esqueleto); un 0 no es
+    dato. La primera corrida en prod contó 8747 «vistos» y 4155 novedades por esto."""
+    _seed_catalogo(60)
+    hub = _hub({"S29E7": "notes", "AA17": "bonds", "AL02H": "bonds"}, frescos={"S29E7"})
+    precios = {"AA17": 0.0, "AL02H": 0.0}
+
+    def _snapshot(settle="24"):
+        return {s: SimpleNamespace(c=precios.get(s, 100.0), v=None, q_op=None)
+                for s in hub._vistos}
+    hub.snapshot = _snapshot
+    res = svc.sincronizar_universo(hub, hoy=HOY, ficha_fn=_sin_ficha)
+    assert res.rechazo is None and res.vistos == 61
+    assert res.nuevas == ["S29E7"] and res.altas_catalogo == 1
+    assert _fila("AA17") is None and _nov("AA17") is None
+
+
 def test_con_data912_activa_la_procedencia_no_dice_byma(base):
     """`freshness()` lista lo que trajo la ACTIVA, sea cual sea: con Data912 activa todo
     vino de Data912 aunque esté 'fresco'."""
@@ -368,11 +385,93 @@ def test_dos_corridas_solapadas_no_se_pisan(base):
     assert out["r1"].nuevas == ["S29E7"] and _fila("S29E7") is not None
 
 
-def test_jamas_escribe_instruments(base):
+def test_jamas_escribe_un_bono_en_instruments(base):
+    """Renta fija: detección ≠ alta. Lo único que el job escribe en `instruments` son
+    las altas ticker-only de acciones/CEDEARs (test siguiente)."""
     _seed_catalogo(60)
-    svc.sincronizar_universo(_hub({"S29E7": "notes"}), hoy=HOY, ficha_fn=_sin_ficha)
+    svc.sincronizar_universo(_hub({"S29E7": "notes", "ZZ1LO": "corp"}), hoy=HOY,
+                             ficha_fn=_sin_ficha)
     with SessionLocal() as s:
         assert s.execute(select(InstrumentORM)).scalars().all() == []
+
+
+# ── acciones y CEDEARs: alta automática (David, 2026-09-07) ─────────────────
+def test_acciones_y_cedears_se_dan_de_alta_solos_y_no_son_novedad(base):
+    _seed_catalogo(60)
+    res = svc.sincronizar_universo(
+        _hub({"TSTGG": "stocks", "TSTGGD": "stocks", "TSTAA": "cedears", "TSTAAD": "cedears"}),
+        hoy=HOY, ficha_fn=_sin_ficha)
+    assert res.rechazo is None and res.nuevas == [] and res.pendientes == 0
+    assert res.altas_equities == ["TSTAA", "TSTAAD", "TSTGG", "TSTGGD"]
+    assert "4 acción(es)/CEDEAR(s) de alta" in res.resumen()
+    with SessionLocal() as s:
+        gg = s.get(InstrumentORM, "TSTGG")
+        aa = s.get(InstrumentORM, "TSTAAD")
+    assert gg.instrument_type == "ACCION" and gg.sheet == "Acciones"
+    assert aa.instrument_type == "CEDEAR" and aa.category == "Cedears"
+    assert aa.raw_fields == {"tipo": "CEDEAR"}
+    assert _fila("TSTAA").categoria == "Cedears" and _nov("TSTAA") is None
+    # segunda corrida: ya cargados → ni alta ni novedad
+    res2 = svc.sincronizar_universo(_hub({"TSTGG": "stocks", "TSTAA": "cedears"}),
+                                    hoy=HOY, ficha_fn=_sin_ficha)
+    assert res2.altas_equities == [] and res2.nuevas == []
+
+
+def test_si_el_alta_automatica_falla_la_accion_queda_como_novedad(base, monkeypatch):
+    from apps.web import instruments_abm
+
+    def _rompe(*_a, **_k):
+        raise RuntimeError("db bloqueada")
+    monkeypatch.setattr(instruments_abm, "register_stocks", _rompe)
+    _seed_catalogo(60)
+    res = svc.sincronizar_universo(_hub({"TSTGG": "stocks"}), hoy=HOY, ficha_fn=_sin_ficha)
+    assert res.rechazo is None and res.altas_equities == []
+    assert res.nuevas == ["TSTGG"] and _nov("TSTGG").estado == "nueva"
+
+
+# ── unificación por ISIN: mismo activo, otro ticker por moneda/ámbito ─────────
+def _ficha_isin(mapa):
+    def _f(symbol):
+        isin = mapa.get(symbol)
+        return {"isin": isin, "emisor": "X", "denominacion": None, "tipo_especie": None,
+                "vencimiento": None} if isin else None
+    return _f
+
+
+def test_dos_simbolos_con_el_mismo_isin_son_una_sola_novedad(base):
+    _seed_catalogo(60)
+    res = svc.sincronizar_universo(
+        _hub({"ZZ2AO": "corp", "ZZ2BO": "corp"}), hoy=HOY,
+        ficha_fn=_ficha_isin({"ZZ2AO": "ARTEST000001", "ZZ2BO": "ARTEST000001"}))
+    assert res.nuevas == ["ZZ2AO"] and res.altas_catalogo == 2
+    assert _fila("ZZ2BO").isin == "ARTEST000001" and _nov("ZZ2BO") is None
+    # corrida siguiente: otra pata del mismo ISIN tampoco es novedad (ya registrado)
+    res2 = svc.sincronizar_universo(
+        _hub({"ZZ2CO": "corp"}), hoy=HOY, ficha_fn=_ficha_isin({"ZZ2CO": "ARTEST000001"}))
+    assert res2.nuevas == [] and _fila("ZZ2CO") is not None
+
+
+def test_un_isin_ya_cargado_en_instruments_no_es_novedad(base):
+    _seed_catalogo(60)
+    with SessionLocal.begin() as s:
+        s.merge(InstrumentORM(ticker="ZZ3XO", isin="ARTEST000009"))
+    res = svc.sincronizar_universo(
+        _hub({"ZZ3AO": "corp"}), hoy=HOY, ficha_fn=_ficha_isin({"ZZ3AO": "ARTEST000009"}))
+    assert res.nuevas == [] and _fila("ZZ3AO").isin == "ARTEST000009"
+
+
+def test_una_pendiente_cuya_ficha_tardia_dice_isin_cargado_pasa_a_cargada(base):
+    _seed_catalogo(60)
+    with SessionLocal.begin() as s:
+        s.merge(InstrumentORM(ticker="ZZ4XO", isin="ARTEST000004"))
+        s.add(BymaCatalogORM(symbol="ZZ4AO", ticker_pesos="ZZ4AO", moneda="ARS",
+                             categoria="Obligaciones Negociables", security_type="CORP"))
+        nov.registrar_nuevas_en(s, [{"symbol": "ZZ4AO", "source": "byma",
+                                     "categoria": "Obligaciones Negociables"}], hoy=HOY)
+    res = svc.sincronizar_universo(_hub({}), hoy=HOY,
+                                   ficha_fn=_ficha_isin({"ZZ4AO": "ARTEST000004"}))
+    assert res.cargadas == ["ZZ4AO"] and _nov("ZZ4AO").estado == "cargada"
+    assert _fila("ZZ4AO").isin == "ARTEST000004"
 
 
 # ── siembra del universo: sólo si está vacía, en el lifespan, nunca por debajo del job ─

@@ -615,7 +615,8 @@ _UNIVERSE_REINTENTO_ARRANQUE_SEC = 120
 async def _universe_loop(app: FastAPI) -> None:
     """Novedades del universo (spec 2026-09-07): 1×/día a partir de las 08:00 AR compara lo
     que el hub vio en la rueda anterior contra el universo conocido y deja las especies
-    nuevas en `universe_novedades` para el triage del ABM. NUNCA escribe `instruments`.
+    nuevas en `universe_novedades` para el triage del ABM. En `instruments` sólo escribe
+    las altas ticker-only de acciones/CEDEARs (`register_stocks`); NUNCA un bono.
 
     Lee el snapshot ACUMULADO del hub y no pide la rueda de nuevo: a las 08:00 BYMA
     responde `data: []` (pre-market) y un fetch fresco rechazaría la corrida todos los
@@ -652,6 +653,10 @@ async def _universe_loop(app: FastAPI) -> None:
             primer_intento = False
             state.set_novedades(res.pendientes)
             logger.info(res.resumen())
+            if getattr(res, "altas_equities", None):
+                # Altas ticker-only en `instruments` (acciones/CEDEARs): el repo cachea el
+                # catálogo en memoria y sin esto no se ven hasta el próximo arranque.
+                await asyncio.to_thread(get_repo().reload)
             if res.rechazo:
                 await asyncio.sleep(espera_rechazo)
         except asyncio.CancelledError:

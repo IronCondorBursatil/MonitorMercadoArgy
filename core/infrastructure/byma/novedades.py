@@ -10,6 +10,14 @@ REGLAS DURAS (mismo espíritu que `letras_sync`):
 3. **Una lectura anémica no decide nada.** Si el hub trae muchos menos símbolos que la
    corrida anterior (server recién arrancado pre-market, breaker abierto), la corrida se
    rechaza entera y se reintenta más tarde.
+4. **Visto = cotizó, y una variante no es una especie.** El hub conserva en el snapshot el
+   maestro entero de BYMA con precio 0 (especies ilíquidas o vencidas hace años: un 0 no
+   es dato, CLAUDE.md) — eso lo filtra el borde (`universe_service`). Acá, el espejo del
+   segmento bilateral (`.SB`) y las patas de plazo especial (X/Y/Z) ni entran al catálogo
+   ni son novedad, y las patas D/C de una especie se cuentan UNA vez (`ticker_pesos`).
+   Sin esto la primera corrida en prod (2026-09-07) registró 4155 «novedades» (AA17,
+   AL02H, AO29X…) y dejó 17 variantes con el ISIN de un bono cargado y `cotiza=1`, que
+   `backfill_legs_from_universe` habría escrito en `instruments` en el próximo arranque.
 
 La lógica de decisión (`clasificar`, `proximo_despertar`) es PURA y recibe el reloj y las
 lecturas como parámetros; el acceso a la base vive abajo, en funciones chicas que reciben
@@ -63,6 +71,49 @@ CATEGORIAS_SIN_HOJA = frozenset({
     "Acciones", "Cedears", "Índices", "Totales", "Futuros", "Acciones Internacionales",
     "Otros",
 })
+
+# Categorías que se dan de ALTA SOLAS (decisión de David, 2026-09-07): una acción o un
+# CEDEAR no necesita términos ni flujos para sus métricas —es el mismo instrumento con
+# sólo el ticker (`instruments_abm.register_stocks`)—, así que no hay nada que decidir y
+# no son novedad. Si el alta automática falla, la especie sí queda como novedad.
+CATEGORIAS_AUTO_ALTA = frozenset({"Acciones", "Cedears"})
+
+# Variantes de un símbolo que NO son una especie nueva (regla 4): el espejo del segmento
+# bilateral (`.SB`, SENEBI) y las patas de otro ÁMBITO de negociación — sufijo X/Y/Z
+# sobre la raíz de 4 letras del símbolo primario (AL30 → AL30X/Y/Z, TY30P → TY30X/Y/Z,
+# CRES → CRESX), que el seed CSV trae como `especial`/`cotiza=0`. Mismo activo (mismo
+# ISIN): el ticker sólo cambia por moneda (D/C) y por ámbito (X/Y/Z). La raíz se exige
+# compartida con OTRO símbolo visto para no confundir un ticker real de 5 letras que
+# termine en X/Y/Z con una variante (NFLX tiene 4: nunca entra).
+_SUFIJO_BILATERAL = ".SB"
+_SUFIJOS_AMBITO = "XYZ"
+
+# Orden de las patas de una especie al elegir cuál registrar como novedad: la pesos si
+# cotiza; si no, la MEP; la cable al final.
+_RANK_MONEDA = {"ARS": 0, "MEP": 1, "cable": 2}
+
+
+def _raices(symbols: Iterable[str]) -> Dict[str, int]:
+    """Cuántos símbolos vistos comparten cada raíz de 4 letras (para `es_variante`)."""
+    out: Dict[str, int] = {}
+    for s in symbols:
+        s = _norm(s)
+        if len(s) >= 4 and not s.endswith(_SUFIJO_BILATERAL):
+            out[s[:4]] = out.get(s[:4], 0) + 1
+    return out
+
+
+def es_variante(symbol: str, bucket: str, raices: Dict[str, int]) -> bool:
+    """True si el símbolo es el espejo `.SB` o una pata de otro ámbito (X/Y/Z) de una
+    especie que también se vio, en cualquier bucket. `raices` sale de `_raices(vistos)`;
+    `bucket` queda en la firma por si un feed nuevo exige distinguirlo."""
+    del bucket
+    sym = _norm(symbol)
+    if sym.endswith(_SUFIJO_BILATERAL):
+        return True
+    if len(sym) == 5 and sym[-1] in _SUFIJOS_AMBITO:
+        return raices.get(sym[:4], 0) > 1
+    return False
 
 
 def meta_de(symbol: str, bucket: str) -> dict:
@@ -124,23 +175,40 @@ def clasificar(vistos: Dict[str, str], listados_byma: Set[str], catalogo: Set[st
     `vistos`: {symbol: bucket} del hub (snapshot ∩ sources). `listados_byma`: símbolos que
     la fuente activa listó (`hub.freshness()`) SI la activa es BYMA; el resto vino del
     floor Data912. `catalogo`: símbolos de `byma_catalog` ANTES del upsert. `registradas`:
-    símbolos ya en `universe_novedades` (cualquier estado); `pendientes`: los que siguen
-    `nueva`. `cargados`: tickers de `instruments` (primario + patas). `ref_vistos`: cuántos
-    símbolos vio la corrida anterior (guard relativo).
+    símbolos ya en `universe_novedades` (cualquier estado) MÁS su especie
+    (`simbolos_registrados`); `pendientes`: los que siguen `nueva`. `cargados`: tickers
+    de `instruments` (primario + patas). `ref_vistos`: cuántos símbolos vio la corrida
+    anterior (guard relativo).
+
+    Regla 4: `.SB` y X/Y/Z (`es_variante`) ni entran al catálogo ni son novedad, y se
+    registra UNA novedad por especie (`ticker_pesos`, la pata pesos primero): las patas
+    D/C nuevas de una especie cargada o ya registrada no son otra novedad.
     """
     diff = Diff(vistos=len(vistos))
     diff.rechazo = _guard(len(vistos), ref_vistos)
     if diff.rechazo:
         return diff
-    for sym, bucket in sorted(vistos.items()):
-        sym = (sym or "").upper().strip()
-        if not sym or sym in catalogo:
+    raices = _raices(vistos)
+    filas: List[dict] = []
+    for sym, bucket in vistos.items():
+        sym = _norm(sym)
+        if not sym or sym in catalogo or es_variante(sym, bucket, raices):
             continue
         fila = meta_de(sym, bucket)
         fila["source"] = "byma" if sym in listados_byma else "data912"
+        filas.append(fila)
+    filas.sort(key=lambda f: (f["ticker_pesos"], _RANK_MONEDA.get(f["moneda"] or "", 3),
+                              f["symbol"]))
+    emitidas: Set[str] = set()
+    for fila in filas:
         diff.altas_catalogo.append(fila)
-        if sym not in cargados and sym not in registradas:
-            diff.nuevas.append(fila)
+        sym, base = fila["symbol"], _norm(fila["ticker_pesos"])
+        if sym in cargados or base in cargados or sym in registradas or base in registradas:
+            continue
+        if base in emitidas:
+            continue
+        emitidas.add(base)
+        diff.nuevas.append(fila)
     diff.cargadas = sorted(p for p in pendientes if p in cargados)
     return diff
 
@@ -222,6 +290,27 @@ def restaurar(symbol: str) -> bool:
     return _cambiar_estado(symbol, "descartada", "nueva")
 
 
+def descartar_grupo(categoria: str) -> int:
+    """`nueva` → `descartada` para TODAS las pendientes de una categoría (la que muestra
+    el listado: la de `byma_catalog` si hay fila, si no la guardada al detectarse).
+    Reversible una por una con `restaurar`; nunca borra. Devuelve cuántas cambió."""
+    init_db()
+    syms = sorted(f["symbol"] for f in listar("nueva") if f["categoria"] == categoria)
+    if not syms:
+        return 0
+    n = 0
+    with SessionLocal.begin() as s:
+        for i in range(0, len(syms), 500):   # SQLite limita las variables por statement
+            filas = s.execute(select(UniverseNovedadORM).where(
+                UniverseNovedadORM.symbol.in_(syms[i:i + 500]),
+                UniverseNovedadORM.estado == "nueva")).scalars().all()
+            for f in filas:
+                f.estado = "descartada"
+                f.updated_at = _ahora()
+            n += len(filas)
+    return n
+
+
 def contar_nuevas() -> int:
     init_db()
     with SessionLocal() as s:
@@ -232,15 +321,31 @@ def contar_nuevas() -> int:
 
 def simbolos_registrados(s) -> Tuple[Set[str], Set[str]]:
     """(todas, pendientes): lo que ya está en `universe_novedades` y, de eso, lo que
-    sigue en `nueva`."""
+    sigue en `nueva`. `todas` incluye además la ESPECIE (`ticker_pesos` de `byma_catalog`)
+    de cada registrada, para que una pata nueva de una especie ya registrada (AEC3C
+    después de AEC3D) no sea otra novedad."""
     todas: Set[str] = set()
     pend: Set[str] = set()
-    for sym, estado in s.execute(select(UniverseNovedadORM.symbol,
-                                        UniverseNovedadORM.estado)).all():
+    for sym, estado, base in s.execute(
+            select(UniverseNovedadORM.symbol, UniverseNovedadORM.estado,
+                   BymaCatalogORM.ticker_pesos)
+            .outerjoin(BymaCatalogORM, BymaCatalogORM.symbol == UniverseNovedadORM.symbol)
+    ).all():
         todas.add(sym)
+        if base:
+            todas.add(_norm(base))
         if estado == "nueva":
             pend.add(sym)
     return todas, pend
+
+
+def isins_registrados(s) -> Set[str]:
+    """ISINs (según `byma_catalog`) de todo lo que ya está en `universe_novedades`: el
+    mismo activo con otro ticker (moneda D/C, ámbito X/Y/Z) no es otra novedad."""
+    return {str(isin).upper() for (isin,) in s.execute(
+        select(BymaCatalogORM.isin)
+        .join(UniverseNovedadORM, UniverseNovedadORM.symbol == BymaCatalogORM.symbol)
+        .where(BymaCatalogORM.isin.is_not(None))).all() if isin}
 
 
 def listar(estado: str = "nueva") -> List[dict]:

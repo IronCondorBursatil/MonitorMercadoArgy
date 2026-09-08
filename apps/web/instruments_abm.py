@@ -53,6 +53,8 @@ _SOB_SLOTS = ("ticker_ars", "ticker_mep", "ticker_ccl")
 # en la lista de alta/edición; solo dejan de figurar en "sin cargar".
 _ACCIONES_SHEET = "Acciones"
 _ACCION_TYPE = "ACCION"
+_CEDEAR_TYPE = "CEDEAR"            # misma hoja ticker-only; tipo y categoría propios
+_CEDEARS_CATEGORY = "Cedears"
 
 
 def _sob_group(ticker: str) -> str:
@@ -552,10 +554,16 @@ def audit_orphan_types() -> List[Dict[str, Any]]:
     return audit_catalog_health()["orphans"]
 
 
-def register_stocks(tickers) -> List[str]:
+def register_stocks(tickers, *, cedears: bool = False) -> List[str]:
     """Da de alta acciones (equities) con SOLO el ticker (sin términos ni flujos),
     bajo la categoría 'Acciones'. Idempotente — no toca las ya presentes (ni las
     que ya son tickers de otro instrumento). Devuelve los tickers agregados.
+
+    `cedears=True`: misma alta ticker-only pero con `instrument_type` CEDEAR (grupo
+    ACCIONES de `instrument_groups`), categoría 'Cedears' y el tipo declarado en
+    `raw_fields` para que el read-path no lo asuma del default de la hoja. Lo dispara
+    el job de novedades del universo: un CEDEAR no necesita datos aparte para sus
+    métricas, así que no hay nada que el operador tenga que decidir.
 
     Escribe SQLite directo (no el Excel) → se re-aplica al arranque. Al quedar en
     el catálogo, dejan de figurar en el listado 'sin cargar' de Data912."""
@@ -568,13 +576,18 @@ def register_stocks(tickers) -> List[str]:
         for sym in sorted(syms):
             if sym in present:
                 continue
-            s.add(InstrumentORM(ticker=sym, short_name=sym,
-                                instrument_type=_ACCION_TYPE, sheet=_ACCIONES_SHEET))
+            if cedears:
+                s.add(InstrumentORM(ticker=sym, short_name=sym, instrument_type=_CEDEAR_TYPE,
+                                    sheet=_ACCIONES_SHEET, category=_CEDEARS_CATEGORY,
+                                    raw_fields={"tipo": _CEDEAR_TYPE}))
+            else:
+                s.add(InstrumentORM(ticker=sym, short_name=sym,
+                                    instrument_type=_ACCION_TYPE, sheet=_ACCIONES_SHEET))
             present.add(sym)
             added.append(sym)
     if added:
-        logger.info("Acciones: +%d dadas de alta (%s%s)", len(added),
-                    ", ".join(added[:8]), "…" if len(added) > 8 else "")
+        logger.info("%s: +%d dadas de alta (%s%s)", "CEDEARs" if cedears else "Acciones",
+                    len(added), ", ".join(added[:8]), "…" if len(added) > 8 else "")
     return added
 
 

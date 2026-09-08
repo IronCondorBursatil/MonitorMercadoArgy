@@ -131,6 +131,56 @@ def test_una_registrada_que_el_catalogo_perdio_vuelve_al_universo_sin_ser_noveda
     assert diff.nuevas == []
 
 
+# ── regla 4: variantes y una novedad por especie (primera corrida en prod: 4155) ──
+def test_sb_y_plazo_especial_son_variantes_pero_no_un_ticker_real_terminado_en_xyz():
+    vistos = {"AL30": "bonds", "AL30D": "bonds", "AL30X": "bonds", "AL30Y": "bonds",
+              "AL30D.SB": "bonds", "TY30P": "bonds", "TY30X": "bonds",
+              "TVPY": "bonds", "ZZ99X": "bonds", "NFLX": "cedears"}
+    r = nov._raices(vistos)
+    assert nov.es_variante("AL30D.SB", "bonds", r)
+    assert nov.es_variante("AL30X", "bonds", r) and nov.es_variante("AL30Y", "bonds", r)
+    assert nov.es_variante("TY30X", "bonds", r)          # raíz TY30 compartida con TY30P
+    assert not nov.es_variante("TVPY", "bonds", r)       # 4 letras: ticker real
+    assert not nov.es_variante("ZZ99X", "bonds", r)      # sin hermanos: no se adivina
+    assert not nov.es_variante("NFLX", "cedears", r)     # 4 letras: nunca es variante
+    assert not nov.es_variante("AL30", "bonds", r)
+    # acciones también (CRESX/IRSAX/VALOX de la primera corrida en prod)
+    r2 = nov._raices({"CRES": "stocks", "CRESD": "stocks", "CRESX": "stocks"})
+    assert nov.es_variante("CRESX", "stocks", r2) and not nov.es_variante("CRESD", "stocks", r2)
+
+
+def test_las_variantes_ni_entran_al_catalogo_ni_son_novedad():
+    diff = nov.clasificar(_vistos(60, {"AO29": "bonds", "AO29X": "bonds", "AO29Y": "bonds",
+                                       "AO29Z": "bonds", "AO29D.SB": "bonds"}),
+                          set(), catalogo=_conocidos(60), registradas=set(),
+                          pendientes=set(), cargados=set())
+    assert [f["symbol"] for f in diff.altas_catalogo] == ["AO29"]
+    assert [f["symbol"] for f in diff.nuevas] == ["AO29"]
+
+
+def test_una_novedad_por_especie_con_la_pata_pesos_primero():
+    """Una ON nueva con sus tres patas es UNA novedad (la pesos); las tres entran al
+    catálogo. Si sólo cotizan las patas en dólares, se registra la MEP."""
+    diff = nov.clasificar(_vistos(60, {"AEC3C": "corp", "AEC3D": "corp", "AEC3O": "corp",
+                                       "ZZ1LD": "corp", "ZZ1LC": "corp"}),
+                          set(), catalogo=_conocidos(60), registradas=set(),
+                          pendientes=set(), cargados=set())
+    assert sorted(f["symbol"] for f in diff.altas_catalogo) == ["AEC3C", "AEC3D", "AEC3O",
+                                                                  "ZZ1LC", "ZZ1LD"]
+    assert [f["symbol"] for f in diff.nuevas] == ["AEC3O", "ZZ1LD"]
+
+
+def test_las_patas_nuevas_de_una_especie_cargada_o_registrada_no_son_novedad():
+    """AL30C recién listada de un AL30 cargado: va al catálogo (el backfill de patas la
+    toma de ahí), no es novedad. Y la pata cable de una ON ya registrada por su pata MEP
+    tampoco (`registradas` trae la especie, ver `simbolos_registrados`)."""
+    diff = nov.clasificar(_vistos(60, {"AL30C": "bonds", "ZZ1LC": "corp"}), set(),
+                          catalogo=_conocidos(60), registradas={"ZZ1LD", "ZZ1LO"},
+                          pendientes=set(), cargados={"AL30", "AL30D"})
+    assert sorted(f["symbol"] for f in diff.altas_catalogo) == ["AL30C", "ZZ1LC"]
+    assert diff.nuevas == []
+
+
 def test_una_pendiente_que_ya_se_cargo_pasa_a_cargada():
     diff = nov.clasificar(_vistos(60, {"S29E7": "notes"}), set(),
                           catalogo=_conocidos(60) | {"S29E7"}, registradas={"S29E7"},
@@ -241,6 +291,38 @@ def test_marcar_cargadas_solo_toca_las_pendientes(base):
         assert s.get(UniverseNovedadORM, "BBB2O").estado == "descartada"
         todas, pend = nov.simbolos_registrados(s)
     assert todas == {"AAA1O", "BBB2O"} and pend == set()
+
+
+def test_simbolos_registrados_trae_tambien_la_especie(base):
+    with SessionLocal.begin() as s:
+        s.add(BymaCatalogORM(symbol="ZZ1LD", ticker_pesos="ZZ1LO", moneda="MEP",
+                             categoria="Obligaciones Negociables"))
+        nov.registrar_nuevas_en(s, [_nueva("ZZ1LD")], hoy=HOY)
+    with SessionLocal() as s:
+        todas, pend = nov.simbolos_registrados(s)
+    assert todas == {"ZZ1LD", "ZZ1LO"} and pend == {"ZZ1LD"}
+
+
+def test_isins_registrados_cruza_con_byma_catalog(base):
+    with SessionLocal.begin() as s:
+        s.add(BymaCatalogORM(symbol="ZZ1LD", isin="ARTEST000001"))
+        s.add(BymaCatalogORM(symbol="ZZ1XD"))
+        nov.registrar_nuevas_en(s, [_nueva("ZZ1LD"), _nueva("ZZ1XD"), _nueva("ZZ1QD")], hoy=HOY)
+    with SessionLocal() as s:
+        assert nov.isins_registrados(s) == {"ARTEST000001"}
+
+
+def test_descartar_grupo_descarta_solo_las_pendientes_de_esa_categoria(base):
+    with SessionLocal.begin() as s:
+        s.add(BymaCatalogORM(symbol="AAA1O", categoria="Obligaciones Negociables"))
+        nov.registrar_nuevas_en(s, [_nueva("AAA1O"), _nueva("BBB2O"),
+                                    _nueva("GGAL2", categoria="Cedears")], hoy=HOY)
+    nov.descartar("BBB2O")
+    assert nov.descartar_grupo("Obligaciones Negociables") == 1      # BBB2O ya estaba
+    assert nov.descartar_grupo("Obligaciones Negociables") == 0
+    assert nov.descartar_grupo("No existe") == 0
+    assert [f["symbol"] for f in nov.listar("nueva")] == ["GGAL2"]
+    assert nov.restaurar("AAA1O") is True                            # reversible
 
 
 def test_listar_cruza_con_byma_catalog_y_marca_si_es_cargable(base):

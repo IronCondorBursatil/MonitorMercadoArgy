@@ -57,3 +57,21 @@ def test_register_stocks_categoria_acciones(abm_db):
     assert not any(e["sheet"] == "Acciones" for e in list_instruments())
     # idempotente
     assert register_stocks(["GGAL"]) == []
+
+
+def test_register_stocks_cedears_con_tipo_y_categoria_propios(abm_db):
+    """Un CEDEAR es la misma alta ticker-only, pero con tipo CEDEAR (grupo ACCIONES),
+    categoría Cedears y el tipo declarado en raw_fields (el read-path no lo asume)."""
+    from core.domain.instrument_groups import is_known_type
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import InstrumentORM
+
+    assert is_known_type("CEDEAR")
+    assert register_stocks(["AAPL", "AAPLD"], cedears=True) == ["AAPL", "AAPLD"]
+    with SessionLocal() as s:
+        o = s.get(InstrumentORM, "AAPL")
+    assert o.instrument_type == "CEDEAR" and o.category == "Cedears" and o.sheet == "Acciones"
+    assert o.raw_fields == {"tipo": "CEDEAR"}
+    assert register_stocks(["AAPL"], cedears=True) == []
+    assert register_stocks(["AAPL"]) == []                   # tampoco como acción
+    assert get_instrument("AAPL") is not None

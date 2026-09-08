@@ -248,6 +248,103 @@ def test_v2_no_adivina_fuera_del_caso_bcra_ni_pisa_lo_que_ya_esta(tmp_path, rest
     assert _orm("XX3").instrument_type == "OBLIGACIONES_NEGOCIABLES"   # otra hoja: no es BCRA-bono
 
 
+# ── v3: deshacer la primera corrida del job de novedades ─────────────────────
+def _db_v2_con_corrida(tmp_path):
+    """DB sellada en v2 con el rastro de la corrida defectuosa: filas del seed vistas
+    (AL30, del CSV), filas que sólo agregó el job (AA17 vencido; AO29X variante con el
+    ISIN de un bono cargado), una fila ajena sin `last_seen`, novedades en los tres
+    estados y las claves `universe_*`."""
+    from core.infrastructure.db.catalog_repository import (
+        Base, _ensure_schema_meta, _stamp_schema_version,
+    )
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import BymaCatalogORM, UniverseNovedadORM
+
+    eng = configure(str(tmp_path / "v2.db"))
+    Base.metadata.create_all(eng)
+    _ensure_schema_meta(eng)
+    with SessionLocal.begin() as s:
+        s.add_all([
+            BymaCatalogORM(symbol="AL30", ticker_pesos="AL30", moneda="ARS", cotiza=1,
+                           clase_liquidacion="primary", categoria="Títulos Públicos",
+                           last_seen="2026-09-07"),
+            BymaCatalogORM(symbol="AA17", ticker_pesos="AA17", moneda="ARS", cotiza=1,
+                           clase_liquidacion="primary", categoria="Títulos Públicos",
+                           last_seen="2026-09-07"),
+            BymaCatalogORM(symbol="AO29X", ticker_pesos="AO29X", moneda="ARS", cotiza=1,
+                           clase_liquidacion="primary", categoria="Títulos Públicos",
+                           isin="AR0550263393", last_seen="2026-09-07"),
+            BymaCatalogORM(symbol="ZZZ1", categoria="Obligaciones Negociables"),
+        ])
+        s.add_all([
+            UniverseNovedadORM(symbol="AA17", first_seen="2026-09-07", source="data912",
+                               categoria="Títulos Públicos", estado="nueva"),
+            UniverseNovedadORM(symbol="AO29X", first_seen="2026-09-07", source="data912",
+                               categoria="Títulos Públicos", estado="nueva"),
+            UniverseNovedadORM(symbol="S29E7", first_seen="2026-09-07", source="byma",
+                               categoria="Títulos Públicos", estado="cargada"),
+            UniverseNovedadORM(symbol="GGAL2", first_seen="2026-09-07", source="byma",
+                               categoria="Acciones", estado="descartada"),
+        ])
+        s.connection().exec_driver_sql(
+            "INSERT INTO schema_meta (key, value) VALUES ('universe_ultima_corrida', '2026-09-07'), "
+            "('universe_ultimos_vistos', '8747')")
+    _stamp_schema_version(eng, 2)
+    return eng
+
+
+def _byma(symbol):
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import BymaCatalogORM
+    with SessionLocal() as s:
+        return s.get(BymaCatalogORM, symbol)
+
+
+def test_v3_deshace_la_primera_corrida_del_universo(tmp_path, restore_engine):
+    """La corrida del 2026-09-07 tomó como visto el esqueleto BYMA con precio 0 y las
+    variantes como especies: +4410 filas en byma_catalog (17 con el ISIN de un bono
+    cargado y cotiza=1 → el backfill de patas las habría escrito en instruments) y 4155
+    novedades. v3 vuelve al seed, borra las `nueva` y las claves para que el job corra de
+    nuevo con las reglas corregidas; lo decidido por el operador se conserva."""
+    eng = _db_v2_con_corrida(tmp_path)
+    init_db()
+
+    assert _byma("AL30") is not None and _byma("AL30").last_seen is None   # del seed: queda
+    assert _byma("AA17") is None and _byma("AO29X") is None                 # del job: fuera
+    assert _byma("ZZZ1") is not None                                        # sin last_seen: ajena al job
+    from core.infrastructure.byma import novedades as nov
+    assert [f["symbol"] for f in nov.listar("nueva")] == []
+    assert [f["symbol"] for f in nov.listar("cargada")] == ["S29E7"]
+    assert [f["symbol"] for f in nov.listar("descartada")] == ["GGAL2"]
+    assert nov.leer_meta("universe_ultima_corrida") is None
+    assert nov.leer_meta("universe_ultimos_vistos") is None
+    assert get_schema_version() == CURRENT_SCHEMA_VERSION >= 3
+    with eng.begin() as conn:
+        assert conn.exec_driver_sql("SELECT COUNT(*) FROM instruments").scalar() == 0
+
+
+def test_v3_sin_csv_seed_solo_borra_las_variantes(tmp_path, restore_engine, monkeypatch):
+    import core.infrastructure.db.catalog_repository as cr
+
+    _db_v2_con_corrida(tmp_path)
+    monkeypatch.setattr(cr, "_simbolos_del_seed", lambda: set())
+    init_db()
+    assert _byma("AA17") is not None and _byma("AA17").last_seen is None   # no se distingue: queda
+    assert _byma("AO29X") is None                                          # dañina: fuera
+
+
+def test_v3_es_no_op_donde_el_job_nunca_corrio(tmp_path, restore_engine, monkeypatch):
+    import core.infrastructure.db.catalog_repository as cr
+
+    _db_v1_con(tmp_path)
+    leidos = {"n": 0}
+    monkeypatch.setattr(cr, "_simbolos_del_seed",
+                        lambda: (leidos.__setitem__("n", leidos["n"] + 1), set())[1])
+    init_db()
+    assert leidos["n"] == 0            # sin rastro del job no se lee el CSV siquiera
+    assert get_schema_version() == CURRENT_SCHEMA_VERSION
+
+
 def test_v2_no_vuelve_a_correr_sobre_una_db_ya_sellada(tmp_path, restore_engine, monkeypatch):
     """Exactamente una vez: con la DB en la versión vigente el paso v2 no se invoca."""
     import core.infrastructure.db.catalog_repository as cr

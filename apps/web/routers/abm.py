@@ -234,6 +234,17 @@ def abm_novedad_restaurar(symbol: str, request: Request, hub=Depends(get_hub),
     return _render_novedades(request, hub)
 
 
+@router.post("/abm/novedades/descartar-grupo", response_class=HTMLResponse)
+def abm_novedades_descartar_grupo(request: Request, categoria: str = Form(...),
+                                  hub=Depends(get_hub), state=Depends(get_state)):
+    """Descarta TODAS las pendientes de una categoría (reversible una por una). El path
+    no puede ser `/abm/novedades/grupo/descartar`: lo captura `/{symbol}/descartar`."""
+    n = nov_store.descartar_grupo(categoria)
+    state.set_novedades(nov_store.contar_nuevas())
+    return _render_novedades(request, hub,
+                             flash="%d descartada(s) de %s" % (n, categoria))
+
+
 @router.post("/abm/novedades/refresh", response_class=HTMLResponse)
 async def abm_novedades_refresh(request: Request, hub=Depends(get_hub),
                                 state=Depends(get_state),
@@ -248,6 +259,8 @@ async def abm_novedades_refresh(request: Request, hub=Depends(get_hub),
     try:
         res = await asyncio.to_thread(sincronizar_universo, hub, hoy=hoy)
         state.set_novedades(res.pendientes)
+        if getattr(res, "altas_equities", None):
+            await asyncio.to_thread(get_repo().reload)   # altas ticker-only → cache del repo
         flash = res.resumen()
     except Exception as e:  # noqa: BLE001 — el operador tiene que ver el motivo
         logger.exception("refresh manual de novedades falló")

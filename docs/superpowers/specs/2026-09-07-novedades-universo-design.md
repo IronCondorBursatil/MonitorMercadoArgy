@@ -180,3 +180,41 @@ no crítico; el semáforo de precios no se toca). Bajo pytest no arranca
   y que `byma_catalog`/`universe_novedades` tienen su propio ciclo diario.
 - `docs/flujo-web.md` (loop nuevo) y `docs/arquitectura.md` (tabla nueva).
 - `.claude/rules/web.md` no cambia (el ABM no es un panel de `PANEL_ORDER`).
+
+## Corrección tras la primera corrida en prod (2026-09-07, 22:15 AR)
+
+La corrida registró **4155 novedades** de 8747 «vistos». Causa: el hub conserva en el
+snapshot el maestro entero de BYMA con precio 0 (esqueleto: AA17, AL02H, AL28… vencidos
+hace años) y el job lo tomó como visto, contra el invariante «un 0 no es dato»; además
+contó como especies el espejo del segmento bilateral (`.SB`, 495), las patas de plazo
+especial (X/Y/Z, 797) y cada pata D/C (1306). Diecisiete variantes quedaron con el ISIN
+de un bono cargado y `cotiza=1`: `backfill_legs_from_universe` las habría escrito en
+`instruments` en el próximo arranque.
+
+Reglas que quedan (regla 4 de `novedades.py`):
+
+- **Visto = cotizó**: sólo símbolos con precio > 0 en el snapshot (`universe_service._cotizo`).
+- **Variantes** (`novedades.es_variante`): `.SB` y, en títulos públicos/ON, un símbolo de
+  5 letras terminado en X/Y/Z cuya raíz de 4 letras comparte OTRO símbolo visto. Ni entran
+  a `byma_catalog` ni son novedad.
+- **Una novedad por especie** (`ticker_pesos`), con la pata pesos primero; las patas D/C
+  de una especie cargada o ya registrada no son otra novedad (`simbolos_registrados`
+  devuelve también la especie de cada registrada).
+- **Migración v3** (`catalog_repository`): deshace la corrida defectuosa —borra de
+  `byma_catalog` las filas con `last_seen` ajenas al seed, `last_seen` a NULL, borra las
+  novedades `nueva` y las claves `universe_*`— para que el job vuelva a correr limpio.
+- ABM: «✕ descartar grupo» por categoría (reversible una por una).
+
+### Reglas de David (2026-09-07, misma noche)
+
+- **Unificar por ISIN**: es el mismo activo; el ticker sólo cambia por moneda (D/C) y por
+  ámbito de negociación (X/Y/Z). En el job: con la ficha, una novedad por ISIN
+  (`universe_service._unificar_por_isin`); con el ISIN de un bono ya cargado o de una
+  novedad ya registrada no hay nada que decidir; una pendiente cuya ficha tardía trae el
+  ISIN de un bono cargado pasa sola a `cargada`. Sin ficha rige `ticker_pesos`. En
+  `instruments`, las patas se unifican por ISIN como siempre (`backfill_legs_from_universe`).
+- **Acciones y CEDEARs de alta automática** (`CATEGORIAS_AUTO_ALTA`): es el mismo
+  instrumento con sólo el ticker y no necesita datos aparte para sus métricas, así que el
+  job los da de alta (`register_stocks`, tipo `ACCION`/`CEDEAR`, sin términos ni flujos) y
+  no los lista como novedad; si el alta falla, sí quedan como novedad. `CEDEAR` entra al
+  grupo `ACCIONES` de `instrument_groups`.

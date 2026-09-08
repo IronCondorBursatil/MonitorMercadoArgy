@@ -15,6 +15,12 @@
 {% for g in grupos %}
 <details class="nov-grupo" open>
   <summary>{{ g.categoria }} <span class="badge">{{ g.filas|length }}</span></summary>
+  <div class="nov-grupo-bar">
+    <button type="button" class="nov-x nov-grupo-x" title="descartar todas las pendientes del grupo (reversibles una por una)"
+            hx-post="/abm/novedades/descartar-grupo" hx-vals='{"categoria": {{ g.categoria|tojson }}}'
+            hx-confirm="¿Descartar las {{ g.filas|length }} pendientes de {{ g.categoria }}?"
+            hx-target="#nov-results" hx-swap="innerHTML">✕ descartar todo el grupo</button>
+  </div>
   <table class="nov-table">
     <thead><tr><th>Símbolo</th><th>Denominación</th><th>Emisor</th><th>Mon.</th><th>Vto.</th><th class="num">Precio</th><th class="num">Vol. día</th><th>Fuente</th><th>Visto</th><th></th></tr></thead>
     <tbody>

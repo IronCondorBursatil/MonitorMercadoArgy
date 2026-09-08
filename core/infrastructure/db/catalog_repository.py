@@ -31,7 +31,11 @@ logger = logging.getLogger(__name__)
 # correr transformaciones de datos exactamente una vez.
 #   v2 (2026-09-07): `_migrate_v2_bopreal_huerfanos` — BOPREAL con tipo huérfano
 #        retipados desde la ficha BYMA guardada en `raw_fields` (caso BPOA8).
-CURRENT_SCHEMA_VERSION = 2
+#   v3 (2026-09-07): `_migrate_v3_deshacer_primera_corrida_del_universo` — deshace la
+#        primera corrida del job de novedades (contó el esqueleto BYMA con precio 0 y las
+#        variantes .SB/X/Y/Z como especies) y lo deja listo para correr con las reglas
+#        corregidas.
+CURRENT_SCHEMA_VERSION = 3
 
 
 def _ensure_schema_meta(eng) -> None:
@@ -174,6 +178,73 @@ def _migrate_v2_bopreal_huerfanos(eng) -> int:
     return n
 
 
+_META_UNIVERSE_KEYS = ("universe_ultima_corrida", "universe_ultimos_vistos")
+
+
+def _simbolos_del_seed() -> set:
+    """Símbolos del CSV semilla de `byma_catalog` (vacío si el CSV no está a mano)."""
+    import csv
+    from pathlib import Path
+
+    from config.settings import settings
+
+    path = Path(settings.byma_catalog_csv) if getattr(settings, "byma_catalog_csv", None) else None
+    if not path or not path.is_file():
+        return set()
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        return {(r.get("symbol") or "").upper().strip()
+                for r in csv.DictReader(f, delimiter=";") if (r.get("symbol") or "").strip()}
+
+
+def _migrate_v3_deshacer_primera_corrida_del_universo(eng) -> dict:
+    """v2 → v3: deshace la primera corrida del job de novedades del universo (prod,
+    2026-09-07 22:15), que tomó como «vistos» los símbolos con precio 0 del maestro de
+    BYMA y como novedades las variantes (.SB, X/Y/Z, patas D/C): +4410 filas en
+    `byma_catalog` —17 con el ISIN de un bono cargado y `cotiza=1`, que
+    `backfill_legs_from_universe` habría escrito en `instruments` en el próximo
+    arranque— y 4155 «novedades».
+
+    Deja la tabla como la sembró el CSV y al job listo para volver a correr con las reglas
+    corregidas (`novedades` regla 4, `universe_service._cotizo`): borra de `byma_catalog`
+    las filas con `last_seen` que NO están en el seed (sólo el job las pudo agregar), pone
+    `last_seen` en NULL, borra las novedades `nueva` (sin decisión del operador;
+    `cargada`/`descartada` se conservan) y las claves `universe_*` de `schema_meta` (el
+    guard relativo había quedado sellado en 8747 vistos: con ~1500 reales rechazaría
+    todas las corridas). Sin el CSV a mano no se distingue seed de job: se borra sólo el
+    subconjunto dañino (`.SB` y X/Y/Z con `last_seen`) y se avisa. FORWARD-ONLY en el
+    catálogo de pricing: no toca `instruments` ni `cashflows`."""
+    out = {"catalogo": 0, "novedades": 0, "sin_seed": False}
+    with eng.begin() as conn:
+        vistos = [r[0] for r in conn.exec_driver_sql(
+            "SELECT symbol FROM byma_catalog WHERE last_seen IS NOT NULL").fetchall()]
+        pendientes = conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM universe_novedades WHERE estado='nueva'").scalar() or 0
+        metas = conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM schema_meta WHERE key IN (?, ?)", _META_UNIVERSE_KEYS
+        ).scalar() or 0
+        if not vistos and not pendientes and not metas:
+            return out                       # el job nunca corrió acá: nada que deshacer
+        seed = _simbolos_del_seed()
+        if seed:
+            borrar = [s for s in vistos if (s or "").upper() not in seed]
+        else:
+            out["sin_seed"] = True
+            borrar = [s for s in vistos
+                      if (s or "").upper().endswith(".SB")
+                      or (len(s or "") == 5 and (s or "")[-1].upper() in "XYZ")]
+        for i in range(0, len(borrar), 500):     # SQLite limita las variables por statement
+            chunk = borrar[i:i + 500]
+            conn.exec_driver_sql(
+                "DELETE FROM byma_catalog WHERE symbol IN (%s)" % ",".join("?" * len(chunk)),
+                tuple(chunk))
+        conn.exec_driver_sql("UPDATE byma_catalog SET last_seen=NULL WHERE last_seen IS NOT NULL")
+        res = conn.exec_driver_sql("DELETE FROM universe_novedades WHERE estado='nueva'")
+        conn.exec_driver_sql("DELETE FROM schema_meta WHERE key IN (?, ?)", _META_UNIVERSE_KEYS)
+        out["catalogo"] = len(borrar)
+        out["novedades"] = int(res.rowcount or 0)
+    return out
+
+
 # Engine ya inicializado/migrado en este proceso. init_db() se llama ~39 veces
 # (cada operación ABM lo invoca defensivamente); tras la primera corrida exitosa
 # sobre un engine dado, el resto son no-op — sin re-inspección de schema ni el
@@ -218,11 +289,20 @@ def init_db() -> None:
         # Migraciones de DATOS versionadas: exactamente una vez por DB, en orden, ANTES
         # de sellar la versión vigente (si una falla, la DB queda en la versión anterior
         # y vuelve a intentarse en el próximo arranque).
-        if get_schema_version() < 2:
+        _ensure_schema_meta(eng)          # las migraciones la consultan antes del sello
+        version = get_schema_version()
+        if version < 2:
             n = _migrate_v2_bopreal_huerfanos(eng)
             if n:
                 logger.warning("catalog: migración v2 — %d BOPREAL huérfano(s) retipados "
                                "desde la ficha BYMA.", n)
+        if version < 3:
+            r = _migrate_v3_deshacer_primera_corrida_del_universo(eng)
+            if r["catalogo"] or r["novedades"]:
+                logger.warning("catalog: migración v3 — deshecha la primera corrida del "
+                               "universo: -%d filas de byma_catalog, -%d novedades%s.",
+                               r["catalogo"], r["novedades"],
+                               " (sin CSV seed: sólo .SB y X/Y/Z)" if r["sin_seed"] else "")
         _stamp_schema_version(eng, CURRENT_SCHEMA_VERSION)
         _INITIALIZED_ENGINE = eng
 

@@ -49,7 +49,7 @@ PANEL_LIDER = [
 # `ACCION` no tiene panel por tipo (el Panel Líder cotiza por ticker) pero es un
 # tipo legítimo del catálogo (altas de `instruments_abm.register_stocks`).
 # --------------------------------------------------------------------------- #
-ACCIONES = ["ACCION"]
+ACCIONES = ["ACCION", "CEDEAR"]   # CEDEAR: alta automática del job de novedades (2026-09-07)
 
 # --------------------------------------------------------------------------- #
 # Tipos de PAYOFF ANALÍTICO (fórmula cerrada). Su pago a vencimiento NO sale de un
