@@ -751,3 +751,37 @@ def test_canal_link_genera_un_link_que_funciona_y_queda_en_la_actividad(usuarios
         assert "por un administrador" not in ficha, "el evento genérico duplicaría el del token"
         assert admin_c.post(f"/users/{bob}/reset", data={"channel": "mail"}).status_code == 400
         assert admin_c.post("/users/999999/reset", data={"channel": "link"}).status_code == 404
+
+
+# ── alta por invitación ─────────────────────────────────────────────────────
+@pytest.mark.noauth
+def test_alta_por_invitacion_crea_sin_clave_y_entrega_el_link(usuarios):
+    import re
+    from core.security import SIN_PASSWORD_HASH
+    with TestClient(app) as admin_c, TestClient(app) as anon:
+        _login_admin(admin_c)
+        r = admin_c.post("/users/add", data={"username": "jperez", "access": "invite", "full_name": "Juan Pérez",
+                                             "tabs": ["bonos"]})
+        assert r.status_code == 200 and "Invitación · vence en" in r.text and "72 horas" in r.text
+        link = re.search(r'value="(http://testserver/reset/[A-Za-z0-9_\-]+)"', r.text).group(1)
+        with SessionLocal() as s:
+            j = s.query(UserORM).filter(UserORM.username == "jperez").first()
+            assert j.hashed_password == SIN_PASSWORD_HASH and j.password_changed_at is None and j.is_active is True
+        assert _login(anon, "jperez", "cualquier-cosa-1").status_code == 200, "el invitado no entra sin aceptar"
+        r2 = anon.post(link.replace("http://testserver", ""),
+                       data={"password": "clave-de-juan-1", "password2": "clave-de-juan-1"}, follow_redirects=False)
+        assert r2.status_code == 303
+        assert _login(anon, "jperez", "clave-de-juan-1").status_code in (302, 303)
+        ficha = admin_c.get("/users").text
+        assert "Invitación · vence en" not in ficha and "Invitación aceptada" in admin_c.get(
+            f"/users/{j.id}/ficha").text
+
+
+@pytest.mark.noauth
+def test_alta_con_password_sigue_igual_y_la_invitacion_no_exige_password(usuarios):
+    with TestClient(app) as c:
+        _login_admin(c)
+        assert c.post("/users/add", data={"username": "conclave", "access": "password", "password": "clave-larga-1"}).status_code == 200
+        assert c.post("/users/add", data={"username": "sinclave", "access": "password"}).status_code == 400
+        assert c.post("/users/add", data={"username": "invitado2", "access": "invite"}).status_code == 200
+        assert c.post("/users/add", data={"username": "raro", "access": "otro"}).status_code == 400

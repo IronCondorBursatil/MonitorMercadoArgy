@@ -12,7 +12,7 @@ from apps.web.templates import TEMPLATES as _TEMPLATES
 from apps.web.users_service import (TABS, TAB_KEYS, actividad_reciente, resumen,
                                     vista_usuario, email_invalido, normalizar_email)
 from core.infrastructure.db.models import UserORM
-from core.security import get_password_hash, password_invalida
+from core.security import SIN_PASSWORD_HASH, get_password_hash, password_invalida
 
 router = APIRouter(dependencies=[Depends(get_admin_user_html)])
 
@@ -99,7 +99,8 @@ def ficha(request: Request, user_id: int, db: Session = Depends(get_db)):
 def add_user(
     request: Request,
     username: str = Form(...),
-    password: str = Form(...),
+    password: str = Form(""),
+    access: str = Form("password"),
     full_name: str = Form(""),
     email: str = Form(""),
     notes: str = Form(""),
@@ -109,7 +110,10 @@ def add_user(
     admin: UserORM = Depends(get_admin_user_html),
 ):
     mail = normalizar_email(email)
-    invalido = _username_invalido(username) or password_invalida(password) or email_invalido(mail)
+    if access not in ("invite", "password"):
+        return _users_page(request, db, status_code=400, abrir_alta=True, error="Acceso inicial inválido.")
+    invalido = _username_invalido(username) or email_invalido(mail) or (
+        password_invalida(password) if access == "password" else None)
     if invalido:
         return _users_page(request, db, status_code=400, abrir_alta=True, error=invalido)
     if db.query(UserORM).filter(UserORM.username == username).first():
@@ -120,9 +124,11 @@ def add_user(
                            error=f"Ya hay un usuario con el email {mail}.")
 
     ahora = datetime.now()
+    invitar = access == "invite"
     new_user = UserORM(
         username=username,
-        hashed_password=get_password_hash(password),
+        # Invitado: SIN contraseña hasta que acepte el link (centinela, no un hash).
+        hashed_password=SIN_PASSWORD_HASH if invitar else get_password_hash(password),
         is_admin=is_admin,
         allowed_tabs=["*"] if is_admin else _tabs_validas(tabs),
         full_name=_texto(full_name, _NOMBRE_MAX),
@@ -131,16 +137,24 @@ def add_user(
         is_active=True,
         created_at=ahora,
         created_by=getattr(admin, "username", None),
-        password_changed_at=ahora,
+        password_changed_at=None if invitar else ahora,
     )
     db.add(new_user)
     db.commit()
-    _audit.info("users action=add by=%s target=%s is_admin=%s tabs=%s email=%s",
+    _audit.info("users action=add by=%s target=%s is_admin=%s tabs=%s email=%s acceso=%s",
                 _limpio(getattr(admin, "username", "?")), _limpio(username),
                 bool(is_admin), _limpio(",".join(new_user.allowed_tabs or [])),
-                _limpio(mail or "-"), extra={"console": True})
+                _limpio(mail or "-"), access, extra={"console": True})
+    if not invitar:
+        return _users_page(request, db, selected_id=new_user.id, success=f"Usuario {username} creado.")
+    token = reset_service.issue_reset_token(db, new_user, purpose="invite", channel="link",
+                                            by=getattr(admin, "username", None))
+    _audit.info("users action=invite_created by=%s target=%s",
+                _limpio(getattr(admin, "username", "?")), _limpio(username), extra={"console": True})
     return _users_page(request, db, selected_id=new_user.id,
-                       success=f"Usuario {username} creado.")
+                       link_reset=reset_service.reset_link(request, token), link_para=username,
+                       link_vence="72 horas",
+                       success=f"Usuario {username} creado por invitación. Pasale el link: elige su contraseña al abrirlo.")
 
 @router.post("/users/delete/{user_id}", response_class=HTMLResponse)
 def delete_user(request: Request, user_id: int, db: Session = Depends(get_db),

@@ -111,12 +111,27 @@
       <form method="POST" action="/users/add" class="um-ficha-body">
         <div class="um-fields">
           <label class="fld"><span>Usuario *</span><input type="text" name="username" required autocomplete="off" maxlength="64"></label>
-          <label class="fld"><span>Contraseña inicial *</span>
-            <span style="display: flex; gap: 6px;"><input type="password" name="password" id="new-user-pwd" required autocomplete="new-password" minlength="10">
-              <button type="button" class="btn sec" onclick="genPwdForInput('new-user-pwd')" title="Generar contraseña segura">Generar</button></span></label>
           <label class="fld"><span>Nombre</span><input type="text" name="full_name" autocomplete="off" maxlength="120"></label>
           <label class="fld"><span>Email</span><input type="text" name="email" autocomplete="off" maxlength="254" inputmode="email"></label>
           <label class="fld um-span2"><span>Notas internas</span><input type="text" name="notes" autocomplete="off" maxlength="500" placeholder="Opcional: quién es, qué pidió"></label>
+        </div>
+        <div>
+          <p class="um-sect-t">Acceso inicial</p>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <label class="perm" style="flex: 1; min-width: 240px; align-items: flex-start; border: 1px solid var(--panel-border); border-radius: 6px; padding: 10px 12px;">
+              <input type="radio" name="access" value="invite" checked onchange="umAcceso(this)" style="margin-top: 3px;">
+              <span><b>Invitación con link</b><br><span class="faint">Recibe un link (vence en 72 h) y elige su propia contraseña. Nadie más la conoce.</span></span>
+            </label>
+            <label class="perm" style="flex: 1; min-width: 240px; align-items: flex-start; border: 1px solid var(--panel-border); border-radius: 6px; padding: 10px 12px;">
+              <input type="radio" name="access" value="password" onchange="umAcceso(this)" style="margin-top: 3px;">
+              <span><b>Contraseña inicial a mano</b><br><span class="faint">La generás acá y se la pasás vos.</span></span>
+            </label>
+          </div>
+          <div id="alta-pwd" hidden style="margin-top: 10px;">
+            <label class="fld"><span>Contraseña inicial *</span>
+              <span style="display: flex; gap: 6px;"><input type="password" name="password" id="new-user-pwd" autocomplete="new-password" minlength="10">
+                <button type="button" class="btn sec" onclick="genPwdForInput('new-user-pwd')" title="Generar contraseña segura">Generar</button></span></label>
+          </div>
         </div>
         <div>
           <p class="um-sect-t">Permisos</p>
@@ -181,6 +196,14 @@ function genPwdForInput(inputId) {
   input.value = generateSecurePassword();
   input.type = "text";                                  // mostrarla brevemente
   setTimeout(() => { input.type = "password"; }, 5000);
+}
+function umAcceso(radio) {
+  const caja = document.getElementById("alta-pwd");
+  const input = document.getElementById("new-user-pwd");
+  const manual = radio.value === "password" && radio.checked;
+  caja.hidden = !manual;
+  input.required = manual;
+  if (!manual) input.value = "";
 }
 function umToggleTabs(cb) {
   const g = cb.closest("form").querySelector(".perm-grid");
