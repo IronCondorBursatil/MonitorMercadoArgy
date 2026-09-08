@@ -144,8 +144,11 @@ actualizan a sabiendas (test_aud_D1 y compañía).
 
 ### 5.3 Login y sesión
 
-- `POST /login`: usuario con `is_active=0` → **el mismo mensaje** que credenciales inválidas (no revela
-  estado); en el éxito escribe `last_login_at/ip`. `GET /login?reset=ok` muestra el banner.
+- `POST /login`: el campo "Usuario" acepta **usuario o email** (pedido de David 2026-09-08): se busca
+  `username == valor` **o** `email == normalizar_email(valor)`; el rate-limit sigue clavado al valor
+  tipeado en minúsculas y `verify_password` corre siempre (con o sin usuario) para no abrir un oráculo.
+  Usuario con `is_active=0` → **el mismo mensaje** que credenciales inválidas (no revela estado); en el
+  éxito escribe `last_login_at/ip`. `GET /login?reset=ok` muestra el banner.
 - El link "¿Olvidaste tu contraseña?" está **siempre** visible (como cualquier sitio); `/forgot` se adapta
   si no hay mail configurado.
 - `deps_auth._get_user_from_token`: rechaza `is_active=0` (mata sesiones vivas de un deshabilitado).
@@ -176,6 +179,10 @@ privadas), mismo script de tema, tarjeta centrada `panel-bg`/`panel-border`, bot
 - Diálogo de reseteo: modal `.modal-card` (patrón del `resetPassword` actual) con tres opciones; la de mail
   se deshabilita con motivo visible si falta email o SMTP. Resultado "link": modal con el link seleccionable
   y botón Copiar (`window.mrCopy`, funciona sin HTTPS).
+- Canal "a mano" (delta 2026-09-08, pedido de David): el campo de la contraseña del modal es **editable**,
+  viene precargado con una generada y tiene botón "Generar otra"; el admin puede tipear la que quiera.
+  Validación en el cliente (mínimo 10 caracteres, botón deshabilitado si no cumple) y en el servidor
+  (`password_invalida`, como hoy).
 
 ## 7. Seguridad
 
