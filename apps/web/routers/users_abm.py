@@ -151,7 +151,9 @@ def add_user(
                 _limpio(mail or "-"), access, extra={"console": True})
     if not invitar:
         return _users_page(request, db, selected_id=new_user.id, success=f"Usuario {username} creado.")
-    token = reset_service.issue_reset_token(db, new_user, purpose="invite", channel="link",
+    # El canal persistido dice cómo viajó la invitación (lo muestra la Actividad de la ficha).
+    canal = "mail" if (settings.mail_enabled and mail) else "link"
+    token = reset_service.issue_reset_token(db, new_user, purpose="invite", channel=canal,
                                             by=getattr(admin, "username", None))
     _audit.info("users action=invite_created by=%s target=%s",
                 _limpio(getattr(admin, "username", "?")), _limpio(username), extra={"console": True})
@@ -159,7 +161,7 @@ def add_user(
     # `mail_link` (sólo `public_url`). Si ésta se vació con el correo prendido, `mail_link`
     # levanta dentro del try y se trata como un envío fallido (el admin recibe el link igual).
     link = reset_service.reset_link(request, token)
-    if settings.mail_enabled and mail:
+    if canal == "mail":
         nombre = (new_user.full_name or new_user.username).split()[0]
         try:
             send_mail(mail, *mail_invitacion(nombre, username, reset_service.mail_link(token), 72,

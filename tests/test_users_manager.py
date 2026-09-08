@@ -962,6 +962,15 @@ def test_el_boton_enviar_por_mail_se_habilita_solo_con_correo_y_email(usuarios, 
         assert "disabled" in b and 'title="El usuario no tiene email cargado"' in b, b
 
 
+def _canal_invitacion(username: str) -> str:
+    """`channel` persistido del token `invite` vivo de `username` (lo que muestra la Actividad)."""
+    from apps.web import reset_service as rs
+    with SessionLocal() as s:
+        t = rs.tokens_de(s, s.query(UserORM).filter(UserORM.username == username).first())[0]
+        assert t.purpose == "invite"
+        return t.channel
+
+
 @pytest.mark.noauth
 def test_invitacion_con_email_y_smtp_manda_el_mail(usuarios, mail_on):
     with TestClient(app) as c:
@@ -971,6 +980,7 @@ def test_invitacion_con_email_y_smtp_manda_el_mail(usuarios, mail_on):
         assert r.status_code == 200 and "se mandó a jperez@ejemplo.com" in r.text and 'id="link-reset"' in r.text
     assert len(mail_on) == 1 and mail_on[0]["to"] == "jperez@ejemplo.com" and "72 horas" in mail_on[0]["text"]
     assert "Te invitaron" in mail_on[0]["subject"]
+    assert _canal_invitacion("jperez") == "mail", "se mandó por mail: el canal persistido lo dice"
 
 
 @pytest.mark.noauth
@@ -979,6 +989,7 @@ def test_invitacion_sin_email_no_intenta_mandar(usuarios, mail_on):
         _login_admin(c)
         assert c.post("/users/add", data={"username": "sinmail", "access": "invite"}).status_code == 200
     assert mail_on == []
+    assert _canal_invitacion("sinmail") == "link"
 
 
 @pytest.mark.noauth
@@ -1090,6 +1101,17 @@ def test_forgot_rate_limit_por_ip_y_por_dato(usuarios, mail_on):
         assert codigos == [200, 200, 200, 429], "el mismo dato (normalizado) tiene su propio límite: 3 por hora"
         auth_router._forgot_attempts_ip.clear()
         assert c.post("/forgot", data={"dato": "otra@ejemplo.com"}).status_code == 200, "fue el dato, no la IP"
+
+
+@pytest.mark.noauth
+def test_forgot_acota_el_dato_antes_de_usarlo_como_clave_del_balde(usuarios, mail_on):
+    """El `maxlength` del form es sólo del cliente: un dato de 5.000 bytes no puede ser la
+    clave del balde por dato (`_MAX_TRACKED_KEYS` acota claves, no bytes por clave)."""
+    largo = "a" * 5000 + "@ejemplo.com"
+    with TestClient(app) as c:
+        assert c.post("/forgot", data={"dato": largo}).status_code == 200
+    claves = list(auth_router._forgot_attempts_dato)
+    assert len(claves) == 1 and len(claves[0]) <= 254, len(claves[0])
 
 
 @pytest.mark.noauth

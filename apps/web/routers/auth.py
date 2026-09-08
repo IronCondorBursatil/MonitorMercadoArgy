@@ -319,6 +319,7 @@ def forgot_page(request: Request):
 def forgot_submit(request: Request, background_tasks: BackgroundTasks, dato: str = Form(""),
                   db: Session = Depends(get_db)):
     ip = _client_ip(request)
+    dato = dato.strip()[:254]      # el maxlength del form es del cliente; la clave del balde no es ilimitada
     clave = (normalizar_email(dato) or "").strip().lower()
     if _rate_limited(_forgot_attempts_ip, ip, *_FORGOT_IP) or (
             clave and _rate_limited(_forgot_attempts_dato, clave, *_FORGOT_DATO)):

@@ -157,3 +157,14 @@ def test_plantillas_traen_el_link_en_texto_y_html_sin_hosts_externos():
     assert "72 horas" in t2 and "dberisso, administrador" in t2
     _, t3, _ = mail_invitacion("Juan", "jperez", link, 72, None)
     assert "dberisso" not in t3 and "Un administrador" in t3
+
+
+def test_el_html_de_la_invitacion_no_habla_de_una_contrasena_actual():
+    """Un invitado no tiene contraseña todavía: el aviso del HTML es el mismo que el del texto
+    plano ("Si no lo esperabas…"); el del reseteo sí dice que la actual sigue igual."""
+    from apps.web.mail_templates import mail_invitacion, mail_reset
+    link = "http://129.80.148.166/reset/abc"
+    _, _, h_inv = mail_invitacion("Juan", "jperez", link, 72, "admin")
+    assert "contraseña actual" not in h_inv and "Si no lo esperabas" in h_inv
+    _, _, h_reset = mail_reset("Mariana", "mcaceres", link, 60, "admin")
+    assert "contraseña actual sigue igual" in h_reset
