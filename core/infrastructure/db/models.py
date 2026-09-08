@@ -52,6 +52,28 @@ class UserORM(Base):
     password_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
 
 
+class PasswordResetTokenORM(Base):
+    """Token de reseteo de contraseña o de invitación (spec 2026-09-08 §2.2). Se guarda
+    el SHA-256 del token, nunca el token: quien lea la DB no puede usarlo. Un solo uso
+    (`used_at`), vence (`expires_at`), y emitir uno nuevo invalida los vivos del usuario.
+    Tabla nueva: la crea `create_all`; no hay migración de datos."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # ondelete=CASCADE: borrar un usuario (`/users/delete/{id}`) no puede dejar tokens
+    # huérfanos ni fallar por la FK (SQLite corre con `PRAGMA foreign_keys=ON`, ver
+    # `core/infrastructure/db/engine.py`); un token vive y muere con su usuario.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String, unique=True)
+    purpose: Mapped[str] = mapped_column(String)      # "reset" | "invite"
+    channel: Mapped[str] = mapped_column(String)      # "link" | "mail" | "self"
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    created_by: Mapped[Optional[str]] = mapped_column(String, default=None)   # username del admin; None = autoservicio
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
+
+
 class BymaCatalogORM(Base):
     """Universo de especies de BYMA (referencia navegable/buscable, NO el catálogo de
     pricing). Una fila por símbolo cotizante (~6.4k). Se llena del seed

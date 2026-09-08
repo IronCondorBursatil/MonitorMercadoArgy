@@ -276,6 +276,11 @@ class Settings(BaseSettings):
     # los usuarios en un bucket único (y podría bloquear a los legítimos).
     trusted_proxy_ips: str = "127.0.0.1,::1"
 
+    # Base ABSOLUTA de los links que la app manda o muestra (reseteo de contraseña,
+    # invitaciones): p. ej. "http://129.80.148.166". Vacío = se arma con `request.base_url`
+    # (correcto detrás del nginx local, que reenvía Host). Override: MONITOR_PUBLIC_URL.
+    public_url: str = ""
+
     # Zona horaria del PROCESO. El droplet corre en Etc/UTC y la app usa `datetime.now()`
     # / `date.today()` naive por todos lados, así que sin esto (a) el header muestra
     # 11:09 en vez de 08:09, y (b) —más grave— entre las 21:00 y las 24:00 de Buenos

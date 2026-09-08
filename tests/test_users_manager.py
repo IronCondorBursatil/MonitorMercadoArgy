@@ -1,7 +1,7 @@
 """Manager de usuarios v2 (Fase 1): schema, reglas puras, is_active, rutas del admin.
 Spec: docs/superpowers/specs/2026-09-08-manager-usuarios-reseteo-design.md."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -533,3 +533,87 @@ def test_el_modal_de_clave_manual_permite_tipearla(usuarios):
         "el campo de la contraseña tiene que ser editable")
     assert 'id="rp-gen"' in modal and "Generar otra" in modal
     assert "input.value.length < 10" in modal or "value.length < 10" in modal
+
+
+# ── tokens de reseteo ───────────────────────────────────────────────────────
+def test_verify_password_no_explota_con_el_centinela_sin_clave():
+    from core.security import SIN_PASSWORD_HASH, verify_password
+    assert SIN_PASSWORD_HASH == "!"
+    assert verify_password("cualquier-cosa", SIN_PASSWORD_HASH) is False
+    assert verify_password("x", "") is False
+    assert verify_password("x", "hash-que-no-es-bcrypt") is False
+
+
+def test_token_nuevo_es_aleatorio_y_se_guarda_hasheado():
+    from core.security import hash_token, new_reset_token
+    a, b = new_reset_token(), new_reset_token()
+    assert a != b and len(a) >= 40
+    assert hash_token(a) != a and len(hash_token(a)) == 64 and hash_token(a) == hash_token(a)
+
+
+@pytest.mark.noauth
+def test_issue_lookup_consume_y_un_solo_uso(usuarios):
+    from apps.web import reset_service as rs
+    from core.infrastructure.db.models import PasswordResetTokenORM
+    with SessionLocal() as s:
+        bob = s.query(UserORM).filter(UserORM.username == "bob").first()
+        t1 = rs.issue_reset_token(s, bob, purpose="reset", channel="link", by="admin")
+        t2 = rs.issue_reset_token(s, bob, purpose="reset", channel="link", by="admin")
+        assert rs.lookup_reset_token(s, t1) is None, "emitir uno nuevo invalida el anterior"
+        user, row = rs.lookup_reset_token(s, t2)
+        assert user.id == bob.id and row.purpose == "reset" and row.channel == "link" and row.created_by == "admin"
+        assert timedelta(minutes=59) < (row.expires_at - row.created_at) <= timedelta(minutes=60)
+        hash_antes, ver_antes = bob.hashed_password, bob.token_version or 0
+        assert rs.consume_reset_token(s, t2, "clave-nueva-123").id == bob.id
+        s.refresh(bob)
+        assert bob.hashed_password != hash_antes and bob.token_version == ver_antes + 1
+        assert bob.password_changed_at is not None
+        assert rs.lookup_reset_token(s, t2) is None, "un token consumido no vuelve a servir"
+        assert rs.consume_reset_token(s, t2, "otra-clave-1234") is None
+        assert s.query(PasswordResetTokenORM).filter(PasswordResetTokenORM.token_hash == t2).count() == 0, \
+            "el token en claro NUNCA se persiste"
+        assert rs.lookup_reset_token(s, "token-inventado") is None
+
+
+@pytest.mark.noauth
+def test_token_vencido_o_de_usuario_deshabilitado_no_vale(usuarios):
+    from apps.web import reset_service as rs
+    from core.infrastructure.db.models import PasswordResetTokenORM
+    with SessionLocal() as s:
+        bob = s.query(UserORM).filter(UserORM.username == "bob").first()
+        t = rs.issue_reset_token(s, bob, purpose="invite", channel="link", by="admin")
+        row = s.query(PasswordResetTokenORM).filter(PasswordResetTokenORM.used_at.is_(None)).one()
+        assert timedelta(hours=71) < (row.expires_at - row.created_at) <= timedelta(hours=72)
+        row.expires_at = datetime.now() - timedelta(seconds=1)
+        s.commit()
+        assert rs.lookup_reset_token(s, t) is None
+        t2 = rs.issue_reset_token(s, bob, purpose="reset", channel="link", by="admin")
+        bob.is_active = False
+        s.commit()
+        assert rs.lookup_reset_token(s, t2) is None
+
+
+@pytest.mark.noauth
+def test_invitaciones_vivas_tokens_de_y_link(usuarios):
+    from apps.web import reset_service as rs
+    with SessionLocal() as s:
+        bob = s.query(UserORM).filter(UserORM.username == "bob").first()
+        assert rs.invitaciones_vivas(s) == {}
+        rs.issue_reset_token(s, bob, purpose="invite", channel="link", by="admin")
+        vivas = rs.invitaciones_vivas(s)
+        assert list(vivas) == [bob.id] and vivas[bob.id].purpose == "invite"
+        rs.issue_reset_token(s, bob, purpose="reset", channel="link", by="admin")
+        assert rs.invitaciones_vivas(s) == {}, "el reset nuevo invalidó la invitación"
+        assert [x.purpose for x in rs.tokens_de(s, bob)] == ["reset", "invite"]
+
+    class _Req:
+        base_url = "http://testserver/"
+    from config.settings import settings
+    viejo = settings.public_url
+    try:
+        settings.public_url = ""
+        assert rs.reset_link(_Req(), "abc") == "http://testserver/reset/abc"
+        settings.public_url = "http://129.80.148.166/"
+        assert rs.reset_link(_Req(), "abc") == "http://129.80.148.166/reset/abc"
+    finally:
+        settings.public_url = viejo
