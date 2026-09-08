@@ -11,7 +11,7 @@ from apps.web.deps_auth import get_db
 from apps.web.mail_templates import mail_reset
 from apps.web.users_service import normalizar_email
 from core.infrastructure.db.models import UserORM
-from core.infrastructure.mailer import send_mail
+from core.infrastructure.mailer import MailNotConfigured, send_mail
 from core.security import (
     verify_password, create_access_token, get_password_hash, password_invalida,
     SIN_PASSWORD_HASH,
@@ -331,11 +331,18 @@ def forgot_submit(request: Request, background_tasks: BackgroundTasks, dato: str
             user = db.query(UserORM).filter(UserORM.email == clave).first()
         if user is not None and user.is_active and user.email and user.hashed_password != SIN_PASSWORD_HASH:
             token = reset_service.issue_reset_token(db, user, purpose="reset", channel="self", by=None)
-            link = reset_service.reset_link(request, token)
-            nombre = (user.full_name or user.username).split()[0]
-            background_tasks.add_task(_mandar_reset_en_background, user.email, nombre, user.username, link)
-            _audit.info("auth forgot=requested target=%s ip=%s", _limpio(user.username), _limpio(ip),
-                        extra={"console": True})
-            return _TEMPLATES.TemplateResponse(request, "pages/forgot_enviado.html", {})
+            # El link del mail sale SÓLO de `public_url`, jamás de `request.base_url`: esta
+            # ruta es anónima y el `Host` lo elige quien la llama (reset poisoning). Si la URL
+            # pública se vació con el correo prendido (carrera de config), fail-closed: nada.
+            try:
+                link = reset_service.mail_link(token)
+            except MailNotConfigured:
+                link = None
+            if link is not None:
+                nombre = (user.full_name or user.username).split()[0]
+                background_tasks.add_task(_mandar_reset_en_background, user.email, nombre, user.username, link)
+                _audit.info("auth forgot=requested target=%s ip=%s", _limpio(user.username), _limpio(ip),
+                            extra={"console": True})
+                return _TEMPLATES.TemplateResponse(request, "pages/forgot_enviado.html", {})
     _audit.info("auth forgot=noop ip=%s", _limpio(ip), extra={"console": True})
     return _TEMPLATES.TemplateResponse(request, "pages/forgot_enviado.html", {})

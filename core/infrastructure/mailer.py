@@ -18,12 +18,13 @@ SMTP_TIMEOUT_S = 15
 
 
 class MailNotConfigured(RuntimeError):
-    """`settings.smtp_host` vacío: el correo está apagado a propósito."""
+    """El correo está apagado a propósito: `settings.smtp_host` o `settings.public_url`
+    vacíos (`settings.mail_enabled` exige las dos; sin URL pública no hay link seguro)."""
 
 
 def send_mail(to: str, subject: str, text: str, html: Optional[str] = None) -> None:
     if not settings.mail_enabled:
-        raise MailNotConfigured("MONITOR_SMTP_HOST vacío: el correo está desactivado")
+        raise MailNotConfigured("MONITOR_SMTP_HOST o MONITOR_PUBLIC_URL vacíos: el correo está desactivado")
     msg = EmailMessage()
     msg["From"] = settings.smtp_sender
     msg["To"] = to

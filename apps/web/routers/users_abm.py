@@ -155,11 +155,15 @@ def add_user(
                                             by=getattr(admin, "username", None))
     _audit.info("users action=invite_created by=%s target=%s",
                 _limpio(getattr(admin, "username", "?")), _limpio(username), extra={"console": True})
+    # `link` es el que se MUESTRA al admin (su propio Host); el que VIAJA en el mail sale de
+    # `mail_link` (sólo `public_url`). Si ésta se vació con el correo prendido, `mail_link`
+    # levanta dentro del try y se trata como un envío fallido (el admin recibe el link igual).
     link = reset_service.reset_link(request, token)
     if settings.mail_enabled and mail:
         nombre = (new_user.full_name or new_user.username).split()[0]
         try:
-            send_mail(mail, *mail_invitacion(nombre, username, link, 72, getattr(admin, "username", None)))
+            send_mail(mail, *mail_invitacion(nombre, username, reset_service.mail_link(token), 72,
+                                             getattr(admin, "username", None)))
             _audit.info("users action=invite_sent target=%s sent=ok", _limpio(username), extra={"console": True})
             return _users_page(request, db, selected_id=new_user.id, link_reset=link, link_para=username,
                                link_vence="72 horas",
@@ -217,16 +221,18 @@ def reset_password(request: Request, user_id: int, channel: str = Form("manual")
     if channel == "mail":
         if not settings.mail_enabled:
             return _users_page(request, db, status_code=400, selected_id=user_id,
-                               error="El correo no está configurado en el servidor (MONITOR_SMTP_HOST). Usá «Generar link para copiar».")
+                               error="El correo no está configurado en el servidor (MONITOR_SMTP_HOST / MONITOR_PUBLIC_URL). Usá «Generar link para copiar».")
         if not user.email:
             return _users_page(request, db, status_code=400, selected_id=user_id,
                                error=f"{user.username} no tiene email cargado. Cargalo en Datos o usá el link para copiar.")
         token = reset_service.issue_reset_token(db, user, purpose="reset", channel="mail",
                                                 by=getattr(admin, "username", None))
-        link = reset_service.reset_link(request, token)
+        link = reset_service.reset_link(request, token)      # el de respaldo que se MUESTRA al admin
         nombre = (user.full_name or user.username).split()[0]
         try:
-            send_mail(user.email, *mail_reset(nombre, user.username, link, 60, getattr(admin, "username", None)))
+            # El del mail sale de `mail_link` (sólo `public_url`); si levanta, es un fallo de envío.
+            send_mail(user.email, *mail_reset(nombre, user.username, reset_service.mail_link(token), 60,
+                                              getattr(admin, "username", None)))
         except Exception as e:   # noqa: BLE001 — se informa al admin y se le da el link igual
             _audit.info("users action=reset_link channel=mail purpose=reset by=%s target=%s sent=fail err=%s",
                         _limpio(getattr(admin, "username", "?")), _limpio(user.username),

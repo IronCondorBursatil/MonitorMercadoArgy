@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from config.settings import settings
 from core.infrastructure.db.models import PasswordResetTokenORM, UserORM
+from core.infrastructure.mailer import MailNotConfigured
 from core.security import get_password_hash, hash_token, new_reset_token
 
 RESET_TTL = timedelta(minutes=60)
@@ -91,7 +92,19 @@ def consume_reset_token(db: Session, token: str, new_password: str) -> Optional[
 
 
 def reset_link(request, token: str) -> str:
+    """Link que se MUESTRA en la página del admin (su propio Host, que él mismo tipeó): con
+    `public_url` vacía cae a `request.base_url`. Para lo que se MANDA por mail, `mail_link`."""
     base = (settings.public_url or str(request.base_url)).rstrip("/")
+    return f"{base}/reset/{token}"
+
+
+def mail_link(token: str) -> str:
+    """Link para un mail: SÓLO con `settings.public_url`. Nunca `request.base_url`: el Host
+    de un request anónimo lo elige quien lo manda (reset poisoning). Sin URL pública no hay
+    link y no hay mail."""
+    base = settings.public_url.rstrip("/")
+    if not base:
+        raise MailNotConfigured("MONITOR_PUBLIC_URL vacío: no se arma un link para mail")
     return f"{base}/reset/{token}"
 
 

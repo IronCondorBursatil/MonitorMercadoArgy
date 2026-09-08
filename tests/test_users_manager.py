@@ -856,13 +856,18 @@ def test_el_token_no_aparece_en_la_auditoria(usuarios, caplog):
 # ── canal mail ──────────────────────────────────────────────────────────────
 @pytest.fixture
 def mail_on(monkeypatch):
+    """Correo PRENDIDO —SMTP y URL pública, las DOS condiciones de `mail_enabled`— con el
+    envío stubeado en los dos routers que mandan mail (el de /forgot corre en background:
+    sin el stub abría SMTP real). Devuelve la lista de enviados."""
     from config.settings import settings
     monkeypatch.setattr(settings, "smtp_host", "smtp.test")
     monkeypatch.setattr(settings, "smtp_user", "monitor@test")
+    monkeypatch.setattr(settings, "public_url", "http://testserver")
     enviados = []
     def fake_send(to, subject, text, html=None):
         enviados.append({"to": to, "subject": subject, "text": text, "html": html})
     monkeypatch.setattr("apps.web.routers.users_abm.send_mail", fake_send)
+    monkeypatch.setattr("apps.web.routers.auth.send_mail", fake_send)
     return enviados
 
 
@@ -895,7 +900,10 @@ def test_canal_mail_si_falla_el_envio_muestra_el_link(usuarios, mail_on, monkeyp
 
 
 @pytest.mark.noauth
-def test_canal_mail_sin_email_o_sin_smtp_da_400(usuarios, monkeypatch):
+def test_canal_mail_sin_email_o_sin_smtp_da_400(usuarios, mail_on, monkeypatch):
+    """Tres motivos para el 400 (y el botón deshabilitado con el motivo): sin SMTP; con SMTP
+    pero sin `MONITOR_PUBLIC_URL` (el correo queda APAGADO: sin URL pública no hay link seguro
+    para un mail); y sin email del usuario. En ninguno sale un mail."""
     from config.settings import settings
     bob = _bob_id()
     with TestClient(app) as c:
@@ -906,9 +914,16 @@ def test_canal_mail_sin_email_o_sin_smtp_da_400(usuarios, monkeypatch):
         ficha = c.get(f"/users/{bob}/ficha").text
         assert "Enviar link por mail" in ficha and "disabled" in ficha
         monkeypatch.setattr(settings, "smtp_host", "smtp.test")
+        monkeypatch.setattr(settings, "public_url", "")
+        r = c.post(f"/users/{bob}/reset", data={"channel": "mail"})
+        assert r.status_code == 400 and "no está configurado" in r.text
+        ficha = c.get(f"/users/{bob}/ficha").text
+        assert "Enviar link por mail" in ficha and "disabled" in ficha
+        monkeypatch.setattr(settings, "public_url", "http://testserver")
         _set_bob(email=None)
         r = c.post(f"/users/{bob}/reset", data={"channel": "mail"})
         assert r.status_code == 400 and "no tiene email" in r.text
+    assert mail_on == []
 
 
 @pytest.mark.noauth
@@ -932,9 +947,8 @@ def test_invitacion_sin_email_no_intenta_mandar(usuarios, mail_on):
 
 # ── /forgot ─────────────────────────────────────────────────────────────────
 @pytest.mark.noauth
-def test_forgot_responde_igual_exista_o_no_y_solo_manda_al_valido(usuarios, mail_on, monkeypatch):
+def test_forgot_responde_igual_exista_o_no_y_solo_manda_al_valido(usuarios, mail_on):
     from apps.web.routers import auth as auth_router
-    monkeypatch.setattr("apps.web.routers.auth.send_mail", lambda to, s, t, h=None: mail_on.append({"to": to, "text": t}))
     auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
     _set_bob(is_active=True)
     with TestClient(app) as c:
@@ -992,3 +1006,33 @@ def test_forgot_rate_limit_por_ip_y_por_dato(usuarios, mail_on):
         codigos = [c.post("/forgot", data={"dato": "bob"}).status_code for i in range(4)]
     assert codigos[3] == 429, "el mismo dato tiene su propio límite (3 por hora)"
     auth_router._forgot_attempts_ip.clear(); auth_router._forgot_attempts_dato.clear()
+
+
+@pytest.mark.noauth
+def test_forgot_no_arma_el_link_con_el_host_del_request(usuarios, mail_on, monkeypatch):
+    """Password-reset poisoning (CWE-640): `POST /forgot` es anónimo y el header `Host` lo
+    elige quien lo manda (nginx es catch-all y reenvía `Host $host`). El link del mail sale
+    SÓLO de `settings.public_url` (`reset_service.mail_link`), nunca de `request.base_url`.
+
+    Dos escenarios. (1) Con la URL pública seteada, el mail lleva esa base aunque el request
+    traiga `Host: evil.example`. (2) Carrera de config —el correo sigue prendido pero
+    `public_url` quedó vacía—: fail-closed, NO sale ningún mail (con `reset_link(request, …)`
+    saldría uno apuntando a evil.example). Mutación: revertir `/forgot` a
+    `reset_service.reset_link(request, token)` pone (2) en rojo."""
+    import re
+    from config.settings import settings
+    with TestClient(app) as c:
+        r = c.post("/forgot", data={"dato": "bob"}, headers={"Host": "evil.example"})
+    assert r.status_code == 200
+    assert len(mail_on) == 1
+    assert re.search(r"http://testserver/reset/[A-Za-z0-9_\-]+", mail_on[0]["text"]), mail_on[0]["text"]
+    assert "evil.example" not in mail_on[0]["text"] and "evil.example" not in mail_on[0]["html"]
+    # (2) el correo quedó "prendido" (se fuerza la propiedad) pero sin URL pública
+    monkeypatch.setattr(settings, "public_url", "")
+    monkeypatch.setattr(type(settings), "mail_enabled", property(lambda self: True))
+    with TestClient(app) as c:
+        r2 = c.post("/forgot", data={"dato": "bob"}, headers={"Host": "evil.example"})
+        r_nadie = c.post("/forgot", data={"dato": "nadie@ejemplo.com"})
+    assert r2.status_code == 200 and r2.text == r_nadie.text
+    assert len(mail_on) == 1, "sin URL pública no puede salir NINGÚN mail (y menos uno con el Host del atacante)"
+    assert all("evil.example" not in m["text"] and "evil.example" not in (m["html"] or "") for m in mail_on)

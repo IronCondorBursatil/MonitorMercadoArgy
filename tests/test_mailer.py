@@ -14,6 +14,7 @@ def smtp_config(monkeypatch):
     monkeypatch.setattr(settings, "smtp_user", "monitor@ejemplo.com")
     monkeypatch.setattr(settings, "smtp_password", "app-password")
     monkeypatch.setattr(settings, "smtp_from", "")
+    monkeypatch.setattr(settings, "public_url", "http://testserver")   # mail_enabled exige las dos
     yield
 
 
@@ -41,11 +42,40 @@ class _FakeSMTP:
         self.llamadas.append(("send", msg))
 
 
-def test_mail_enabled_depende_del_host(monkeypatch):
+def test_mail_enabled_exige_host_y_public_url_y_mail_link_solo_usa_public_url(monkeypatch):
+    """Sin URL pública no hay forma segura de armar el link de un mail (el Host de un request
+    anónimo lo elige quien lo manda: reset poisoning): el correo queda APAGADO aunque haya
+    SMTP, y `mail_link` se niega a armar un link en vez de caer a `request.base_url`."""
+    from apps.web import reset_service
+    from core.infrastructure.mailer import MailNotConfigured
     monkeypatch.setattr(settings, "smtp_host", "")
+    monkeypatch.setattr(settings, "public_url", "http://x.test/")
     assert settings.mail_enabled is False
-    monkeypatch.setattr(settings, "smtp_host", "smtp.gmail.com")
+    monkeypatch.setattr(settings, "smtp_host", "smtp.test")
+    monkeypatch.setattr(settings, "public_url", "")
+    assert settings.mail_enabled is False
+    with pytest.raises(MailNotConfigured):
+        reset_service.mail_link("abc")
+    monkeypatch.setattr(settings, "public_url", "http://x.test/")
     assert settings.mail_enabled is True
+    assert reset_service.mail_link("abc") == "http://x.test/reset/abc"
+
+
+def test_settings_denuncia_por_error_smtp_sin_public_url(caplog):
+    """`MONITOR_SMTP_HOST` seteado y `MONITOR_PUBLIC_URL` vacío: la app arranca con el correo
+    apagado (fail-closed) y lo dice por ERROR nombrando la variable que falta; con las dos
+    seteadas no hay denuncia."""
+    import logging
+    from config.settings import Settings
+    with caplog.at_level(logging.ERROR, logger="config.settings"):
+        s = Settings(smtp_host="smtp.test", public_url="")
+    assert s.mail_enabled is False
+    errores = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any("MONITOR_PUBLIC_URL" in m for m in errores), errores
+    caplog.clear()
+    with caplog.at_level(logging.ERROR, logger="config.settings"):
+        assert Settings(smtp_host="smtp.test", public_url="http://x.test").mail_enabled is True
+    assert not [r for r in caplog.records if "MONITOR_PUBLIC_URL" in r.getMessage()]
 
 
 def test_send_mail_usa_starttls_con_contexto_login_y_timeout(smtp_config, monkeypatch):

@@ -276,15 +276,20 @@ class Settings(BaseSettings):
     # los usuarios en un bucket único (y podría bloquear a los legítimos).
     trusted_proxy_ips: str = "127.0.0.1,::1"
 
-    # Base ABSOLUTA de los links que la app manda o muestra (reseteo de contraseña,
-    # invitaciones): p. ej. "http://129.80.148.166". Vacío = se arma con `request.base_url`
-    # (correcto detrás del nginx local, que reenvía Host). Override: MONITOR_PUBLIC_URL.
+    # Base ABSOLUTA de los links que la app manda por mail (reseteo de contraseña,
+    # invitaciones): p. ej. "http://129.80.148.166". OBLIGATORIA para el correo: un link que
+    # viaja por mail se arma SÓLO con ella (`reset_service.mail_link`), nunca con el Host del
+    # request —en un POST anónimo a /forgot lo elige quien lo manda (password-reset
+    # poisoning)—; vacía, el correo queda apagado (`mail_enabled`) y el arranque lo denuncia
+    # por ERROR (`_check_mail_config`). El link que se MUESTRA al admin en su propia página
+    # (`reset_link`) sí cae a `request.base_url` si esto está vacío. Override: MONITOR_PUBLIC_URL.
     public_url: str = ""
 
-    # --- Correo saliente (Manager v2, spec §4): SMTP con STARTTLS, stdlib. Host vacío =
-    # correo APAGADO (el Manager esconde el canal mail y /forgot no manda nada). Gmail:
-    # smtp.gmail.com:587 con contraseña de aplicación (exige 2FA en la cuenta). La
-    # contraseña SOLO por env/.env del servidor (MONITOR_SMTP_PASSWORD), nunca en el repo.
+    # --- Correo saliente (Manager v2, spec §4): SMTP con STARTTLS, stdlib. Host o PUBLIC_URL
+    # vacíos = correo apagado (el Manager muestra «Enviar link por mail» deshabilitado con el
+    # motivo y /forgot avisa que pidan el link al administrador). Gmail: smtp.gmail.com:587
+    # con contraseña de aplicación (exige 2FA en la cuenta). La contraseña SOLO por env/.env
+    # del servidor (MONITOR_SMTP_PASSWORD), nunca en el repo.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -293,7 +298,8 @@ class Settings(BaseSettings):
 
     @property
     def mail_enabled(self) -> bool:
-        return bool(self.smtp_host)
+        # Las DOS: sin URL pública no hay forma segura de armar el link que va en el mail.
+        return bool(self.smtp_host and self.public_url)
 
     @property
     def smtp_sender(self) -> str:
@@ -354,6 +360,7 @@ class Settings(BaseSettings):
                 setattr(self, field, self.db_dir / leaf)
         # 2. Invariante "nada de .db dentro del proyecto".
         self._check_db_paths()
+        self._check_mail_config()
         # 3. Crear los directorios contenedores. `backup_dir`/`history_state_dir` ya
         #    los crean sus escritores, pero las .db se abren con sqlite3.connect()
         #    directo: sin el padre creado, seguir la receta de CLAUDE.md (paths por
@@ -394,6 +401,17 @@ class Settings(BaseSettings):
         if self.db_in_tree_fatal:
             raise RuntimeError(msg % args)
         logging.getLogger(__name__).error(msg, *args)
+
+    def _check_mail_config(self) -> None:
+        """SMTP configurado sin URL pública: el correo queda APAGADO (fail-closed, la app
+        arranca igual) y se denuncia por ERROR. La alternativa —armar el link del mail con
+        el Host del request— es password-reset poisoning en una ruta anónima (/forgot)."""
+        if self.smtp_host and not self.public_url:
+            logging.getLogger(__name__).error(
+                "MONITOR_SMTP_HOST está seteado pero MONITOR_PUBLIC_URL está vacío: el correo "
+                "queda APAGADO. Los links que viajan por mail se arman sólo con la URL pública "
+                "(nunca con el Host del request: password-reset poisoning). Seteá "
+                "MONITOR_PUBLIC_URL, p. ej. http://129.80.148.166")
 
 
 settings = Settings()
