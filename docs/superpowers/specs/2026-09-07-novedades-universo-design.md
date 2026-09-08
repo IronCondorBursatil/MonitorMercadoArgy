@@ -218,3 +218,9 @@ Reglas que quedan (regla 4 de `novedades.py`):
   job los da de alta (`register_stocks`, tipo `ACCION`/`CEDEAR`, sin términos ni flujos) y
   no los lista como novedad; si el alta falla, sí quedan como novedad. `CEDEAR` entra al
   grupo `ACCIONES` de `instrument_groups`.
+
+Ajuste tras la segunda corrida (misma noche): en renta fija **todo** sufijo X/Y/Z es pata
+de ámbito (el día en que sólo cotiza la pata X la raíz no tiene hermano: B2N6X, SE7X
+quedaron con el ISIN de bonos cargados); en acciones/CEDEARs sigue exigiéndose hermano
+de raíz, porque NFLX/SPCX/SKHY/SIEGY son tickers reales. Migración v4: quita esas patas
+(GO/CORP con `last_seen`) y sus novedades.

@@ -35,7 +35,10 @@ logger = logging.getLogger(__name__)
 #        primera corrida del job de novedades (contó el esqueleto BYMA con precio 0 y las
 #        variantes .SB/X/Y/Z como especies) y lo deja listo para correr con las reglas
 #        corregidas.
-CURRENT_SCHEMA_VERSION = 3
+#   v4 (2026-09-07): `_migrate_v4_quitar_patas_de_ambito` — patas X/Y/Z de renta fija
+#        que la segunda corrida insertó como `primary`/`cotiza=1` (B2N6X, BAF7X…) y
+#        sus novedades.
+CURRENT_SCHEMA_VERSION = 4
 
 
 def _ensure_schema_meta(eng) -> None:
@@ -245,6 +248,33 @@ def _migrate_v3_deshacer_primera_corrida_del_universo(eng) -> dict:
     return out
 
 
+def _migrate_v4_quitar_patas_de_ambito(eng) -> dict:
+    """v3 → v4: quita de `byma_catalog` las patas de otro ámbito (sufijo X/Y/Z) de renta
+    fija (`security_type` GO/CORP) que el job insertó como `primary`/`cotiza=1` —la regla
+    «raíz compartida» fallaba el día en que sólo cotizaba la pata X (B2N6X, BAF7X, SE7X…,
+    varias con el ISIN de un bono cargado: `backfill_legs_from_universe` las habría tomado
+    como pata pesos)— y sus novedades `nueva`. Sólo filas con `last_seen` (las del seed CSV
+    ya vienen como `especial`/`cotiza=0` y no se tocan). Equities no entran: NFLX/SPCX/SKHY
+    son tickers reales."""
+    out = {"catalogo": 0, "novedades": 0}
+    with eng.begin() as conn:
+        syms = [r[0] for r in conn.exec_driver_sql(
+            "SELECT symbol FROM byma_catalog WHERE last_seen IS NOT NULL "
+            "AND security_type IN ('GO', 'CORP')").fetchall()]
+        borrar = [s for s in syms if len(s or "") >= 4 and (s or "")[-1].upper() in "XYZ"]
+        for i in range(0, len(borrar), 500):
+            chunk = borrar[i:i + 500]
+            marcas = ",".join("?" * len(chunk))
+            conn.exec_driver_sql("DELETE FROM byma_catalog WHERE symbol IN (%s)" % marcas,
+                                 tuple(chunk))
+            res = conn.exec_driver_sql(
+                "DELETE FROM universe_novedades WHERE estado='nueva' AND symbol IN (%s)" % marcas,
+                tuple(chunk))
+            out["novedades"] += int(res.rowcount or 0)
+        out["catalogo"] = len(borrar)
+    return out
+
+
 # Engine ya inicializado/migrado en este proceso. init_db() se llama ~39 veces
 # (cada operación ABM lo invoca defensivamente); tras la primera corrida exitosa
 # sobre un engine dado, el resto son no-op — sin re-inspección de schema ni el
@@ -303,6 +333,11 @@ def init_db() -> None:
                                "universo: -%d filas de byma_catalog, -%d novedades%s.",
                                r["catalogo"], r["novedades"],
                                " (sin CSV seed: sólo .SB y X/Y/Z)" if r["sin_seed"] else "")
+        if version < 4:
+            r = _migrate_v4_quitar_patas_de_ambito(eng)
+            if r["catalogo"] or r["novedades"]:
+                logger.warning("catalog: migración v4 — quitadas %d pata(s) de ámbito X/Y/Z de "
+                               "byma_catalog y %d novedad(es).", r["catalogo"], r["novedades"])
         _stamp_schema_version(eng, CURRENT_SCHEMA_VERSION)
         _INITIALIZED_ENGINE = eng
 

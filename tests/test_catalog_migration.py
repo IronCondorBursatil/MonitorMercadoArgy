@@ -333,6 +333,49 @@ def test_v3_sin_csv_seed_solo_borra_las_variantes(tmp_path, restore_engine, monk
     assert _byma("AO29X") is None                                          # dañina: fuera
 
 
+def test_v4_quita_las_patas_de_ambito_de_renta_fija_que_dejo_la_segunda_corrida(tmp_path, restore_engine):
+    """B2N6X/BAF7X/SE7X entraron como primary/cotiza=1 con el ISIN de bonos cargados. v4
+    las quita (y sus novedades `nueva`); una pata del seed (especial, sin last_seen), un
+    bono real (TZVD8) y un CEDEAR real terminado en X (SPCX) quedan."""
+    from core.infrastructure.db.catalog_repository import (
+        Base, _ensure_schema_meta, _stamp_schema_version,
+    )
+    from core.infrastructure.db.engine import SessionLocal
+    from core.infrastructure.db.models import BymaCatalogORM, UniverseNovedadORM
+
+    eng = configure(str(tmp_path / "v3.db"))
+    Base.metadata.create_all(eng)
+    _ensure_schema_meta(eng)
+    with SessionLocal.begin() as s:
+        s.add_all([
+            BymaCatalogORM(symbol="B2N6X", security_type="GO", cotiza=1, clase_liquidacion="primary",
+                           isin="AR0322819605", last_seen="2026-09-07"),
+            BymaCatalogORM(symbol="SE7X", security_type="GO", cotiza=1, clase_liquidacion="primary",
+                           last_seen="2026-09-07"),
+            BymaCatalogORM(symbol="VBC4X", security_type="CORP", cotiza=1, clase_liquidacion="primary",
+                           last_seen="2026-09-07"),
+            BymaCatalogORM(symbol="TZVD8", security_type="GO", cotiza=1, clase_liquidacion="primary",
+                           last_seen="2026-09-07"),
+            BymaCatalogORM(symbol="SPCX", security_type="CD", cotiza=1, clase_liquidacion="primary",
+                           last_seen="2026-09-07"),
+            BymaCatalogORM(symbol="AL30X", security_type="GO", cotiza=0, clase_liquidacion="especial"),
+        ])
+        s.add_all([
+            UniverseNovedadORM(symbol="B2N6X", first_seen="2026-09-07", source="byma",
+                               categoria="Títulos Públicos", estado="nueva"),
+            UniverseNovedadORM(symbol="TZVD8", first_seen="2026-09-07", source="byma",
+                               categoria="Títulos Públicos", estado="nueva"),
+        ])
+    _stamp_schema_version(eng, 3)
+    init_db()
+
+    assert _byma("B2N6X") is None and _byma("SE7X") is None and _byma("VBC4X") is None
+    assert _byma("TZVD8") is not None and _byma("SPCX") is not None and _byma("AL30X") is not None
+    from core.infrastructure.byma import novedades as nov
+    assert [f["symbol"] for f in nov.listar("nueva")] == ["TZVD8"]
+    assert get_schema_version() == CURRENT_SCHEMA_VERSION >= 4
+
+
 def test_v3_es_no_op_donde_el_job_nunca_corrio(tmp_path, restore_engine, monkeypatch):
     import core.infrastructure.db.catalog_repository as cr
 

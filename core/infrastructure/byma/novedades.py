@@ -87,6 +87,7 @@ CATEGORIAS_AUTO_ALTA = frozenset({"Acciones", "Cedears"})
 # termine en X/Y/Z con una variante (NFLX tiene 4: nunca entra).
 _SUFIJO_BILATERAL = ".SB"
 _SUFIJOS_AMBITO = "XYZ"
+_BUCKETS_RENTA_FIJA = frozenset({"notes", "bonds", "corp"})
 
 # Orden de las patas de una especie al elegir cuál registrar como novedad: la pesos si
 # cotiza; si no, la MEP; la cable al final.
@@ -104,16 +105,23 @@ def _raices(symbols: Iterable[str]) -> Dict[str, int]:
 
 
 def es_variante(symbol: str, bucket: str, raices: Dict[str, int]) -> bool:
-    """True si el símbolo es el espejo `.SB` o una pata de otro ámbito (X/Y/Z) de una
-    especie que también se vio, en cualquier bucket. `raices` sale de `_raices(vistos)`;
-    `bucket` queda en la firma por si un feed nuevo exige distinguirlo."""
-    del bucket
+    """True si el símbolo es el espejo `.SB` o una pata de otro ámbito (X/Y/Z).
+
+    Bonos/ON/letras: TODO símbolo terminado en X/Y/Z es una pata de ámbito (la segunda
+    corrida en prod dejó B2N6X, BAF7X, SE7X… con el ISIN de bonos cargados porque ese
+    día sólo cotizó la pata X y la raíz no tenía hermano). El seed CSV tiene un único
+    primario así (TVPY, ya en el catálogo: nunca es «nuevo»). Acciones/CEDEARs: sus
+    tickers vienen de los de EE.UU. (NFLX, SPCX, SKHY son reales), así que ahí sólo es
+    variante un símbolo de 5 letras cuya raíz de 4 comparte OTRO símbolo visto
+    (CRESX con CRES). `raices` sale de `_raices(vistos)`."""
     sym = _norm(symbol)
     if sym.endswith(_SUFIJO_BILATERAL):
         return True
-    if len(sym) == 5 and sym[-1] in _SUFIJOS_AMBITO:
-        return raices.get(sym[:4], 0) > 1
-    return False
+    if len(sym) < 4 or sym[-1] not in _SUFIJOS_AMBITO:
+        return False
+    if bucket in _BUCKETS_RENTA_FIJA:
+        return True
+    return len(sym) == 5 and raices.get(sym[:4], 0) > 1
 
 
 def meta_de(symbol: str, bucket: str) -> dict:

@@ -140,13 +140,20 @@ def test_sb_y_plazo_especial_son_variantes_pero_no_un_ticker_real_terminado_en_x
     assert nov.es_variante("AL30D.SB", "bonds", r)
     assert nov.es_variante("AL30X", "bonds", r) and nov.es_variante("AL30Y", "bonds", r)
     assert nov.es_variante("TY30X", "bonds", r)          # raíz TY30 compartida con TY30P
-    assert not nov.es_variante("TVPY", "bonds", r)       # 4 letras: ticker real
-    assert not nov.es_variante("ZZ99X", "bonds", r)      # sin hermanos: no se adivina
-    assert not nov.es_variante("NFLX", "cedears", r)     # 4 letras: nunca es variante
-    assert not nov.es_variante("AL30", "bonds", r)
-    # acciones también (CRESX/IRSAX/VALOX de la primera corrida en prod)
-    r2 = nov._raices({"CRES": "stocks", "CRESD": "stocks", "CRESX": "stocks"})
+    # Renta fija: TODO sufijo X/Y/Z es pata de ámbito, con o sin hermano visto (B2N6X,
+    # SE7X en prod: ese día sólo cotizó la pata X). TVPY (único primario así del seed)
+    # ya está en el catálogo y nunca llega acá como «nuevo».
+    assert nov.es_variante("ZZ99X", "bonds", r) and nov.es_variante("SE7Z", "notes", r)
+    assert nov.es_variante("VBC4X", "corp", r)
+    assert not nov.es_variante("AL30", "bonds", r) and not nov.es_variante("TZVD8", "bonds", r)
+    # Equities: tickers reales de EE.UU. terminan en X/Y/Z (NFLX, SPCX, SKHY): sólo es
+    # variante un 5 letras con hermano de raíz (CRESX/IRSAX/VALOX de la 1ª corrida en prod)
+    assert not nov.es_variante("NFLX", "cedears", r)
+    r2 = nov._raices({"CRES": "stocks", "CRESD": "stocks", "CRESX": "stocks", "SPCX": "cedears",
+                      "SKHY": "cedears", "ZZ99X": "cedears"})
     assert nov.es_variante("CRESX", "stocks", r2) and not nov.es_variante("CRESD", "stocks", r2)
+    assert not nov.es_variante("SPCX", "cedears", r2) and not nov.es_variante("SKHY", "cedears", r2)
+    assert not nov.es_variante("ZZ99X", "cedears", r2)
 
 
 def test_las_variantes_ni_entran_al_catalogo_ni_son_novedad():
