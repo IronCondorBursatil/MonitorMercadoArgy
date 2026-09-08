@@ -224,3 +224,42 @@ def test_login_exitoso_registra_ultimo_ingreso(usuarios):
         assert bob.last_login_at is not None
         assert (datetime.now() - bob.last_login_at).total_seconds() < 60
         assert bob.last_login_ip                       # 'testclient' en TestClient
+
+
+# ── GET /users y ficha ──────────────────────────────────────────────────────
+@pytest.mark.noauth
+def test_la_tabla_muestra_email_estado_y_link_a_la_ficha(usuarios):
+    bob = _bob_id()
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.get("/users")
+    assert r.status_code == 200
+    assert "bob@ejemplo.com" in r.text and "Bob Pérez" in r.text
+    assert f'hx-get="/users/{bob}/ficha"' in r.text
+    assert "Elegí un usuario" in r.text            # sin selección: panel vacío
+
+
+@pytest.mark.noauth
+def test_u_en_la_query_precarga_la_ficha(usuarios):
+    bob = _bob_id()
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.get(f"/users?u={bob}")
+    assert r.status_code == 200
+    assert f'action="/users/{bob}/datos"' in r.text
+    assert f'action="/users/{bob}/permisos"' in r.text
+    assert "Elegí un usuario" not in r.text
+
+
+@pytest.mark.noauth
+def test_la_ficha_es_un_fragmento(usuarios):
+    bob = _bob_id()
+    with TestClient(app) as c:
+        _login_admin(c)
+        r = c.get(f"/users/{bob}/ficha")
+        r404 = c.get("/users/999999/ficha")
+    assert r.status_code == 200
+    assert "<html" not in r.text.lower() and "Permisos" in r.text
+    assert f'action="/users/{bob}/sesiones/cerrar"' in r.text
+    assert f'action="/users/{bob}/estado"' in r.text
+    assert r404.status_code == 404

@@ -1,15 +1,25 @@
 import logging
-from typing import List
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from apps.web.deps_auth import get_db, get_admin_user_html
+from apps.web.templates import TEMPLATES as _TEMPLATES
+# email_invalido/normalizar_email: sin uso todavía en este módulo (los consumen los
+# handlers POST /users/{id}/datos de las Tasks 6-8); se importan ya para no repetir
+# el import en cada task siguiente.
+from apps.web.users_service import (TABS, TAB_KEYS, actividad_reciente, resumen,
+                                    vista_usuario, email_invalido, normalizar_email)  # noqa: F401
 from core.infrastructure.db.models import UserORM
 from core.security import get_password_hash, password_invalida
-from apps.web.templates import TEMPLATES as _TEMPLATES
 
 router = APIRouter(dependencies=[Depends(get_admin_user_html)])
+
+# Auditoría de las acciones de admin: quién le hizo qué a quién (journal vía el filtro
+# de consola de settings, que deja pasar INFO sólo con `console=True`).
+_audit = logging.getLogger("monitor.audit")
 
 # Caracteres que no pueden aparecer en un nombre de usuario legítimo y sí son el
 # vector de un XSS almacenado (el username se re-renderiza en /users). Defensa en
@@ -17,18 +27,12 @@ router = APIRouter(dependencies=[Depends(get_admin_user_html)])
 # siquiera se persista. Se rechaza también cualquier carácter de control.
 _USERNAME_PROHIBIDO = frozenset(["<", ">", chr(34), chr(39), "&", "`", chr(92)])
 _USERNAME_MAX = 64
+_NOMBRE_MAX = 120
+_NOTAS_MAX = 500
 
 
-def _users_page(request, db, *, status_code: int = 200, **ctx):
-    users = db.query(UserORM).all()
-    return _TEMPLATES.TemplateResponse(request, "pages/users.html",
-                                       {"users": users, **ctx}, status_code=status_code)
-
-
-def _no_existe(request, db, user_id: int):
-    """404 explícito: antes se interpolaba `user.username` con `user is None` → 500."""
-    return _users_page(request, db, status_code=404,
-                       error=f"No existe el usuario id={user_id}.")
+def _limpio(v) -> str:
+    return "".join(ch for ch in str(v) if ch.isprintable())[:64]
 
 
 def _username_invalido(username: str) -> str:
@@ -40,20 +44,53 @@ def _username_invalido(username: str) -> str:
         return "El nombre de usuario tiene caracteres no permitidos."
     return ""
 
+
+def _texto(v, maximo: int) -> Optional[str]:
+    """Campo de texto libre del form: recortado, vacío → None, acotado a `maximo`."""
+    s = (v or "").strip()
+    return s[:maximo] or None
+
+
+def _tabs_validas(tabs) -> List[str]:
+    return [t for t in (tabs or []) if t in TAB_KEYS]
+
+
+def _ctx_ficha(u: UserORM) -> dict:
+    return {"u": u, "v": vista_usuario(u), "actividad": actividad_reciente(u), "TABS": TABS}
+
+
+def _users_page(request, db, *, status_code: int = 200, selected_id: Optional[int] = None, **ctx):
+    """ÚNICA forma de responder la página: arma todo el contexto (filas, resumen, ficha
+    seleccionada). `selected_id` mantiene la ficha abierta tras un POST."""
+    users = db.query(UserORM).order_by(UserORM.username).all()
+    selected = db.get(UserORM, selected_id) if selected_id is not None else None
+    context = {"users": users, "filas": [vista_usuario(u) for u in users],
+               "resumen": resumen(users), "TABS": TABS, "selected": selected, **ctx}
+    if selected is not None:
+        context.update(_ctx_ficha(selected))
+    return _TEMPLATES.TemplateResponse(request, "pages/users.html", context,
+                                       status_code=status_code)
+
+
+def _no_existe(request, db, user_id: int):
+    """404 explícito: antes se interpolaba `user.username` con `user is None` → 500."""
+    return _users_page(request, db, status_code=404,
+                       error=f"No existe el usuario id={user_id}.")
+
+
 @router.get("/users", response_class=HTMLResponse)
-def list_users(request: Request, db: Session = Depends(get_db)):
-    users = db.query(UserORM).all()
-    return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users})
-
-# Auditoria de las acciones de admin: quien le hizo que a quien. No habia NADA — ni
-# un logger en este modulo — asi que un alta, un borrado o un reset de contrasena no
-# dejaban rastro en ningun lado.
-_audit = logging.getLogger("monitor.audit")
+def list_users(request: Request, u: Optional[int] = None, db: Session = Depends(get_db)):
+    return _users_page(request, db, selected_id=u)
 
 
-def _limpio(v) -> str:
-    return "".join(ch for ch in str(v) if ch.isprintable())[:64]
-
+@router.get("/users/{user_id}/ficha", response_class=HTMLResponse)
+def ficha(request: Request, user_id: int, db: Session = Depends(get_db)):
+    """Fragmento HTMX del panel lateral (la fila de la tabla lo pide con hx-get)."""
+    user = db.get(UserORM, user_id)
+    if not user:
+        return HTMLResponse(f'<div class="msg error">No existe el usuario id={user_id}.</div>',
+                            status_code=404)
+    return _TEMPLATES.TemplateResponse(request, "fragments/user_ficha.html", _ctx_ficha(user))
 
 
 @router.post("/users/add", response_class=HTMLResponse)
@@ -73,8 +110,7 @@ def add_user(
     # Check if exists
     existing = db.query(UserORM).filter(UserORM.username == username).first()
     if existing:
-        users = db.query(UserORM).all()
-        return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "error": f"El usuario {username} ya existe."})
+        return _users_page(request, db, error=f"El usuario {username} ya existe.")
 
     new_user = UserORM(
         username=username,
@@ -88,8 +124,7 @@ def add_user(
                 _limpio(getattr(admin, "username", "?")), _limpio(username),
                 bool(is_admin), _limpio(",".join(tabs or [])), extra={"console": True})
 
-    users = db.query(UserORM).all()
-    return _TEMPLATES.TemplateResponse(request, "pages/users.html", {"users": users, "success": f"Usuario {username} creado exitosamente."})
+    return _users_page(request, db, success=f"Usuario {username} creado exitosamente.")
 
 @router.post("/users/delete/{user_id}", response_class=HTMLResponse)
 def delete_user(request: Request, user_id: int, db: Session = Depends(get_db),
