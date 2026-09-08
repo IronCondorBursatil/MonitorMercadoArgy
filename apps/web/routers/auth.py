@@ -1,6 +1,7 @@
 import logging
 import time
 from collections import defaultdict
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -154,13 +155,18 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     user = db.query(UserORM).filter(UserORM.username == username).first()
     # Verificar SIEMPRE un hash (contra el real o el dummy) → mismo tiempo con/sin usuario.
     ok = verify_password(password, user.hashed_password) if user else verify_password(password, _dummy_hash())
-    if not user or not ok:
+    # Un usuario DESHABILITADO recibe exactamente la misma respuesta que una clave
+    # incorrecta: no se le confirma que la cuenta existe. El motivo va sólo al log.
+    if not user or not ok or not user.is_active:
         _login_attempts[key].append(now)
-        _audit.info("auth login=fail user=%s ip=%s", _limpio(username), _limpio(key[0]),
-                    extra={"console": True})
+        _audit.info("auth login=fail user=%s ip=%s%s", _limpio(username), _limpio(key[0]),
+                    " motivo=deshabilitado" if (user and ok) else "", extra={"console": True})
         return _TEMPLATES.TemplateResponse(request, "pages/login.html", {"error": "Usuario o contraseña incorrectos"})
 
     _login_attempts.pop(key, None)   # login OK → limpiar el contador
+    user.last_login_at = datetime.now()
+    user.last_login_ip = key[0][:64]
+    db.commit()
     _audit.info("auth login=ok user=%s ip=%s", _limpio(user.username), _limpio(key[0]),
                 extra={"console": True})
 

@@ -3,10 +3,15 @@ Spec: docs/superpowers/specs/2026-09-08-manager-usuarios-reseteo-design.md."""
 
 from datetime import date, datetime
 
+import pytest
 import sqlalchemy as sa
+from fastapi.testclient import TestClient
 
-from core.infrastructure.db.engine import SessionLocal
-from core.infrastructure.db.models import UserORM
+from apps.web.app import app
+from apps.web.routers import auth as auth_router
+from core.infrastructure.db.engine import get_engine, SessionLocal
+from core.infrastructure.db.models import Base, UserORM
+from core.security import get_password_hash
 
 
 def test_columnas_nuevas_entran_por_migracion_forward_only(tmp_path):
@@ -142,3 +147,80 @@ def test_resumen():
     from apps.web.users_service import resumen
     r = resumen([_u(), _u(is_active=False), _u(email="a@b.co")])
     assert r == {"total": 3, "activos": 2, "deshabilitados": 1, "sin_email": 2}
+
+
+@pytest.fixture
+def usuarios():
+    """admin + bob (sólo 'bonos') en la DB de test; limiter del login limpio."""
+    Base.metadata.create_all(bind=get_engine())
+    auth_router._login_attempts.clear()
+    with SessionLocal() as s:
+        s.query(UserORM).delete()
+        s.add(UserORM(username="admin", hashed_password=get_password_hash("adminpass1"),
+                      is_admin=True, allowed_tabs=["*"], is_active=True))
+        s.add(UserORM(username="bob", hashed_password=get_password_hash("bobpass1234"),
+                      is_admin=False, allowed_tabs=["bonos"], is_active=True,
+                      email="bob@ejemplo.com", full_name="Bob Pérez"))
+        s.commit()
+    yield
+    with SessionLocal() as s:
+        s.query(UserORM).delete()
+        s.commit()
+    auth_router._login_attempts.clear()
+
+
+def _login(c, user, pw):
+    return c.post("/login", data={"username": user, "password": pw}, follow_redirects=False)
+
+
+def _login_admin(c):
+    r = _login(c, "admin", "adminpass1")
+    assert r.status_code in (302, 303)
+
+
+def _bob_id():
+    with SessionLocal() as s:
+        return s.query(UserORM).filter(UserORM.username == "bob").first().id
+
+
+def _set_bob(**kw):
+    with SessionLocal() as s:
+        bob = s.query(UserORM).filter(UserORM.username == "bob").first()
+        for k, v in kw.items():
+            setattr(bob, k, v)
+        s.commit()
+
+
+# ── is_active ───────────────────────────────────────────────────────────────
+@pytest.mark.noauth
+def test_usuario_deshabilitado_no_entra_y_recibe_el_mismo_mensaje(usuarios):
+    """Mutación: si se saca el chequeo de is_active en routers/auth.login, esto da 302."""
+    _set_bob(is_active=False)
+    with TestClient(app) as c:
+        r_off = _login(c, "bob", "bobpass1234")
+        r_mal = _login(c, "bob", "clave-incorrecta")
+    assert r_off.status_code == 200 and "access_token" not in r_off.cookies
+    assert "Usuario o contraseña incorrectos" in r_off.text
+    assert r_off.text == r_mal.text, "deshabilitado y clave incorrecta tienen que verse IGUAL"
+
+
+@pytest.mark.noauth
+def test_deshabilitar_mata_la_sesion_viva(usuarios):
+    """La cookie sigue siendo válida (misma token_version) pero deps_auth rechaza al
+    inactivo. Mutación: sacar el chequeo en `_get_user_from_token` → 200."""
+    with TestClient(app) as c:
+        assert _login(c, "bob", "bobpass1234").status_code in (302, 303)
+        assert c.get("/", follow_redirects=False).status_code == 200
+        _set_bob(is_active=False)
+        assert c.get("/", follow_redirects=False).status_code == 302
+
+
+@pytest.mark.noauth
+def test_login_exitoso_registra_ultimo_ingreso(usuarios):
+    with TestClient(app) as c:
+        assert _login(c, "bob", "bobpass1234").status_code in (302, 303)
+    with SessionLocal() as s:
+        bob = s.query(UserORM).filter(UserORM.username == "bob").first()
+        assert bob.last_login_at is not None
+        assert (datetime.now() - bob.last_login_at).total_seconds() < 60
+        assert bob.last_login_ip                       # 'testclient' en TestClient
