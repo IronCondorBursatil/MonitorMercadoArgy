@@ -134,6 +134,79 @@ async (page) => {
     check(await link.evaluate(e => e === document.activeElement), 'El modal no devolvió el foco');
     result.push('estados accesibles y modal con foco restaurado');
 
+    // Un refresco ya enviado puede responder mientras se consulta el detalle.
+    let releaseRows;
+    let rowsStarted;
+    let rowsFulfilled;
+    const holdRows = new Promise(resolve => { releaseRows = resolve; });
+    const requestedRows = new Promise(resolve => { rowsStarted = resolve; });
+    const fulfilledRows = new Promise(resolve => { rowsFulfilled = resolve; });
+    const delayedRows = async route => {
+      const response = await route.fetch();
+      rowsStarted(); await holdRows;
+      await route.fulfill({response}); rowsFulfilled();
+    };
+    await page.route('**/panels/bonares/rows*', delayedRows);
+    try {
+      await page.evaluate(() => htmx.trigger(document.getElementById('tbody-bonares'), 'tabvisible'));
+      await requestedRows;
+      await link.focus(); await link.click();
+      await page.locator('#modal .modal-card').waitFor();
+      const opener = await link.elementHandle();
+      await page.evaluate(() => {
+        window.__rowsRequestEnded = false;
+        document.body.addEventListener('htmx:afterRequest', function ended(e) {
+          if (e.detail.elt.id !== 'tbody-bonares') return;
+          window.__rowsRequestEnded = true;
+          document.body.removeEventListener('htmx:afterRequest', ended);
+        });
+      });
+      releaseRows(); await fulfilledRows;
+      await page.waitForFunction(() => window.__rowsRequestEnded);
+      check(await opener.evaluate(e => e.isConnected), 'Un refresco en vuelo quitó el enlace del modal');
+      await page.keyboard.press('Escape');
+      check(await opener.evaluate(e => e === document.activeElement), 'La carrera de SSE perdió el foco');
+    } finally {
+      releaseRows(); await page.unroute('**/panels/bonares/rows*', delayedRows);
+      if (await page.locator('#modal .modal-card').count()) await page.keyboard.press('Escape');
+    }
+    const previousRow = await link.elementHandle();
+    await page.evaluate(() => htmx.trigger(document.getElementById('tbody-bonares'), 'tabvisible'));
+    await page.waitForFunction(e => !e.isConnected, previousRow);
+    result.push('respuesta SSE en vuelo conserva el enlace y el foco del detalle');
+
+    // Cerrar durante T+0 elimina el emisor: limpiar por loadend, no por bubbling DOM.
+    let releaseDetail;
+    let detailStarted;
+    const holdDetail = new Promise(resolve => { releaseDetail = resolve; });
+    const requestedDetail = new Promise(resolve => { detailStarted = resolve; });
+    const delayedDetail = async route => {
+      const response = await route.fetch(); detailStarted();
+      await holdDetail; await route.fulfill({response});
+    };
+    await link.click(); await page.locator('#modal .modal-card').waitFor();
+    await page.route('**/bond/*/detail?lag=0', delayedDetail);
+    try {
+      await page.evaluate(() => {
+        window.__detailEnded = false;
+        document.body.addEventListener('htmx:beforeSend', function sent(e) {
+          if (e.detail.target.id !== 'modal') return;
+          e.detail.xhr.addEventListener('loadend', () => { window.__detailEnded = true; }, {once:true});
+          document.body.removeEventListener('htmx:beforeSend', sent);
+        });
+      });
+      await page.locator('#modal button', {hasText:'T+0'}).click();
+      await requestedDetail;
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => window.__detailEnded);
+      releaseDetail();
+      const rowAfterClose = await link.elementHandle();
+      await page.evaluate(() => htmx.trigger(document.getElementById('tbody-bonares'), 'tabvisible'));
+      await page.waitForFunction(e => !e.isConnected, rowAfterClose);
+      check(await page.locator('#modal').evaluate(e => e.children.length === 0), 'Respuesta tardía reabrió el detalle');
+    } finally { releaseDetail(); await page.unroute('**/bond/*/detail?lag=0', delayedDetail); }
+    result.push('cerrar detalle pendiente aborta su pedido y reanuda los refrescos');
+
     await page.setViewportSize({width:390, height:844});
     await page.locator('.mobile-panel-nav').waitFor({state:'visible'});
     check(await page.locator('.mobile-panel-nav').isVisible(), 'Falta navegación móvil');

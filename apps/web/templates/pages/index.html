@@ -574,6 +574,21 @@
       var modal = document.getElementById("modal");
       if (!modal || !window.A11yModal) return;
       var opened = false;
+      var pendingDetails = new Set();
+      document.body.addEventListener("htmx:beforeSend", function (e) {
+        if (e.detail.target !== modal) return;
+        var xhr = e.detail.xhr;
+        pendingDetails.add(xhr);
+        // El emisor puede desaparecer en un swap: afterRequest ya no burbujea al body.
+        xhr.addEventListener("loadend", function () { pendingDetails.delete(xhr); }, {once: true});
+      });
+      document.body.addEventListener("htmx:beforeSwap", function (e) {
+        var target = e.detail.target;
+        // mrRefreshOK frena nuevos pedidos; éste también frena respuestas ya en vuelo.
+        // El enlace que abrió el detalle debe sobrevivir hasta que recupere el foco.
+        if ((modal.children.length || pendingDetails.size) && target &&
+            target.matches(".monitor-dashboard tbody")) e.detail.shouldSwap = false;
+      });
       new MutationObserver(function () {
         var hasContent = modal.children.length > 0;
         if (hasContent && !opened) {
@@ -581,6 +596,7 @@
           A11yModal.open(modal, { onEsc: function () { modal.innerHTML = ""; } });
         } else if (!hasContent && opened) {
           opened = false;
+          pendingDetails.forEach(function (xhr) { xhr.abort(); });
           A11yModal.close(modal);
         } else if (hasContent && opened && !modal.contains(document.activeElement)) {
           // T+0/T+1 reemplaza el botón enfocado, pero conserva el opener original.

@@ -38,7 +38,8 @@ Auditoría de herramientas: `agents.md §0.4`, sin instalaciones ni cambios de d
 
 - Gate `pwsh scripts/check.ps1`: **3244 passed, 8 skipped, 62 warnings**, 272.84 s,
   `GATE VERDE`. Baseline previo: 3243/8/62; los skips conocidos son 3 `tzset` y 5
-  que requieren Bash en este harness de Windows. CI no corrido en esta rama local.
+  que requieren Bash en este harness de Windows. En el hook de Git (con Bash disponible):
+  3249 passed, 3 skipped. Evidencia de publicación abajo.
 - `node --test tests/js/dashboard_grid.test.cjs`: 10 casos. Se usa el motor real del
   vendor. Al desactivar temporalmente el rechazo de colisiones fallan 3; al restaurarlo
   pasan los 10. Pytest invoca esta suite mediante `tests/test_dashboard_grid.py`.
@@ -59,12 +60,11 @@ Auditoría de herramientas: `agents.md §0.4`, sin instalaciones ni cambios de d
 
 ## Límites y cierre compound
 
-No se desplegó, instaló, commiteó ni pusheó. No se tocaron bases reales, pricing ni el
-bundle generado de `/on`. La navegación a otros módulos se conserva; su diseño interno
+No se modificaron dependencias, bases reales, pricing ni el bundle generado de `/on`.
+La navegación a otros módulos se conserva; su diseño interno
 no se rehízo en esta tarea.
 
-La UI con datos operativos y sesión real en Oracle, CI x86/ARM, hardware Android/iOS,
-Safari, lector de pantalla, teclado virtual, exportación del PNG y zoom real del browser
+Hardware Android/iOS, Safari, lector de pantalla, teclado virtual, exportación del PNG y zoom real del browser
 siguen sin verificar. Las pruebas de ancho no certifican zoom ni conformidad WCAG.
 Canvas accesible, sorting completo por teclado y posible upgrade del motor son trabajo
 posterior según la auditoría, no prestaciones que esta rama afirme haber resuelto.
@@ -73,3 +73,19 @@ Lección materializada: una actualización de datos no cambia la decisión espac
 usuario; el rechazo de colisiones tiene test guardián con mutación. Las regresiones de
 foco y Escape tienen recorridos de browser. Memoria externa: sin cambios; la preferencia
 de celular queda versionada en el contrato UI/UX y apuntada desde `CLAUDE.md`.
+
+## Ajuste durante la publicación (2026-09-09)
+
+Primera publicación: `544e823`, CI de main [34345838481](https://github.com/IronCondorBursatil/MonitorMercadoArgy/actions/runs/34345838481)
+verde en x86/ARM, `deploy.sh` sin upgrade y freeze sin diferencias. Health de Oracle ok.
+
+La verificación autenticada en Oracle encontró una carrera: una respuesta de filas ya
+enviada antes de abrir el detalle podía eliminar el enlace original. `mrRefreshOK` sólo
+evita pedidos nuevos. El guard de `htmx:beforeSwap` ahora conserva las filas mientras
+un pedido de detalle está pendiente o el modal tiene contenido. El test de navegador
+retiene y libera una respuesta para reproducir la desconexión del opener, comprueba
+foco al cerrar y exige que los refrescos se reanuden después. Reproducción previa al
+fix: enlace desconectado y foco perdido; con el fix: recorrido completo aprobado.
+El cierre aborta los pedidos del detalle aún pendientes. La limpieza va en `XHR.loadend`,
+independiente del DOM del botón emisor: el test exige que cerrar durante T+0 no congele
+las filas ni vuelva a abrir el modal con una respuesta tardía.
