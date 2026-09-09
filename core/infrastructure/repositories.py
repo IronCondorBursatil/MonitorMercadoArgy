@@ -365,6 +365,7 @@ def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Ins
     itype = _resolve_instrument_type(row, sheet, raw_ticker)
     m_date = _first_date(row, ("fecha_vencimiento", "fecha vencimiento", "fecha_pago", "maturity"))
     e_date = _first_date(row, ("fecha_emision", "fecha emision"))
+    accrual_start = _first_date(row, ("fecha_inicio_devengamiento",))
 
     # cer base: "cer emision" (legacy) / "cer_emision" (snake) / "cer_base" (TAMAR duals).
     cer_b = _safe_float(_first_present(row, ("cer emision", "cer_emision", "cer_base")), default=1.0)
@@ -411,6 +412,7 @@ def build_instrument(row, sheet: str, cashflows: List[Cashflow]) -> Optional[Ins
     return Instrument(
         ticker=raw_ticker, short_name=short, instrument_type=itype,
         maturity_date=m_date, emission_date=e_date, cashflows=cashflows,
+        accrual_start_date=accrual_start,
         cer_base=cer_b, cer_lag=lag_val, category=category,
         floor_rate_monthly=floor, spread_rate=spread, cer_spread=cer_spread_val,
         payment_frequency=freq, day_count=day_count, ley_aplicable=ley or None,

@@ -18,7 +18,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, text
 
 from core.domain.currency import ccy_from_suffix
 from core.domain.models import Cashflow
@@ -709,12 +709,17 @@ def _find_bond_rows(s, tickers) -> List[InstrumentORM]:
 
 
 def save_instrument(sheet: str, fields: Dict[str, Any],
-                    cashflows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                    cashflows: Optional[List[Dict[str, Any]]] = None,
+                    *, create_only: bool = False) -> Dict[str, Any]:
     """Alta/edición de un instrumento (1 fila por bono, hasta 3 tickers por moneda).
 
     Lee los tickers del form (ticker_ars/ticker_mep/ticker_ccl, o `ticker` único)
     → escribe UNA fila con primario + ticker_mep/ticker_ccl, consolidando cualquier
     fila-por-pata pre-existente. Todo en una transacción (fail-fast).
+
+    `create_only=True`: alta sin reemplazos. Reserva la escritura SQLite ANTES de
+    consultar ticker/ISIN, de modo que otro escritor no pueda insertar una identidad
+    entre el chequeo y el alta. Una coincidencia aborta antes de cualquier DELETE.
 
     WRITE-PATH DETERMINISTA (Fase 9). El schedule que se persiste sale de
     `cashflows` (lo que mostró el preview) o del bono que ya estaba; **acá NO se
@@ -770,6 +775,18 @@ def save_instrument(sheet: str, fields: Dict[str, Any],
 
     init_db()
     with SessionLocal.begin() as s:
+        if create_only:
+            s.execute(text("BEGIN IMMEDIATE"))
+            identities = [func.upper(func.trim(column)).in_(tickers + all_tickers)
+                          for column in (InstrumentORM.ticker, InstrumentORM.ticker_mep,
+                                         InstrumentORM.ticker_ccl)]
+            isin = next((normalized[k] for k in ("isin", "codigoisin", "codigo_isin")
+                         if k in normalized), None)
+            if isin:
+                identities.append(func.upper(func.trim(InstrumentORM.isin)) == str(isin).strip().upper())
+            conflict = s.execute(select(InstrumentORM.ticker).where(or_(*identities)).limit(1)).scalar()
+            if conflict:
+                raise ValueError(f"coincidencia existente: {conflict}; create_only no sobrescribe")
         existing = _find_bond_rows(s, tickers + all_tickers)
         action = "updated" if existing else "created"
 

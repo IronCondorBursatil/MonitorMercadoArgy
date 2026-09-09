@@ -71,6 +71,10 @@ class Instrument(BaseModel):
     instrument_type: str  # CER, LECAP, BONAR, etc.
     maturity_date: Optional[_date] = None
     emission_date: Optional[_date] = None  # Needed by TAMAR engine for accrual factor
+    # Inicio contractual del período del PRIMER cashflow disponible. Se guarda en
+    # raw_fields; distingue un primer cupón largo de una historia recortada, sin
+    # sustituir la emisión legal. None conserva la inferencia histórica por frecuencia.
+    accrual_start_date: Optional[_date] = None
     cashflows: tuple[Cashflow, ...] = ()
     cer_base: Optional[float] = None
     cer_lag: int = 10  # Default 10 business days for AR CER bonds

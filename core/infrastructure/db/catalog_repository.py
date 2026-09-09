@@ -475,9 +475,12 @@ def _fx_base(raw) -> Optional[float]:
 
 
 def _orm_to_domain(orm: InstrumentORM) -> Instrument:
+    from core.infrastructure.repositories import _first_date
+
     return Instrument(
         ticker=orm.ticker, short_name=orm.short_name, instrument_type=orm.instrument_type,
         maturity_date=orm.maturity_date, emission_date=orm.emission_date,
+        accrual_start_date=_first_date(orm.raw_fields or {}, ("fecha_inicio_devengamiento",)),
         # FILTRO DEL ANCLA — único punto por el que los CashflowORM entran al dominio.
         # Una fila `es_ancla` es el vencimiento declarado de un instrumento de payoff
         # ANALÍTICO (TAMAR PURO/DUAL/DUAL_CER_TAMAR): existe en la DB para que el bono

@@ -198,12 +198,22 @@ Tres caminos, en este orden (`_xirr_from_years`, `:151-209`):
     (`_following_business_day`, `:101-112`); tasa diaria = cupón anterior / período PROGRAMADO
     (robusto ante «long last coupon»); primer período → prorrateo del próximo cupón sobre
     los días reales (`:146-174`).
+    La tasa diaria derivada del cupón pasado se escala al capital residual después de
+    las amortizaciones ocurridas desde ese cupón, sin asumir un nominal original de 100.
+    Si sólo hay un cupón pasado y la emisión es anterior a dos períodos de ese cupón,
+    se infiere su inicio regular: no se reparte un cupón semestral sobre años de historia
+    omitida. Guardianes: `tests/test_accrued_amortization.py`.
 - `period_bounds(inst, ref)` (`:33-63`), el período corriente: (a) hay flujo pasado → el
-  último; (b) sin flujo pasado y emisión dentro de 2 períodos del próximo cupón → arranca en
-  la EMISIÓN (primer cupón regular, corto o largo — CS50: 9 meses = 1,5 períodos); (c) si no,
+  último; (b) sin flujo pasado, un `accrual_start_date` explícito anterior al primer flujo
+  manda sobre la inferencia (raw `fecha_inicio_devengamiento`, sin cambiar emisión legal);
+  (c) sin ese dato y emisión dentro de 2 períodos del próximo cupón → arranca en
+  la EMISIÓN (primer cupón regular, corto o largo — CS50: 9 meses = 1,5 períodos); (d) si no,
   es un soberano mid-amort con flujos pasados recortados (AL29D/AL30D/GD30D) →
   `prev = próximo − 12/freq meses` con `relativedelta` (aritmética calendario exacta).
   Refutado: caer siempre a `emission_date` (AL29D daba 2.082 días en vez de 130).
+  El inicio explícito también define el período del primer cupón histórico disponible.
+  Así un primer cupón de 9 meses con frecuencia trimestral (ZPC5O) no se confunde con
+  historia recortada; los catálogos sin ese dato mantienen la salvaguarda existente.
 - `days_since_last_coupon` (`:285-295`) usa el mismo inicio que el accrued (30/360 desde el
   corte programado; ACT desde el pago real). `residual_nominal` (`:298-309`) = Σ amortizaciones
   futuras, fallback `100 − amortizado`. `current_yield` (`:312-345`) = cupón anual
@@ -569,13 +579,16 @@ golden, es una foto del motor.
 | Dólar-linked soberano (TIR en USD, USD implícito) | **2** | D31M7, D31L6 | calculadora de referencia @ mayorista 1446,1064, settle 2026-06-10 | pendiente | `tests/test_hard_dollar_fx.py:157-193` |
 | LECAP (payoff sintetizado) | **2** | S29Y6 (132,0438), S15S6 (107,21) | referencia oficial (TNA 21,09 % de S29Y6) | pendiente | `tests/test_cashflow_synth.py:46-78` |
 | Calendario y `cer_base` contra BCRA | **6 fechas + 2 cer_base** | 4 feriados + 1 fecha espuria + 1 liquidación T+1; TZXS7/TZXS8/TZXM8 (723.06 → 2026-03-13), X29Y6/TZXA7 (651.89806 → 2025-11-12) | argentinadatos / Boletín Oficial; BCRA variable 30 | declarada en el docstring | `tests/test_holiday_calendar.py` |
-| **CER (TIR real / paridad / V.Téc / MD)** | **1 corte + 2 intradía** | TX28 @ 1.719 (cierre 24hs BYMA 2026-09-03): TIR 8,82 % · paridad 93,14 % · MD 1,08 → motor 8,822 % / 93,140 % / 1,081. Secundarios 2026-09-07: Bonistas @1738 (8,11 % / 93,89 % / VT 1851,03) y Docta @1737,50 | Banco Hipotecario, Informe Diario (PDF público); Bonistas.com; Docta | **declarada** en el docstring y en `tests/fixtures/tx28_2026-09-03.json` (valores textuales, URLs, serie CER BCRA var 30, fecha de captura, qué NO declara cada fuente) | `tests/test_golden_tx28.py` (17 tests; discrimina T+0, lag 0, day-count y CER ±1 %) |
+| **CER (TIR real / paridad / V.Téc / MD)** | **1 corte + 2 intradía** | TX28 @ 1.719 (cierre 24hs BYMA 2026-09-03): TIR 8,82 % · paridad 93,14 % · MD 1,08 → motor 8,822 % / 93,140 % / 1,081. Secundarios 2026-09-07: Bonistas @1738 (8,11 % / 93,89 % / VT 1851,03) y Docta @1737,50 | Banco Hipotecario, Informe Diario (PDF público); Bonistas.com; Docta | **declarada** en el docstring y en `tests/fixtures/tx28_2026-09-03.json` (valores textuales, URLs, serie CER BCRA var 30, fecha de captura, qué NO declara cada fuente) | `tests/test_golden_tx28.py` (17 tests; settlement/CER contra fuente externa, day-count contra corridos contractuales exactos) |
 | **TAMAR / DUAL / DUAL_CER_TAMAR / DUAL_DL_TAMAR** | **0** ejecutables | TTJ26: precio 158,20 → V.Téc 146,39 / payback 164,32 / TIR EA 39,06 %. `DUAL_DL_TAMAR` (TMVE8): **sin golden** — sólo la escala del precio confirmada con Data912 el 2026-09-08 (139.680) | IAMC | solo docstring `core/domain/pricing/tamar.py:3-5` | — |
 
 - **BONCER cerrado (2026-09-07)**: el golden de TX28 confirma que la TIR publicada por el
   mercado para un CER es **real sobre CER y efectiva anual**, y que el V.Téc usa el CER de
-  10 hábiles antes de la liquidación **T+1** con day-count 30/360 (T+0 → 8,735 %; sin lag →
-  9,733 %; ACT/365 → paridad 93,00 %: todos fuera de tolerancia). TX26 no sirve: vence
+  10 hábiles antes de la liquidación **T+1** (T+0 → 8,735 %; sin lag → 9,733 %: fuera
+  de tolerancia). Tras corregir corridos ACT por amortización, el redondeo publicado
+  no distingue el day-count: ACT da paridad 93,1375 %. La convención 30/360 se protege
+  por el cálculo contractual exacto de corridos, separado del golden externo
+  (`test_daycount_act_no_reproduce_el_accrued_contractual`). TX26 no sirve: vence
   2026-11-09 con un solo flujo.
 - **TAMAR sigue pendiente**: TTJ26 venció el 2026-06-30 y el ancla IAMC del docstring no se
   puede reproducir sin la serie TAMAR/CER de ese día. Sustitutos vivos con corte del mismo

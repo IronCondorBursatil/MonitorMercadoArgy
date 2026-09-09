@@ -31,10 +31,14 @@ QUÉ CONVENCIÓN CUADRA (probado antes de fijar tolerancias, ver la sonda en el 
   base`. Motor: TIR 8,822 % · paridad 93,140 % · MD 1,081 · V.Téc 1845,62 (a 0,2 bp,
   0,000 pp, 0,001 y 0,01 ARS de la fuente). La TIR del motor es REAL (sobre CER) y
   efectiva anual: coincide con el 8,82 % publicado, o sea la fuente también publica TEA
-  real. Las alternativas quedan AFUERA de la tolerancia y el test lo fija
-  (`test_el_corte_discrimina_las_convenciones`): T+0 → 8,73 %; `cer_lag=0` → 9,73 %;
-  CER +1 % → 9,79 %; ACT/365.25 → paridad 93,00 % (el accrued 30/360 = 0,359375 vs 0,4326
-  de ACT: la paridad discrimina el day-count aunque la TIR casi no —8,83 %—).
+  real. Las alternativas de settlement/CER quedan AFUERA de la tolerancia y el test
+  lo fija (`test_el_corte_discrimina_las_convenciones`): T+0 → 8,73 %; `cer_lag=0` →
+  9,73 %; CER +1 % → 9,79 %. Con el accrued ACT ajustado al capital residual, el
+  redondeo de la fuente NO distingue ACT/365 ni ACT/365.25 de 30/360: sus TIR difieren
+  del 8,82 % publicado sólo 0,49 y 1,12 bp, dentro de la tolerancia canónica de 1,5 bp.
+  El day-count se protege por separado contra el accrued CONTRACTUAL cerrado:
+  50 × 2,25 % × 115/360 = 0,359375; ACT da 0,36049723756906077. No se atribuye esa
+  precisión a Banco Hipotecario ni se cambia la tolerancia del golden externo.
 
 TOLERANCIAS (la fuente redondea a 2 decimales):
   TIR ±1,5 bp (canónica de golden; el redondeo a 0,01 % vale ±0,5 bp, el motor está a
@@ -248,14 +252,30 @@ def test_puntos_secundarios_2026_09_07(clave, tol_vt):
     ("cer_lag=0 (CER del settle, sin los 10 hábiles)", dict(cer_lag=0), "tir", 5e-3),
     ("CER +1 %", dict(idx=_CerCongelado(scale=1.01)), "tir", 5e-3),
     ("CER −1 %", dict(idx=_CerCongelado(scale=0.99)), "tir", 5e-3),
-    ("day-count ACT/365.25 en vez de 30/360", dict(day_count="ACT/365.25"), "paridad_popup", 1e-3),
-    ("day-count ACT/365 en vez de 30/360", dict(day_count="ACT/365"), "paridad_popup", 1e-3),
 ])
 def test_el_corte_discrimina_las_convenciones(etiqueta, kwargs, metrica, min_gap):
-    """Cada alternativa plausible cae AFUERA de la tolerancia del golden: si alguna
+    """Cada alternativa de settlement/CER cae AFUERA de la tolerancia del golden: si alguna
     entrara, el golden no distinguiría esa convención y sería decorativo."""
     ref = _BH["tir"] if metrica == "tir" else _BH["paridad"]
     tol = _TOL_TIR if metrica == "tir" else _TOL_PARIDAD
     valor = _motor(_RUEDA, _PRECIO, **kwargs)[metrica]
     assert abs(valor - ref) > min_gap, f"{etiqueta}: {valor} vs {ref}"
     assert valor != pytest.approx(ref, abs=tol), etiqueta
+
+
+@pytest.mark.parametrize("day_count", ["ACT/365.25", "ACT/365"])
+def test_daycount_act_no_reproduce_el_accrued_contractual(day_count):
+    """El contrato 30/360 discrimina ACT aunque el redondeo externo ya no lo haga.
+
+    Residual 50, tasa anual 2,25% y 115 días 30/360 => 0,359375 por 100 VN.
+    La tolerancia 1e-12 es la misma de la descomposición contractual del golden;
+    no representa la precisión de la paridad publicada por Banco Hipotecario.
+    """
+    correcto = _motor(_RUEDA, _PRECIO)
+    contractual = 0.359375  # 50 * .0225 * 115 / 360, independiente del motor.
+    assert metrics.accrued_interest(correcto["inst"], correcto["settle"]) == pytest.approx(
+        contractual, abs=1e-12)
+    alternativo = _motor(_RUEDA, _PRECIO, day_count=day_count)
+    accrued_act = metrics.accrued_interest(alternativo["inst"], alternativo["settle"])
+    assert abs(accrued_act - contractual) > 1e-3, day_count
+    assert accrued_act != pytest.approx(contractual, abs=1e-12), day_count

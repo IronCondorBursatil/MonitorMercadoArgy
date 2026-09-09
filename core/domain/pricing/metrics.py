@@ -32,8 +32,8 @@ _MISS = object()
 
 def _period_bounds_uncached(instrument, ref_date: date) -> Optional[tuple]:
     """(period_start, next_cf) del cupón corriente. None si no hay cupón futuro
-    con interés > 0. Maneja soberanos mid-amort cuyo Excel sólo trae flows
-    futuros (infiere el período desde freq, no desde emisión)."""
+    con interés > 0. Sin pasado, el inicio explícito manda; si falta, maneja
+    historia recortada infiriendo el período desde freq, no desde emisión."""
     if not instrument or not instrument.cashflows:
         return None
     cfs = instrument.cashflows  # cronológico (invariante del modelo)
@@ -49,6 +49,9 @@ def _period_bounds_uncached(instrument, ref_date: date) -> Optional[tuple]:
     next_cf = future[0]
     if past:
         return past[-1].date, next_cf
+    explicit_start = getattr(instrument, "accrual_start_date", None)
+    if explicit_start and explicit_start < next_cf.date:
+        return explicit_start, next_cf
     freq = getattr(instrument, "payment_frequency", 2) or 2
     months_between = max(12 // freq, 1)
     inferred_prev = next_cf.date - relativedelta(months=months_between)
@@ -120,7 +123,7 @@ def _accrued_interest_uncached(instrument, ref_date: date) -> float:
     - 30/360: usa days_30_360 para period_days y elapsed (convención BYMA).
     - ACT/365 con cupón pasado disponible: deriva la tasa diaria del cupón anterior
       (robusto ante "long last coupon" donde el next_cf.interest cubre menos días
-      que el period_days real).
+      que el period_days real), ajustada al capital posterior a amortizaciones.
     - ACT/365 sin cupón pasado (primer período): proratea next_cf sobre period_days.
 
     Los días corridos se cuentan desde la fecha de PAGO real del cupón anterior (día
@@ -160,10 +163,35 @@ def _accrued_interest_uncached(instrument, ref_date: date) -> float:
         prev_cf = past_int[-1]
         idx = next((i for i, c in enumerate(cfs) if c.date == prev_cf.date), None)
         if idx is not None:
-            prev_start = cfs[idx - 1].date if idx > 0 else (instrument.emission_date or prev_cf.date)
+            if idx > 0:
+                prev_start = cfs[idx - 1].date
+            else:
+                # Primer cupón DISPONIBLE no implica primer cupón desde emisión.
+                # Misma salvaguarda que period_bounds: conservar el stub inicial
+                # si emisión está cerca; historia recortada -> período regular.
+                freq = getattr(instrument, "payment_frequency", 2) or 2
+                months_between = max(12 // freq, 1)
+                emis = instrument.emission_date
+                earliest_issue = prev_cf.date - relativedelta(months=2 * months_between)
+                prev_start = (emis if emis and earliest_issue <= emis < prev_cf.date
+                              else prev_cf.date - relativedelta(months=months_between))
+                # Un inicio contractual explícito prevalece sobre la heurística;
+                # puede ser un stub largo o el primer período de historia recortada.
+                explicit_start = getattr(instrument, "accrual_start_date", None)
+                if explicit_start and explicit_start < prev_cf.date:
+                    prev_start = explicit_start
             past_period = (prev_cf.date - prev_start).days
             if past_period > 0:
                 daily_rate = prev_cf.interest / past_period
+                # El cupón anterior remunera el capital ANTES de su amortización.
+                # Reconstruir ambos saldos desde los pagos conocidos, sin asumir
+                # VN100: también sirve con historia parcial y filas separadas.
+                remaining = sum(c.amortization for c in cfs if c.date > ref_date)
+                repaid = sum(c.amortization for c in cfs
+                             if prev_cf.date <= c.date <= ref_date)
+                principal_before = remaining + repaid
+                if principal_before > 0:
+                    daily_rate *= remaining / principal_before
                 max_elapsed = (next_cf.date - eff_start).days
                 return daily_rate * min(elapsed, max_elapsed)
 
@@ -199,8 +227,8 @@ def _accrued_interest_uncached(instrument, ref_date: date) -> float:
 #     - `instrument_type` → `is_bopreal` → `is_30_360` y `day_count_enum`
 #       (`recompute_as_tamar_puro` clona BOPREAL/DUAL → "PURO": cambia el descuento)
 #     - `day_count`       → convención de descuento
-#     - `payment_frequency`, `emission_date`, `maturity_date` → inferencia de período
-#       y extensión de stub final
+#     - `payment_frequency`, `emission_date`, `maturity_date`, `accrual_start_date`
+#       → inicio explícito / inferencia de período y extensión de stub final
 #     - `len(cashflows)`  → NINGÚN `model_copy(update=...)` del repo reemplaza los
 #       cashflows (los tres sitios actualizan `instrument_type`+`floor_rate_monthly`
 #       o `ticker`). Si algún día uno lo hiciera, hay que meter la identidad del
@@ -230,7 +258,8 @@ def _memo_cell(instrument, ref_date: date, tag: int):
         return None, None
     key = (tag, ref_date, instrument.instrument_type, instrument.day_count,
            instrument.payment_frequency, instrument.emission_date,
-           instrument.maturity_date, len(instrument.cashflows))
+           instrument.maturity_date, getattr(instrument, "accrual_start_date", None),
+           len(instrument.cashflows))
     return memo, key
 
 
