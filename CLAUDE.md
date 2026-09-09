@@ -22,6 +22,9 @@ Matba/Rofex, FX dolarapi, FCI CAFCI + ArgentinaDatos, calificaciones FIX SCR.
 
 ## Datos reales: sólo en Oracle (decisión de David, 2026-09-08)
 
+**Datos de bases de datos: en Oracle. Código, documentación, scripts y demás archivos
+versionables del proyecto: en el repositorio Git.** No guardar datos de bases en Git.
+
 **La única base real del Monitor es la del servidor Oracle.** Todos los datos operativos
 del Monitor (catálogo, usuarios, cartera, históricos y demás stores) y sus respaldos
 deben permanecer únicamente en ese servidor. Ubicación y acceso: `deploy/README-ops.md`.
