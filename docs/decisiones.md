@@ -84,6 +84,12 @@ que corresponde. Ver `agents.md › §0.8 Fase 0`.
 - Fases: F1 Manager + schema + login (esta rama) · F2 tokens + `/reset/{token}` + link copiable ·
   F3 mailer + `/forgot`.
 
+## D6 · Ubicación única de datos reales (David, 2026-09-08)
+
+Decisión adoptada y obligatoria para cualquier IA. La regla y su alcance viven en
+[`CLAUDE.md › Datos reales: sólo en Oracle`](../CLAUDE.md#datos-reales-sólo-en-oracle-decisión-de-david-2026-09-08).
+Los planes previos de bases reales locales y copias a la laptop quedan superados.
+
 ## Decisiones ya tomadas durante la auditoría (2026-09-07)
 
 - Ramas apiladas in-place en vez de worktree, una por fase (`fase-0-baseline` →

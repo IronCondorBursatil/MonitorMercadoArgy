@@ -75,6 +75,10 @@ Si algo falla, no toques nada: a los 5 minutos la red restaura la regla vieja.
 
 ## Backups
 
+La política obligatoria de ubicación de datos y respaldos está en
+[`CLAUDE.md › Datos reales: sólo en Oracle`](../CLAUDE.md#datos-reales-sólo-en-oracle-decisión-de-david-2026-09-08).
+Los comandos de esta sección se ejecutan en el servidor; no descargar sus bases ni bundles.
+
 `backup_db` toma un snapshot online de `catalog.db` (1×/día al arrancar y en cada
 vuelta horaria del `_price_history_loop`) en `/var/lib/monitor/backups`, rotando 7.
 
@@ -104,11 +108,10 @@ MONITOR_DB_DIR=/var/lib/monitor venv/bin/python scripts/db_fingerprint.py > /tmp
 diff <(tail -n +2 /tmp/vivo.txt) <(tail -n +2 /tmp/copia.txt)   # sólo max(day) puede diferir
 ```
 
-**Lo que sigue pendiente** (plan §1.3) es sacar el bundle DE LA CAJA: hoy queda en el
-mismo disco, así que cubre el borrado accidental y la corrupción, pero **no** el
-reclamo de la instancia. Falta el destino en Object Storage (bucket + dynamic group +
-policy sin DELETE) y la copia periódica a la laptop. Y el bundle **no está cifrado**:
-si va a un destino ajeno, `age -r <clave-pública>` antes de subirlo.
+El bundle queda en el mismo servidor: cubre borrado accidental y corrupción, pero
+no la pérdida de la instancia. La propuesta histórica de copiarlo a la laptop o a
+Object Storage queda retirada por la decisión de ubicación de datos citada arriba.
+El nombre del directorio `offsite/` no implica que exista una copia fuera del servidor.
 
 ## Diagnóstico
 

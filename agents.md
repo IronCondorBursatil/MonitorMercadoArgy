@@ -12,6 +12,11 @@ actual, en `CLAUDE.md` y `docs/`.
 **Orden de autoridad**: `CLAUDE.md` › `agents.md §0` › `docs/*`. Un hecho vive en UN solo
 archivo; los demás apuntan (§0.1.4).
 
+**Regla obligatoria para toda IA (David, 2026-09-08): Oracle es la única base real del
+Monitor.** Antes de leer, cargar, copiar o respaldar datos, aplicar
+[`CLAUDE.md › Datos reales: sólo en Oracle`](CLAUDE.md#datos-reales-sólo-en-oracle-decisión-de-david-2026-09-08).
+Las menciones históricas a bases reales locales no autorizan su uso ni su creación.
+
 **Historia**: los changelogs v6.1–v7.2, el dashboard viejo (SPA `app.js` + layout
 arrastrable), los endpoints `/api/*`, CACHE, TROUBLESHOOTING y el resto del documento viejo
 no se perdieron: viven en

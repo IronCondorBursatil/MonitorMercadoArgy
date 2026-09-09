@@ -20,17 +20,41 @@ Matba/Rofex, FX dolarapi, FCI CAFCI + ArgentinaDatos, calificaciones FIX SCR.
 > resto de `agents.md`. Las convenciones financieras (CER NT8/2024, TAMAR, BEI, day-counts,
 > MD BYMA, float-only y tolerancias) viven en `docs/convenciones-financieras.md`.
 
+## Datos reales: sólo en Oracle (decisión de David, 2026-09-08)
+
+**La única base real del Monitor es la del servidor Oracle.** Todos los datos operativos
+del Monitor (catálogo, usuarios, cartera, históricos y demás stores) y sus respaldos
+deben permanecer únicamente en ese servidor. Ubicación y acceso: `deploy/README-ops.md`.
+Esta regla alcanza a cualquier IA, script y flujo de trabajo del proyecto.
+
+- Una solicitud de alta, actualización o consulta de «la base» se refiere a Oracle.
+  Las escrituras se hacen allí por ABM o migración explícita, con los guards y respaldos
+  obligatorios. Nunca dar por terminada una carga hecha en la laptop.
+- No crear, descargar, sincronizar ni mantener bases reales, réplicas o backups del
+  Monitor en la laptop, OneDrive, worktrees, scratchpads, CI u otro destino externo.
+  El desarrollo local sólo admite bases temporales aisladas con datos sintéticos o
+  fixtures de prueba; jamás una copia de una base operativa.
+- Las bases locales heredadas no son autoridad. Antes de retirarlas, comparar y
+  preservar en Oracle cualquier dato único válido; no sobrescribir Oracle con ellas
+  ni borrarlas a ciegas. No extraer secretos durante esa revisión.
+- Una excepción requiere una instrucción posterior explícita de David. Los ejemplos
+  o planes históricos que usen bases reales locales quedan superados por esta regla.
+
 ## Cómo correr
+
+Antes de un arranque manual local, aislar **todos** los stores en un directorio temporal
+con datos de prueba y verificar que ningún override apunte a una base heredada.
+La suite ya establece su sandbox en `tests/conftest.py`. La inicialización real del
+administrador se realiza en Oracle, según `docs/despliegue.md`.
 
 ```powershell
 # Python 3.12 del sistema: `py -3.12` = %LOCALAPPDATA%\Programs\Python\Python312. Sin venv en el proyecto.
 py -3.12 -m pip install -r requirements.lock -r requirements-dev.txt   # laptop: lock + dev
-$env:MONITOR_ADMIN_PASSWORD='...'; py -3.12 scripts/init_admin.py     # SOLO la 1ª vez (docs/despliegue.md)
-py -3.12 run.py                          # uvicorn → http://localhost:8000
+py -3.12 run.py                          # sólo con una DB temporal de pruebas aislada
 py -3.12 -m pytest tests/ -q             # suite completa (fecha fija: tests/_clock.py)
 pwsh scripts/check.ps1                   # GATE local: ruff + pytest (-Fast = -x)
 pwsh scripts/install-hooks.ps1           # pre-push que corre el gate (una vez por clon)
-py -3.12 scripts/ingest_master.py        # Excel → SQLite (solo si editaste el master a mano)
+# Altas y migraciones reales: en Oracle, según deploy/README-ops.md.
 ```
 
 Skills del proyecto (`.claude/skills/`): `/gate` (ruff + pytest y cómo leerlo), `/smoke`
@@ -38,7 +62,8 @@ Skills del proyecto (`.claude/skills/`): `/gate` (ruff + pytest y cómo leerlo),
 `/compound` (cierre de fase), `/deploy` y `/deps-refresh` (solo los dispara el usuario).
 CI: `.github/workflows/gate.yml` corre `scripts/check.sh` en x86 **y** ARM (~2,7 min) en cada
 push; `deps-refresh.yml` semanal; `staleness.yml` vigila `/api/health` de prod cada hora.
-Las `.db` viven en `settings.db_dir` (`%LOCALAPPDATA%\monitor`), fuera del árbol de git.
+La política de ubicación de las `.db` está en «Datos reales: sólo en Oracle».
+El default local de `settings.db_dir` no autoriza una base operativa en la laptop.
 Qué instala cada entorno (lock en la laptop, `requirements.txt` en prod y CI): `agents.md §0.3`.
 
 ## Invariantes (no romper)
