@@ -54,6 +54,13 @@ realtime porque duplicaba el push del SSE— y **todos** los triggers van gatead
 poll del badge `/health/badge`, no los paneles. El detalle es un modal
 (`/bond/{t}/detail` + `/bond/{t}/metrics`).
 
+La portada usa `static/js/dashboard_grid.js` para colisiones y el borrador
+Aplicar/Cancelar; las filas y filtros no ajustan la geometría. El estado del navegador
+se migra a `monitor-dashboard-state-v1` sin borrar las claves anteriores.
+`static/js/dashboard_mobile.js` navega los mismos nodos SSR en pantallas estrechas;
+`static/css/dashboard.css` adapta navegación, tablas y modales sólo en la portada.
+Las reglas de diseño y pruebas para toda UI están en [ui-ux.md](ui-ux.md).
+
 ## Paneles FCI y ON (las dos excepciones al SSR)
 
 Sirven una página que carga una app cliente vanilla y ésta hace `fetch` de su dataset JSON.

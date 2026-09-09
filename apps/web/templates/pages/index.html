@@ -2,6 +2,9 @@
 {% block head %}
 <link rel="stylesheet" href="/static/vendor/gridstack/gridstack.min.css">
 <script src="/static/vendor/gridstack/gridstack-all.js"></script>
+<link rel="stylesheet" href="/static/css/dashboard.css">
+<script src="/static/js/dashboard_grid.js"></script>
+<script src="/static/js/dashboard_mobile.js" defer></script>
 {# vendor LOCAL (ver base.html): antes unpkg/jsdelivr — CDN caído = página en blanco #}
 <script src="/static/vendor/htmx-ext-sse.js"></script>
 <script src="/static/vendor/chart.umd.min.js"></script>
@@ -24,7 +27,46 @@
    El filtro `[mrRefreshOK(this)]` (base.html) corta el refresco cuando la pestaña
    está en segundo plano o el panel está cerrado con la X: no se piden filas que
    nadie va a mirar. `tabvisible` re-sincroniza al volver a la pestaña. #}
-<div class="grid-stack" data-col="{{ COL }}" data-cell="{{ CELL }}" data-margin="{{ MARGIN }}"
+<section class="layout-edit-bar" id="layout-edit-bar" aria-label="Editar distribución" hidden>
+  <strong>Editando distribución</strong>
+  <span id="layout-edit-status" role="status" aria-live="polite"></span>
+  <div class="layout-edit-actions">
+    <button type="button" id="layout-cancel">Cancelar</button>
+    <button type="button" id="layout-default">Restaurar distribución</button>
+    <button type="button" id="layout-apply">Aplicar</button>
+  </div>
+  <details class="layout-controls">
+    <summary>Mover y cambiar tamaño sin arrastrar</summary>
+    <label>Panel <select id="layout-panel">
+      {% for p in panels %}<option value="{{ p.id }}">{{ p.title }}</option>{% endfor %}
+    </select></label>
+    <span class="layout-step-buttons">
+      <button type="button" data-layout-step="left" aria-label="Mover a la izquierda">←</button>
+      <button type="button" data-layout-step="right" aria-label="Mover a la derecha">→</button>
+      <button type="button" data-layout-step="up" aria-label="Mover hacia arriba">↑</button>
+      <button type="button" data-layout-step="down" aria-label="Mover hacia abajo">↓</button>
+      <button type="button" data-layout-step="narrow">Menos ancho</button>
+      <button type="button" data-layout-step="wide">Más ancho</button>
+      <button type="button" data-layout-step="short">Menos alto</button>
+      <button type="button" data-layout-step="tall">Más alto</button>
+    </span>
+    <small>También podés usar las flechas en el botón de mover de cada panel. Shift + flechas cambia su tamaño.</small>
+  </details>
+  <div class="layout-visibility" aria-label="Paneles visibles"></div>
+</section>
+<nav class="mobile-panel-nav" aria-label="Navegar paneles" hidden>
+  <label for="mobile-panel-select">Panel <span id="mobile-panel-count"></span></label>
+  <div class="mobile-panel-picker">
+    <button type="button" id="mobile-panel-prev" aria-label="Panel anterior">‹</button>
+    <select id="mobile-panel-select" aria-label="Elegir panel">
+      {% for p in panels %}<option value="{{ p.id }}">{{ p.title }}</option>{% endfor %}
+    </select>
+    <button type="button" id="mobile-panel-next" aria-label="Panel siguiente">›</button>
+    <button type="button" id="mobile-panel-edit">Editar</button>
+  </div>
+</nav>
+<p class="mobile-panel-empty" hidden>No hay paneles visibles. Usá Editar para elegir cuáles mostrar.</p>
+<div class="grid-stack monitor-dashboard" data-col="{{ COL }}" data-cell="{{ CELL }}" data-margin="{{ MARGIN }}"
      hx-ext="sse" sse-connect="/stream">
   {% for p in panels %}
   <div class="grid-stack-item" gs-id="{{ p.id }}"
@@ -32,7 +74,9 @@
        gs-min-w="{{ COL // 7 }}" gs-min-h="8">
     <div class="grid-stack-item-content panel" data-id="{{ p.id }}">
       <div class="panel-head">
-        <span class="ph-title">{{ p.title }}</span>
+        <button type="button" class="layout-drag-handle" aria-label="Mover {{ p.title }}"
+                title="Mover panel: flechas; Shift + flechas para cambiar tamaño">⠿</button>
+        <span class="ph-title" title="{{ p.title }}">{{ p.title }}</span>
         <span class="ph-tools">
           {% if p.chartable %}<button type="button" class="ph-btn" data-act="chart">Gráfico</button>{% endif %}
           <button type="button" class="ph-btn ph-cam" data-act="shot" title="Compartir (imagen cuadrada p/ WhatsApp)" aria-label="Compartir imagen del panel">
@@ -42,11 +86,11 @@
             </svg>
           </button>
           <span class="ph-cfg">
-            <button type="button" class="ph-btn" data-act="cfg">Config</button>
+            <button type="button" class="ph-btn" data-act="cfg" aria-expanded="false" aria-controls="col-menu-{{ p.id }}">Config</button>
             {# Desplegable: mostrar/ocultar columnas (mismo estilo que el CONFIG global). #}
-            <div class="col-menu">
+            <div class="col-menu" id="col-menu-{{ p.id }}">
               {% for c in p.columns %}
-              <button type="button" class="cfg-item on" data-col="{{ loop.index }}">{{ c.label }}</button>
+              <button type="button" class="cfg-item on" aria-pressed="true" data-col="{{ loop.index }}">{{ c.label }}</button>
               {% endfor %}
             </div>
           </span>
@@ -72,12 +116,13 @@
                   title="Plazo de liquidación — clic para alternar 24hs ↔ CI">24hs</button>
           {% endif %}
           <button type="button" class="ph-btn ph-x" data-act="close" title="Cerrar panel">✕</button>
+          <button type="button" class="mobile-columns-toggle" aria-pressed="false">Todas las columnas</button>
         </span>
       </div>
-      <div class="panel-body">
+      <div class="panel-body" role="region" aria-label="Tabla {{ p.title }}" tabindex="0">
         <table>
           <thead>
-            <tr>{% for c in p.columns %}<th class="{{ 'tircol' if c['key'] == p.hl_key else '' }}">{{ c.label }}</th>{% endfor %}</tr>
+            <tr>{% for c in p.columns %}<th data-key="{{ c['key'] }}" class="{{ 'tircol' if c['key'] == p.hl_key else '' }}">{{ c.label }}</th>{% endfor %}</tr>
           </thead>
           <tbody id="tbody-{{ p.id }}"
                  hx-get="/panels/{{ p.id }}/rows"
@@ -97,7 +142,6 @@
 </div>
 <script>
   (function () {
-    if (typeof GridStack === "undefined") return;  // fallback: bloques apilados
     var el = document.querySelector(".grid-stack");
     var COL = parseInt(el.dataset.col, 10) || 12;
     var CELL = parseInt(el.dataset.cell, 10) || 62;
@@ -116,94 +160,40 @@
     st.textContent = css;
     document.head.appendChild(st);  // antes del init: la clase .gs-COL ya queda estilada
 
-    // Por DEFAULT el alto se ajusta al contenido (sin scrollbar); DESPUÉS el
-    // resize es libre. Handles SÓLO en el borde derecho (ancho) y la esquina se
-    // (ancho+alto): NO ponemos el handle del borde inferior ("s"/"sw") porque tapaba
-    // toda la barra de scroll horizontal del panel (era imposible agarrarla — la
-    // banda de resize del fondo se comía el puntero). Así el fondo queda libre salvo
-    // la esquina se, donde el grip de estirar vive naturalmente.
-    // Al redimensionar a mano, el panel queda "manual" y deja de auto-ajustarse
-    // (salvo que cambies de moneda, que fuerza el re-fit para mostrar todas).
-    var grid = GridStack.init({
-      column: COL, cellHeight: CELL, margin: MARGIN, float: false,
-      handle: ".panel-head", resizable: { handles: "e, se" },
-    });
-    // v3: el alto arranca en auto-fit. Prioridad: layout personal (localStorage) >
-    // layout default del server (DEFAULT_LAYOUT) > auto-layout de GridStack.
-    var KEY = "grid-layout-v3";
     var DEFAULT_LAYOUT = {{ default_layout|safe }};
     var DL = (DEFAULT_LAYOUT && typeof DEFAULT_LAYOUT === "object") ? DEFAULT_LAYOUT : null;
+    var dashboard;
     try {
-      var saved = JSON.parse(localStorage.getItem(KEY) || "null");
-      if ((!saved || !saved.length) && DL && DL.layout && DL.layout.length) saved = DL.layout;
-      if (saved && saved.length) grid.load(saved, false);  // restaura posición/ancho/alto
-    } catch (e) {}
-    grid.on("change", function () {
-      try { localStorage.setItem(KEY, JSON.stringify(grid.save(false))); } catch (e) {}
-    });
-    // Resize manual → el panel queda fijado por el usuario (no más auto-fit).
-    grid.on("resizestart", function (event, element) {
-      if (element) element.dataset.manual = "1";
-    });
-
-    // --- Auto-fit de altura al contenido ---------------------------------- //
-    // Mide el alto natural (head + tabla; las filas ocultas por el filtro de
-    // moneda no cuentan) y fija gs-h = ceil(px / cellHeight). table.offsetHeight
-    // da el alto natural tanto para crecer como para encoger (scrollHeight no:
-    // si el panel sobra, devuelve el alto actual, no el del contenido).
-    var MINROWS = 12;
-    var FIT_PAD = 4;    // colchón mínimo al fondo: pegado al último dato, sin scrollbar
-    function fitPanel(item, force) {
-      if (!item || !item.gridstackNode) return;
-      if (!force && item.dataset.manual === "1") return;  // respeta el resize manual
-      var body = item.querySelector(".panel-body");
-      var table = item.querySelector(".panel-body table");
-      if (!body || !table) return;
-      // Bail SOLO si el panel está realmente oculto (display:none → offsetParent
-      // null) o la tabla aún no mide. OJO: NO usar body.clientHeight===0 — un panel
-      // colapsado al mínimo (el head se come todo el alto) tiene body.clientHeight 0
-      // AUNQUE sea visible y tenga datos, y ese guard lo dejaba TRABADO chico para
-      // siempre (nunca volvía a crecer). Ese era el bug del "panel minimizado".
-      if (item.offsetParent === null) return;   // panel oculto / sin layout
-      if (table.offsetHeight === 0) return;     // tabla sin medir todavía
-      // Sin filas reales todavía (placeholder "Cargando…" en el arranque en frío, o
-      // todo oculto por el filtro): NO encoger el panel — lo dejamos en su alto actual
-      // hasta que el feed traiga los títulos. Si no, en los primeros segundos (antes
-      // de que el refresh loop pueble AppState) el fit mide el placeholder y deja el
-      // panel "minimizado". Cuando llegan las filas, htmx:afterSwap re-dispara el fit
-      // y lo ajusta al contenido.
-      var dataRows = table.querySelectorAll("tbody tr:not(.empty)");
-      var hasVisibleRow = false;
-      for (var i = 0; i < dataRows.length; i++) {
-        if (dataRows[i].offsetParent !== null) { hasVisibleRow = true; break; }
-      }
-      if (!hasVisibleRow) return;
-      // Ajuste relativo MEDIDO: queremos que el body sea apenas FIT_PAD más alto
-      // que la tabla (pegado al último dato, sin scrollbar). Cada fila ≈ CELL px de
-      // body, así que no hace falta modelar el margin interno de GridStack.
-      var deltaPx = (table.offsetHeight + FIT_PAD) - body.clientHeight;
-      var deltaRows = Math.ceil(deltaPx / CELL);
-      if (deltaRows === 0) return;
-      var rows = Math.max(MINROWS, item.gridstackNode.h + deltaRows);
-      if (rows !== item.gridstackNode.h) grid.update(item, { h: rows });
+      if (!window.MonitorDashboardGrid) throw new Error("Grid no disponible");
+      dashboard = MonitorDashboardGrid.create({element: el, columns: COL,
+        cellHeight: CELL, margin: MARGIN, defaultState: DL});
+    } catch (error) {
+      // El SSR, los filtros y los modales siguen utilizables sin el vendor.
+      el.classList.add("dashboard-fallback", "dashboard-ready");
+      dashboard = {grid: null, isEditing: function () { return false; },
+        isCompact: function () { return true; }, beginEdit: function () { return false; },
+        cancelEdit: function () {}, applyEdit: function () { return false; },
+        previewDefault: function () {}, movePanel: function () {},
+        setPanelVisible: function () {}, isPanelHidden: function () { return false; },
+        getState: function () { return {layout: [], hidden: []}; }};
     }
-    function fitAll() {
-      el.querySelectorAll(".grid-stack-item").forEach(function (it) { fitPanel(it); });
-    }
+    // La navegación táctil usa estos mismos nodos; no genera otra copia de las tablas.
+    el.dashboardController = dashboard;
+    document.getElementById("mobile-panel-edit").disabled = !dashboard.grid;
 
     // --- Filtros de fila por panel (moneda y ley): wiring compartido ------- //
     // El estado vive en un atributo del .panel (sobrevive a los swaps de HTMX del
-    // tbody); el CSS oculta por data-*. La coreografía común (stopPropagation
-    // anti-drag del handle GridStack, borrar el flag manual, re-fit en rAF) vive
-    // UNA vez acá; cada filtro inyecta solo su semántica de clic.
+    // tbody); el CSS oculta por data-*. Un filtro no redimensiona el panel.
     function wireRowFilter(bar, btnSel, dataKey, attrName, onClick) {
       var panel = bar.closest(".panel");
-      var item = bar.closest(".grid-stack-item");
       function apply() {
         var on = Array.prototype.map.call(
           bar.querySelectorAll(btnSel + ".on"), function (b) { return b.dataset[dataKey]; });
         if (on.length) panel.setAttribute(attrName, on.join(" "));
         else panel.removeAttribute(attrName);   // ninguno activo → todas las filas
+        bar.querySelectorAll(btnSel).forEach(function (b) {
+          b.setAttribute("aria-pressed", String(b.classList.contains("on")));
+        });
       }
       // No arrastrar el panel (el head es el handle de GridStack) al tocar botones.
       bar.addEventListener("mousedown", function (e) { e.stopPropagation(); });
@@ -214,9 +204,6 @@
         e.stopPropagation();
         onClick(bar, btn, e);
         apply();
-        // cambiar el filtro puede mostrar más filas → re-fit forzado (auto).
-        if (item) delete item.dataset.manual;
-        requestAnimationFrame(function () { fitPanel(item, true); });
       });
       apply();  // estado inicial desde los .on del markup
     }
@@ -252,6 +239,7 @@
       var panel = btn.closest(".panel");
       var item = btn.closest(".grid-stack-item");
       panel.dataset.settle = btn.dataset.settle || "24";   // default 24hs
+      btn.setAttribute("aria-pressed", String(panel.dataset.settle === "CI"));
       btn.addEventListener("mousedown", function (e) { e.stopPropagation(); });
       btn.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
       btn.addEventListener("click", function (e) {
@@ -260,6 +248,7 @@
         btn.dataset.settle = next;
         btn.textContent = (next === "CI") ? "CI" : "24hs";
         btn.classList.toggle("active", next === "CI");          // CI → iluminado
+        btn.setAttribute("aria-pressed", String(next === "CI"));
         panel.dataset.settle = next;
         var tbody = item.querySelector("tbody[hx-get]");
         if (window.htmx && tbody) htmx.trigger(tbody, "settlechange");  // recarga con el plazo nuevo
@@ -274,8 +263,6 @@
     // además del parseo: un valor guardado con tipo inesperado (versión vieja,
     // edición a mano) tiraba TypeError acá y mataba todos los handlers de la
     // toolbar que se registran después (botones muertos con datos refrescando).
-    var HIDDEN_PANELS = lsGet("panels-hidden-v1", null);   // [gs-id]
-    if (!Array.isArray(HIDDEN_PANELS)) HIDDEN_PANELS = (DL && Array.isArray(DL.hidden)) ? DL.hidden.slice() : [];
     // v2: el ocultamiento se guarda por ÍNDICE de columna, así que cualquier cambio
     // en la lista de columnas de un panel (sacar "Sector" de PROVINCIALES) corre los
     // índices y le oculta al usuario la columna equivocada. Bumpear la clave descarta
@@ -288,30 +275,15 @@
       var t = item.querySelector(".ph-title");
       return t ? t.textContent : item.getAttribute("gs-id");
     }
-    function showPanel(item) {
-      item.style.display = "";
-      grid.makeWidget(item);
-      requestAnimationFrame(function () { fitPanel(item, true); });
-    }
-    function hidePanel(item) {
-      grid.removeWidget(item, false);  // saca del grid pero conserva el DOM
-      item.style.display = "none";
-    }
-
     // Estado persistido: columnas ocultas + paneles ocultos.
     el.querySelectorAll(".grid-stack-item").forEach(function (item) {
       var id = item.getAttribute("gs-id");
       (Array.isArray(HIDDEN_COLS[id]) ? HIDDEN_COLS[id] : []).forEach(function (n) {
         item.querySelector(".panel").classList.add("hcol-" + n);
         var b = item.querySelector('.col-menu .cfg-item[data-col="' + n + '"]');
-        if (b) b.classList.remove("on");
+        if (b) { b.classList.remove("on"); b.setAttribute("aria-pressed", "false"); }
       });
     });
-    HIDDEN_PANELS.forEach(function (id) {
-      var item = el.querySelector('.grid-stack-item[gs-id="' + id + '"]');
-      if (item) hidePanel(item);
-    });
-
     // Clicks de la toolbar (delegado en el contenedor del grid).
     el.addEventListener("click", function (e) {
       var btn = e.target.closest(".ph-btn");
@@ -322,12 +294,12 @@
       var id = item.getAttribute("gs-id");
       var act = btn.dataset.act;
       if (act === "close") {
-        hidePanel(item);
-        if (HIDDEN_PANELS.indexOf(id) < 0) { HIDDEN_PANELS.push(id); lsSet("panels-hidden-v1", HIDDEN_PANELS); }
+        if (dashboard.isEditing()) dashboard.setPanelVisible(id, false);
       } else if (act === "cfg") {
         var menu = item.querySelector(".col-menu");
         var willOpen = !menu.classList.contains("open");
-        document.querySelectorAll(".col-menu.open").forEach(function (mm) { mm.classList.remove("open"); });
+        closeColumnMenus();
+        btn.setAttribute("aria-expanded", String(willOpen));
         if (willOpen) {
           // fixed posicionado al botón → escapa el overflow:hidden del panel.
           var r = btn.getBoundingClientRect();
@@ -370,6 +342,7 @@
       var id = item.getAttribute("gs-id");
       var n = ci.dataset.col;
       var nowOn = ci.classList.toggle("on");
+      ci.setAttribute("aria-pressed", String(nowOn));
       panel.classList.toggle("hcol-" + n, !nowOn);
       var hid = (Array.isArray(HIDDEN_COLS[id]) ? HIDDEN_COLS[id] : []).filter(function (x) { return String(x) !== String(n); });
       if (!nowOn) hid.push(parseInt(n, 10));
@@ -377,97 +350,227 @@
       lsSet("panel-cols-v2", HIDDEN_COLS);
     });
 
-    // --- CONFIG global (nav): elegir qué paneles ver / restaurar cerrados -- //
+    // --- CONFIG global: borrador de geometría, aplicar/cancelar ------------- //
     var cfgWrap = document.getElementById("panel-config-wrap");
     var cfgMenu = document.getElementById("panel-config-menu");
     var cfgBtn = document.getElementById("nav-config-btn");
+    var editBar = document.getElementById("layout-edit-bar");
+    var editStatus = document.getElementById("layout-edit-status");
+    var panelSelect = document.getElementById("layout-panel");
+    var resetColumnsOnApply = false;
+
+    function setEditStatus(message, error) {
+      editStatus.textContent = message;
+      editStatus.classList.toggle("is-error", !!error);
+    }
     function renderConfigMenu() {
       if (!cfgMenu) return;
-      var items = Array.prototype.slice.call(el.querySelectorAll(".grid-stack-item"));
-      cfgMenu.innerHTML = items.map(function (item) {
+      var editing = dashboard.isEditing();
+      var items = Array.from(el.querySelectorAll(".grid-stack-item"));
+      // Texto desde el DOM, nunca HTML interpolado desde preferencias guardadas.
+      cfgMenu.replaceChildren();
+      items.forEach(function (item) {
         var id = item.getAttribute("gs-id");
-        var visible = item.style.display !== "none";
-        return '<button type="button" class="cfg-item' + (visible ? " on" : "") +
-               '" data-panel="' + id + '">' + panelTitle(item) + '</button>';
-      }).join("") +
-        '<div class="cfg-sep"></div>' +
-        '<button type="button" class="cfg-action" data-action="save-default">★ Guardar layout como default</button>' +
-        '<button type="button" class="cfg-action" data-action="reset-default">↺ Restaurar default</button>';
+        var visible = !dashboard.isPanelHidden(id);
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = "cfg-item" + (visible ? " on" : "");
+        button.dataset.panel = id;
+        button.textContent = panelTitle(item);
+        button.setAttribute("aria-pressed", String(visible));
+        button.disabled = !editing;
+        cfgMenu.appendChild(button);
+      });
+      var visibility = document.querySelector(".layout-visibility");
+      visibility.replaceChildren();
+      cfgMenu.querySelectorAll("[data-panel]").forEach(function (button) {
+        visibility.appendChild(button.cloneNode(true));
+      });
+      var actions = [["edit", "Editar distribución"], ["reset-default", "Restaurar distribución"]];
+      {% if current_user and current_user.is_admin %}
+      actions.push(["save-default", "Guardar como predeterminada para todos"]);
+      {% endif %}
+      actions.forEach(function (entry) {
+        var button = document.createElement("button");
+        button.type = "button"; button.className = "cfg-action";
+        button.dataset.action = entry[0]; button.textContent = entry[1];
+        button.disabled = !dashboard.grid || (editing && entry[0] === "save-default");
+        cfgMenu.appendChild(button);
+      });
+      Array.from(panelSelect.options).forEach(function (option) {
+        option.disabled = dashboard.isPanelHidden(option.value);
+      });
+      if (panelSelect.selectedOptions[0] && panelSelect.selectedOptions[0].disabled) {
+        var first = Array.from(panelSelect.options).find(function (o) { return !o.disabled; });
+        panelSelect.value = first ? first.value : "";
+      }
     }
+    function beginEditing() {
+      if (!dashboard.beginEdit()) return;
+      cfgWrap.classList.remove("open");
+      cfgBtn.setAttribute("aria-expanded", "false");
+      document.getElementById("layout-cancel").focus();
+    }
+    document.getElementById("mobile-panel-edit").addEventListener("click", beginEditing);
+    document.querySelector(".layout-visibility").addEventListener("click", function (e) {
+      var button = e.target.closest("[data-panel]");
+      if (!button || !dashboard.isEditing()) return;
+      dashboard.setPanelVisible(button.dataset.panel, dashboard.isPanelHidden(button.dataset.panel));
+      var next = this.querySelector('[data-panel="' + button.dataset.panel + '"]');
+      if (next) next.focus();
+    });
     if (cfgBtn && cfgWrap) {
+      cfgBtn.setAttribute("aria-expanded", "false");
+      cfgBtn.setAttribute("aria-controls", "panel-config-menu");
       cfgBtn.addEventListener("click", function (e) {
         e.preventDefault();
         var willOpen = !cfgWrap.classList.contains("open");
         if (willOpen) renderConfigMenu();
         cfgWrap.classList.toggle("open", willOpen);
+        cfgBtn.setAttribute("aria-expanded", String(willOpen));
       });
     }
-    if (cfgMenu) {
-      cfgMenu.addEventListener("click", function (e) {
-        var action = e.target.closest(".cfg-action");
-        if (action) {
-          e.stopPropagation();
-          if (action.dataset.action === "save-default") {
-            var payload = { layout: grid.save(false), hidden: HIDDEN_PANELS, cols: HIDDEN_COLS };
-            fetch("/panels/layout", { method: "POST", headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify(payload) })
-              .then(function () {
-                var t = action.textContent; action.textContent = "✓ Guardado";
-                setTimeout(function () { action.textContent = t; }, 1500);
-              }).catch(function () {});
-          } else if (action.dataset.action === "reset-default") {
-            localStorage.removeItem("grid-layout-v3");
-            localStorage.removeItem("panels-hidden-v1");
-            localStorage.removeItem("panel-cols-v2");
-            localStorage.removeItem("panel-cols-v1");   // resto de la versión anterior
-            location.reload();  // recarga → toma el layout default del server
-          }
-          return;
-        }
-        var btn = e.target.closest(".cfg-item");
-        if (!btn) return;
-        e.stopPropagation();  // no cerrar el menú al elegir (solo ESC / click afuera)
-        var id = btn.dataset.panel;
-        // Toggle independiente: habilita/deshabilita SOLO este panel (no toca el resto),
-        // igual que el Config de columnas de cada panel.
-        var item = el.querySelector('.grid-stack-item[gs-id="' + id + '"]');
-        if (item.style.display === "none") {
-          showPanel(item);
-          HIDDEN_PANELS = HIDDEN_PANELS.filter(function (x) { return x !== id; });
-        } else {
-          hidePanel(item);
-          if (HIDDEN_PANELS.indexOf(id) < 0) HIDDEN_PANELS.push(id);
-        }
-        lsSet("panels-hidden-v1", HIDDEN_PANELS);
-        renderConfigMenu();  // refresca el resaltado (on/off) sin cerrar el menú
+    if (cfgMenu) cfgMenu.addEventListener("click", function (e) {
+      var button = e.target.closest("button");
+      if (!button || button.disabled) return;
+      e.stopPropagation();
+      var action = button.dataset.action;
+      if (action === "edit") beginEditing();
+      else if (action === "reset-default") {
+        beginEditing();
+        dashboard.previewDefault();
+        resetColumnsOnApply = true;
+        setEditStatus("Distribución predeterminada lista. Aplicá para guardarla.");
+      } else if (action === "save-default") {
+        var state = dashboard.getState();
+        button.disabled = true;
+        fetch("/panels/layout", {method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({layout: state.layout, hidden: state.hidden, cols: HIDDEN_COLS})})
+          .then(function (r) { if (!r.ok) throw new Error("No guardado");
+            button.textContent = "Predeterminada guardada"; })
+          .catch(function () { button.textContent = "No se pudo guardar. Reintentar"; })
+          .finally(function () { button.disabled = false; });
+      } else if (button.dataset.panel && dashboard.isEditing()) {
+        var id = button.dataset.panel;
+        dashboard.setPanelVisible(id, dashboard.isPanelHidden(id));
+        var nextButton = Array.from(cfgMenu.querySelectorAll("[data-panel]")).find(function (b) {
+          return b.dataset.panel === id;
+        });
+        if (nextButton) nextButton.focus();
+      }
+    });
+    document.getElementById("layout-cancel").addEventListener("click", function () { dashboard.cancelEdit(); });
+    document.getElementById("layout-default").addEventListener("click", function () {
+      dashboard.previewDefault(); resetColumnsOnApply = true;
+      setEditStatus("Distribución predeterminada lista. Aplicá para guardarla.");
+    });
+    document.getElementById("layout-apply").addEventListener("click", function () {
+      var reset = resetColumnsOnApply;
+      if (dashboard.applyEdit() && reset) {
+        try {
+          localStorage.removeItem("panel-cols-v2");
+          localStorage.removeItem("panel-cols-v1");
+        } catch (e) {}
+        // Recarga sólo al restaurar también las columnas del default del servidor.
+        location.reload();
+      }
+    });
+    function stepPanel(id, action) {
+      var node = dashboard.getState().layout.find(function (n) { return n.id === id; });
+      if (!node) return;
+      var steps = {left: ["x", -10], right: ["x", 10], up: ["y", -5], down: ["y", 5],
+        narrow: ["w", -10], wide: ["w", 10], short: ["h", -5], tall: ["h", 5]};
+      var step = steps[action];
+      if (!step) return;
+      var change = {}; change[step[0]] = node[step[0]] + step[1];
+      dashboard.movePanel(id, change);
+    }
+    editBar.addEventListener("click", function (e) {
+      var button = e.target.closest("[data-layout-step]");
+      if (button) stepPanel(panelSelect.value, button.dataset.layoutStep);
+    });
+    el.addEventListener("keydown", function (e) {
+      if (!e.target.matches(".layout-drag-handle")) return;
+      var actions = e.shiftKey ? {ArrowLeft: "narrow", ArrowRight: "wide", ArrowUp: "short", ArrowDown: "tall"} :
+        {ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down"};
+      if (!actions[e.key]) return;
+      e.preventDefault();
+      stepPanel(e.target.closest("[gs-id]").getAttribute("gs-id"), actions[e.key]);
+    });
+    el.addEventListener("dashboard:modechange", function () {
+      var editing = dashboard.isEditing();
+      var wasEditing = !editBar.hidden;
+      editBar.hidden = !editing;
+      if (!editing) {
+        resetColumnsOnApply = false;
+        if (wasEditing) (dashboard.isCompact() ? document.getElementById("mobile-panel-edit") : cfgBtn).focus();
+      }
+      setEditStatus(editing ? (dashboard.isCompact() ? "Elegí los paneles que querés ver. Aplicá para guardar." :
+        "Mové un panel a un espacio libre. Aplicá para guardar.") : "");
+      renderConfigMenu();
+    });
+    el.addEventListener("dashboard:statechange", function () {
+      el.querySelectorAll(".layout-collision").forEach(function (item) { item.classList.remove("layout-collision"); });
+      if (dashboard.isEditing()) setEditStatus("Cambios sin aplicar.");
+      renderConfigMenu();
+    });
+    el.addEventListener("dashboard:collision", function (e) {
+      var item = e.target.closest && e.target.closest(".grid-stack-item");
+      if (item) item.classList.add("layout-collision");
+      setEditStatus("Ese espacio está ocupado. Los otros paneles conservan su lugar.", true);
+    });
+    el.addEventListener("dashboard:applyerror", function () { setEditStatus(dashboard.lastError, true); });
+    var header = document.querySelector("body > header");
+    function syncHeaderHeight() {
+      editBar.style.top = (header ? header.offsetHeight : 0) + "px";
+    }
+    syncHeaderHeight();
+    window.addEventListener("resize", syncHeaderHeight);
+    if (header && window.ResizeObserver) new ResizeObserver(syncHeaderHeight).observe(header);
+    renderConfigMenu();
+
+    function closeColumnMenus() {
+      document.querySelectorAll(".col-menu.open").forEach(function (menu) {
+        menu.classList.remove("open");
+        menu.parentElement.querySelector('[data-act="cfg"]').setAttribute("aria-expanded", "false");
       });
     }
     // Cerrar desplegables al clickear afuera.
     document.addEventListener("click", function (e) {
       if (!e.target.closest(".ph-cfg"))
-        document.querySelectorAll(".col-menu.open").forEach(function (m) { m.classList.remove("open"); });
-      if (cfgWrap && !e.target.closest("#panel-config-wrap")) cfgWrap.classList.remove("open");
+        closeColumnMenus();
+      if (cfgWrap && !e.target.closest("#panel-config-wrap")) {
+        cfgWrap.classList.remove("open"); cfgBtn.setAttribute("aria-expanded", "false");
+      }
     });
-    // ESC cierra los desplegables abiertos (y el gráfico si está abierto).
+    // ESC consume una sola capa: modal, desplegable, después borrador.
     document.addEventListener("keydown", function (e) {
-      if (e.key !== "Escape") return;
-      if (cfgWrap) cfgWrap.classList.remove("open");
-      document.querySelectorAll(".col-menu.open").forEach(function (m) { m.classList.remove("open"); });
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       var modal = document.getElementById("modal");
-      if (modal && modal.innerHTML) modal.innerHTML = "";
+      if (modal && modal.innerHTML) { modal.innerHTML = ""; return; }
+      var source = document.querySelector("#source-wrap[open]");
+      if (source) { source.open = false; source.querySelector("summary").focus(); e.preventDefault(); return; }
+      var openColumns = document.querySelector(".col-menu.open");
+      var openConfig = cfgWrap && cfgWrap.classList.contains("open");
+      if (openColumns || openConfig) {
+        e.preventDefault();
+        var trigger = openColumns ? openColumns.parentElement.querySelector('[data-act="cfg"]') : cfgBtn;
+        closeColumnMenus();
+        if (cfgWrap) { cfgWrap.classList.remove("open"); cfgBtn.setAttribute("aria-expanded", "false"); }
+        trigger.focus();
+        return;
+      }
+      if (document.querySelector("header.mobile-menu-open")) return; // lo cierra su propio listener
+      if (cfgWrap) { cfgWrap.classList.remove("open"); cfgBtn.setAttribute("aria-expanded", "false"); }
+      if (dashboard.isEditing()) dashboard.cancelEdit();
     });
 
-    // Re-fit cuando HTMX reemplaza un tbody (carga inicial, SSE, polling 15s) y
-    // un fit global tras aplicar los filtros por defecto.
-    document.body.addEventListener("htmx:afterSwap", function (e) {
-      var item = e.target.closest && e.target.closest(".grid-stack-item");
-      if (item) requestAnimationFrame(function () { fitPanel(item); });
-    });
+    // Los swaps de HTMX actualizan filas, nunca la geometría aplicada por el usuario.
 
     // a11y del #modal (detalle/chart/share): focus-trap + restaurar foco en CUALQUIER
     // camino de cierre (Esc, botón ✕ inline, swap htmx) vía MutationObserver sobre su
     // contenido. onEsc vacía el modal → el observer hace el teardown (pop + foco).
-    (function () {
+    function wireDetailModal() {
       var modal = document.getElementById("modal");
       if (!modal || !window.A11yModal) return;
       var opened = false;
@@ -479,9 +582,16 @@
         } else if (!hasContent && opened) {
           opened = false;
           A11yModal.close(modal);
+        } else if (hasContent && opened && !modal.contains(document.activeElement)) {
+          // T+0/T+1 reemplaza el botón enfocado, pero conserva el opener original.
+          var target = modal.querySelector(".toggle button.on, button, a[href], input");
+          if (target) target.focus();
         }
       }).observe(modal, { childList: true });
-    })();
+    }
+    // base.html coloca #modal DESPUÉS del bloque content que contiene este script.
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wireDetailModal, {once: true});
+    else wireDetailModal();
 
     // Cierre en error: si el fetch del detalle/chart/share (hx-target=#modal) falla,
     // htmx por default NO swapea → el modal quedaría vacío/stale y el click "no hace
@@ -500,7 +610,6 @@
     document.body.addEventListener("htmx:responseError", onModalError);
     document.body.addEventListener("htmx:sendError", onModalError);
 
-    requestAnimationFrame(fitAll);
   })();
 </script>
 <script>

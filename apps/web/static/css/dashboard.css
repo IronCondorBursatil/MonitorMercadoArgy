@@ -1,0 +1,142 @@
+/* La geometría pertenece a GridStack; los datos sólo cambian dentro de la tabla. */
+.grid-stack.monitor-dashboard { width: auto; min-width: 0; margin: 8px; }
+.monitor-dashboard .grid-stack-item-content { min-width: 0; min-height: 0; }
+.monitor-dashboard .panel-body { min-width: 0; min-height: 0; max-width: 100%; }
+.monitor-dashboard .panel-head { cursor: default; flex-wrap: wrap; }
+.monitor-dashboard .ph-title { min-width: 0; flex-basis: 120px; }
+.monitor-dashboard .ph-tools { flex: 0 1 auto; flex-wrap: wrap; max-width: 100%; margin-left: auto; justify-content: flex-end; }
+.monitor-dashboard .panel-head button { min-height: 28px; }
+.monitor-dashboard :focus-visible, .layout-edit-bar :focus-visible,
+#panel-config-wrap :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+.layout-edit-bar { position: sticky; z-index: 190; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 8px 16px; margin: 8px; padding: 10px 12px;
+  background: var(--panel-bg); color: var(--text); border: 1px solid var(--accent);
+  border-radius: var(--radius); }
+.layout-edit-bar[hidden] { display: none; }
+.layout-edit-bar strong { font-size: 13px; }
+#layout-edit-status { flex: 1 1 240px; color: var(--text-dim); }
+#layout-edit-status.is-error { color: var(--neg); }
+.layout-edit-actions, .layout-step-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.layout-edit-bar button, .layout-edit-bar select { min-height: 32px; padding: 5px 10px;
+  color: var(--text); background: var(--head-bg); border: 1px solid var(--panel-border);
+  border-radius: var(--radius); font: inherit; cursor: pointer; }
+.layout-edit-bar button:hover { border-color: var(--text-dim); background: var(--row-hover); }
+#layout-apply { background: var(--accent); color: #fff; border-color: var(--accent); }
+.layout-controls { flex-basis: 100%; }
+.layout-controls summary { cursor: pointer; padding: 4px 0; }
+.layout-controls label { display: block; margin: 6px 0; }
+.layout-controls select { max-width: 100%; }
+.layout-controls small { display: block; margin-top: 6px; color: var(--text-dim); }
+.layout-drag-handle { display: none; flex: 0 0 32px; width: 32px; height: 30px;
+  border: 1px solid var(--accent); border-radius: var(--radius); color: var(--text);
+  background: var(--accent-light); font-size: 20px; touch-action: none; }
+.layout-editing .layout-drag-handle { display: inline-flex; align-items: center; justify-content: center; cursor: grab; }
+.layout-editing .layout-drag-handle:active { cursor: grabbing; }
+.layout-editing { background-image: linear-gradient(var(--panel-border) 1px, transparent 1px),
+  linear-gradient(90deg, var(--panel-border) 1px, transparent 1px); background-size: 20px 20px; }
+.layout-editing .grid-stack-item-content { outline: 1px solid var(--accent); outline-offset: -1px; }
+.layout-editing .layout-collision .grid-stack-item-content { outline: 2px solid var(--neg); }
+.monitor-dashboard:not(.layout-editing) .ph-x,
+.monitor-dashboard:not(.layout-editing) > .grid-stack-item > .ui-resizable-handle { display: none !important; }
+.layout-editing > .grid-stack-item > .ui-resizable-se { width: 24px; height: 24px; right: 0; bottom: 0; }
+.layout-editing > .grid-stack-item > .ui-resizable-se::after { content: ""; position: absolute;
+  right: 5px; bottom: 5px; width: 10px; height: 10px; border-right: 3px solid var(--accent); border-bottom: 3px solid var(--accent); }
+.monitor-dashboard > .grid-stack-item[hidden] { display: none !important; }
+.mobile-panel-nav, .mobile-menu-trigger, .layout-visibility, .mobile-columns-toggle { display: none; }
+.mobile-panel-empty { margin: 16px; color: var(--text-dim); }
+.mobile-panel-empty[hidden], .mobile-panel-nav[hidden] { display: none; }
+.mobile-columns-toggle[hidden] { display: none !important; }
+
+/* Sin vendor/JS se conserva una pila legible. No ocultar la página al cargar. */
+.monitor-dashboard:not(.dashboard-ready), .monitor-dashboard.dashboard-fallback { height: auto !important; }
+.monitor-dashboard:not(.dashboard-ready) > .grid-stack-item,
+.monitor-dashboard.dashboard-fallback > .grid-stack-item { position: relative !important;
+  inset: auto !important; width: 100% !important; height: 372px !important; margin-bottom: 8px; }
+/* La cabecera también debe caber; esconder overflow del body taparía el problema. */
+body:has(.monitor-dashboard) .header-top { flex-wrap: wrap; }
+body:has(.monitor-dashboard) header nav { flex-wrap: wrap; min-width: 0; }
+body:has(.monitor-dashboard) header .meta { flex-wrap: wrap; min-width: 0; }
+
+@media (max-width: 900px) {
+  .grid-stack.monitor-dashboard { height: auto !important; display: flex; flex-direction: column; gap: 8px; }
+  .monitor-dashboard > .grid-stack-item { position: relative !important; inset: auto !important;
+    width: 100% !important; height: 372px !important; }
+  body:has(.monitor-dashboard) header { position: relative; }
+  body:has(.monitor-dashboard) .header-top { padding: 8px; gap: 8px; }
+  body:has(.monitor-dashboard) header nav { margin-left: 0; gap: 2px; }
+  body:has(.monitor-dashboard) header nav a { padding: 5px 6px; }
+  .dashboard-mobile-ready .monitor-dashboard > .mobile-panel-inactive { display: none !important; }
+  .dashboard-mobile-ready .mobile-panel-nav:not([hidden]) { display: block; position: sticky; top: 0;
+    z-index: 195; padding: 10px 12px; background: var(--page-bg); border-bottom: 1px solid var(--panel-border); }
+  .mobile-panel-nav label { display: flex; justify-content: space-between; margin-bottom: 6px;
+    color: var(--text-dim); font-size: 12px; font-weight: 600; }
+  #mobile-panel-count { font-weight: 400; font-variant-numeric: tabular-nums; }
+  .mobile-panel-picker { display: flex; gap: 5px; min-width: 0; }
+  .mobile-panel-picker button, .mobile-panel-picker select, .mobile-menu-trigger {
+    min-height: 44px; min-width: 44px; border: 1px solid var(--panel-border); border-radius: 8px;
+    background: var(--panel-bg); color: var(--text); font: inherit; padding: 6px 10px; }
+  .mobile-panel-picker select { flex: 1; width: 0; font-weight: 600; font-size: 14px; }
+  #mobile-panel-prev, #mobile-panel-next { font-size: 26px; padding: 0; }
+  .mobile-panel-picker button:disabled { opacity: .4; }
+  .mobile-panel-picker :focus-visible, .mobile-menu-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dashboard-mobile-ready .mobile-menu-trigger { display: block; margin-left: auto; }
+  .dashboard-mobile-ready .header-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; }
+  .dashboard-mobile-ready .header-top h1 { grid-column: 1; font-size: 14px; }
+  .dashboard-mobile-ready .header-top > .mobile-menu-trigger { grid-column: 2; grid-row: 1 / 3; }
+  .dashboard-mobile-ready .header-top > #health-badge { grid-column: 1; font-size: 10px; }
+  .dashboard-mobile-ready header .meta { font-size: 10px; }
+  .dashboard-mobile-ready header nav { display: none; }
+  .dashboard-mobile-ready header.mobile-menu-open nav { display: grid; grid-template-columns: 1fr 1fr;
+    position: fixed; inset: 64px 10px auto; z-index: 610; max-height: calc(100dvh - 84px); overflow-y: auto;
+    padding: 10px; border: 1px solid var(--panel-border); border-radius: 12px;
+    background: var(--panel-bg); box-shadow: 0 12px 40px #0006; }
+  .dashboard-mobile-ready header nav > a { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; }
+  .dashboard-mobile-ready header nav > a[aria-current="page"] { background: var(--accent-light); color: var(--accent); }
+  .dashboard-mobile-ready header nav .theme-btn, .dashboard-mobile-ready header nav summary,
+  .dashboard-mobile-ready #nav-config-btn { min-height: 44px; display: inline-flex; align-items: center; }
+  .dashboard-mobile-ready .header-strip { padding: 4px 10px; }
+  .dashboard-mobile-ready .grid-stack.monitor-dashboard { margin: 8px; gap: 0; }
+  .dashboard-mobile-ready .monitor-dashboard > .grid-stack-item { height: max(460px, calc(100dvh - 190px)) !important; }
+  .dashboard-mobile-ready .monitor-dashboard .grid-stack-item-content { inset: 0 !important; border-radius: 12px; }
+  .monitor-dashboard .ph-title { flex-basis: 100%; white-space: normal; font-size: 14px; padding: 2px 0; }
+  .monitor-dashboard .panel-head { padding: 10px; gap: 4px; }
+  .monitor-dashboard .ph-tools { width: 100%; gap: 4px; justify-content: flex-start; margin: 0; }
+  .monitor-dashboard .panel-head button { min-width: 44px; min-height: 44px; padding: 6px 10px; font-size: 12px; }
+  .monitor-dashboard .mobile-columns-toggle { display: block; color: var(--text-dim); background: transparent;
+    border: 1px solid var(--panel-border); border-radius: 6px; }
+  .monitor-dashboard .panel-body { overscroll-behavior-x: contain; scrollbar-width: thin; }
+  .monitor-dashboard .panel-body th, .monitor-dashboard .panel-body td { font-size: 12px; padding: 10px 12px; }
+  .monitor-dashboard .panel-body td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel-bg);
+    box-shadow: 1px 0 var(--panel-border); }
+  .monitor-dashboard .panel-body th:first-child { position: sticky; left: 0; z-index: 3; background: var(--head-bg); }
+  .monitor-dashboard .panel-body td a { display: inline-block; min-height: 24px; padding: 5px 0; }
+  .monitor-dashboard .mobile-summary .panel-body table { width: 100%; }
+  .monitor-dashboard .col-menu.open, .dashboard-mobile-ready .nav-cfg-wrap.open .panel-config-menu {
+    inset: auto 8px max(8px, env(safe-area-inset-bottom)) !important; width: auto; max-height: 60dvh;
+    border-radius: 12px; padding: 8px; z-index: 620; overflow-y: auto; }
+  .dashboard-mobile-ready .panel-config-menu { position: fixed; }
+  .dashboard-mobile-ready header nav .source-dd { grid-column: 1 / -1; min-width: 0; }
+  .dashboard-mobile-ready header nav .source-menu { position: static; min-width: 0; width: 100%; }
+  .dashboard-mobile-ready header nav .source-menu input { max-width: 100%; font-size: 16px; }
+  .monitor-dashboard .col-menu .cfg-item, .dashboard-mobile-ready .panel-config-menu button { min-height: 44px; }
+  .layout-edit-bar { position: relative; top: auto !important; z-index: auto; }
+  .layout-edit-bar button { min-height: 44px; }
+  .layout-controls, .layout-editing .layout-drag-handle,
+  .layout-editing > .grid-stack-item > .ui-resizable-handle { display: none !important; }
+  .layout-visibility { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 4px; max-height: 35dvh; overflow: auto; }
+  .layout-visibility .cfg-item { white-space: normal; font-size: 12px; text-align: left; }
+  .layout-editing { background: none; }
+  body:has(.monitor-dashboard) .modal-overlay { padding: 0; }
+  body:has(.monitor-dashboard) .modal-card { width: 100%; max-width: 100%; max-height: 100dvh; border-radius: 0;
+    display: flex; flex-direction: column; }
+  body:has(.monitor-dashboard) .modal-head { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+  body:has(.monitor-dashboard) .modal-head .toggle { display: flex; flex-wrap: wrap; gap: 4px; }
+  body:has(.monitor-dashboard) .modal-head button { min-height: 44px; min-width: 44px; color: var(--text); background: var(--head-bg); }
+  body:has(.monitor-dashboard) .modal-head button.on { background: var(--accent); color: #fff; }
+  body:has(.monitor-dashboard) .modal-body { min-height: 0; padding: 12px; max-height: none; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  body:has(.monitor-dashboard) .modal-body input { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .monitor-dashboard *, .layout-edit-bar * { animation: none !important; transition: none !important; }
+}

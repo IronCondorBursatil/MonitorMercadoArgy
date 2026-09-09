@@ -207,7 +207,7 @@ Las rules por path no se disparan con `Write` de un archivo nuevo; por eso viven
 |---|---|
 | Proponer herramientas, tocar deps, configurar el agente, ejecutar el plan | `agents.md › §0` (0.1 reglas, 0.3 versiones, 0.4 veredictos, 0.5 Claude Code, 0.8 fases) |
 | Tocar pricing (`core/domain/pricing/**`, `core/domain/*.py`) | `.claude/rules/pricing.md` (carga sola al leer) + `docs/convenciones-financieras.md` |
-| Tocar `apps/web/**` | `.claude/rules/web.md` (sola) + `docs/flujo-web.md` |
+| Diseñar o tocar `apps/web/**` (desktop o celular) | Leer primero `docs/ui-ux.md`; después `.claude/rules/web.md` (sola) + `docs/flujo-web.md` |
 | Tocar login / permisos / usuarios | `.claude/rules/auth.md` (sola) + `docs/auth.md` |
 | Tocar `deploy/`, `scripts/`, `deploy.sh`, workflows | `.claude/rules/deploy.md` (sola) + `docs/despliegue.md` |
 | Entender el mapa completo (qué vive dónde, supervisor, observabilidad) | `docs/arquitectura.md` |

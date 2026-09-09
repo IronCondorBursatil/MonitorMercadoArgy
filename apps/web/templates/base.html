@@ -81,6 +81,7 @@
 
     window.mrRefreshOK = function (el) {
       if (document.hidden) return false;
+      if (document.querySelector("#modal > *")) return false;
       if (!el || typeof el.getClientRects !== "function") return true;
       return el.getClientRects().length > 0;   // display:none ⇒ 0 rects
     };
